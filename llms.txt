@@ -42,6 +42,85 @@ GET /status/task-123    → { "status": "completed", "result": "..." }
 GET /plans              → [{ "planId": "plan-456", "goal": "...", "completed": 4, ... }]
 ```
 
+### Poll for completion (dispatch → wait → get)
+
+```
+1. POST /dispatch → { "taskId": "task-123" }
+2. Loop: GET /status/task-123
+   → { "status": "running" }     ← keep polling (every 2-3s)
+   → { "status": "completed", "result": "..." }  ← done
+   → { "status": "failed", "error": "..." }      ← failed
+
+MCP shortcut: middleware_result(id="task-123", wait=true) polls automatically (max 120s).
+```
+
+### Error responses
+
+All endpoints return JSON. Errors have this shape:
+
+```json
+{ "error": "descriptive message" }
+```
+
+| HTTP | Meaning |
+|------|---------|
+| 400 | Bad request (missing field, unknown worker, invalid plan) |
+| 404 | Task/plan/worker not found |
+| 429 | Worker busy (ACP session pool full) |
+| 500 | Internal error |
+
+Plan validation errors:
+```json
+{ "error": "validation_failed", "errors": ["Step X: unknown worker 'foo'", "Cycle detected"] }
+```
+
+### SSE Event Stream
+
+```
+GET /events → Server-Sent Events stream
+```
+
+Event types (discriminated union):
+
+| Event | When | Data |
+|-------|------|------|
+| `step.dispatched` | Step starts executing | `{ step }` |
+| `step.completed` | Step finished successfully | `{ result }` |
+| `step.failed` | Step failed or timed out | `{ result }` |
+| `step.retrying` | Step retry attempt | `{ step, attempt, error }` |
+| `step.cancelled` | Step aborted (cancel-all policy) | `{ stepId }` |
+| `plan.mutation` | Step added/skipped/replaced during execution | `{ action, stepId }` |
+| `convergence.check` | Convergence loop iteration | `{ iteration, converged }` |
+| `plan.completed` | Entire plan finished | `{ result }` |
+
+## Important Defaults
+
+| Setting | Default | Note |
+|---------|---------|------|
+| Step timeout | 120s | Override with `timeoutSeconds` per step |
+| Worker concurrency | 4 per type | Override with `maxConcurrency` (readers=8, coders=2) |
+| Retry backoff | Exponential: base × 2^(attempt-1), capped at 30s | Set `backoffMs` in retry config |
+| Failure policy | `cancel-dependents` | Options: `none`, `cancel-dependents`, `cancel-all` |
+| Convergence max iterations | Set in plan | No default — must specify `maxIterations` |
+| Verify command timeout | 30s fixed | Shell command for mechanical verification |
+| Archive | Tasks move to /archived after 1h, removed after 7d | |
+
+## Gotchas (read this to avoid bugs)
+
+1. **`{{stepId.result}}` on a failed step** — Returns the error message as text, NOT empty string. Your downstream step will receive the error. Guard with `condition: { stepId: "x", check: "completed" }`.
+
+2. **`{{stepId.summary}}` fallback** — If worker didn't return structured JSON, falls back to first 500 chars of raw output.
+
+3. **`{{stepId.output}}` is an alias for `{{stepId.result}}`** — Both work identically.
+
+4. **Convergence step IDs get suffixed** — New steps added by convergence get `-iterN` suffix (e.g., `deep-search-iter1`). Reference accordingly.
+
+5. **`verifyCommand` runs async** — Won't block other steps. But fixed 30s timeout — long test suites may need a shell step instead.
+
+6. **`replaceStep` fails if step is running** — Throws error. Only replace pending steps.
+
+7. **Acceptance check** — `plan.acceptance` → the last step should return `{ "accepted": true/false }` in structured JSON. If no structured output, acceptance is inferred (no failures + no low-confidence = accepted).
+
 ## MCP Tools (Agent-Friendly)
 
 If connected via MCP, you have these tools:
