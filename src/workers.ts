@@ -78,10 +78,8 @@ export const WORKERS: Record<string, WorkerDefinition> = {
   shell: {
     agent: {
       description: 'Execute shell commands. For: tests, git ops, curl, file queries.',
-      tools: ['Bash', 'Read'],
-      prompt: 'Execute the command(s) and report output. Report errors if any.',
-      model: 'haiku',
-      maxTurns: 3,
+      tools: [],   // shell backend uses execSync directly, not LLM tools
+      prompt: '',   // no LLM involved
     },
     backend: 'shell',
     maxConcurrency: 4,

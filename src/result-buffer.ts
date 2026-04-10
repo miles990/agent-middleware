@@ -174,9 +174,16 @@ export class ResultBuffer {
     return { archived: archivedCount, expired: expiredCount };
   }
 
-  private emit(event: TaskEvent): void {
+  /** Emit a task event to all subscribers */
+  emit(event: TaskEvent): void {
     for (const listener of this.listeners) {
       try { listener(event); } catch { /* fire-and-forget */ }
     }
+  }
+
+  /** Broadcast a raw event (for plan-level events like retry, convergence, mutation) */
+  broadcast(event: { type: string; data: unknown }): void {
+    const taskEvent = { type: event.type, task: event.data, timestamp: new Date() } as unknown as TaskEvent;
+    this.emit(taskEvent);
   }
 }

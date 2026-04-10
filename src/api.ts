@@ -201,12 +201,18 @@ export function createMiddleware(config?: MiddlewareConfig) {
 
   // Plan engine with event callbacks
   const planEngine = new PlanEngine(executeWorker, {
-    onStepComplete: (step) => {
-      if (step.status === 'completed') buffer.complete(step.id, step.output);
-      else if (step.status !== 'condition_skipped') buffer.fail(step.id, step.output);
-    },
-    onStepDispatch: (step) => {
-      buffer.start(step.id);
+    // Bridge ALL plan events to result buffer → SSE stream
+    onEvent: (event) => {
+      switch (event.type) {
+        case 'step.dispatched': buffer.start(event.step.id); break;
+        case 'step.completed': buffer.complete(event.result.id, event.result.output); break;
+        case 'step.failed': buffer.fail(event.result.id, event.result.output); break;
+        default:
+          // Plan-level events (retry, cancel, mutation, convergence, plan.completed)
+          // → broadcast to SSE subscribers
+          buffer.broadcast({ type: event.type, data: event });
+          break;
+      }
     },
   });
 

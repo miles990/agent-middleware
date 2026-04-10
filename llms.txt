@@ -285,7 +285,8 @@ Workers are execution units. Each has a name, backend, model, and tools.
 | `webhook` | HTTP API call | External APIs, data fetching |
 | `logic` | Pure JS function | Transform, merge, format (deterministic) |
 | `middleware` | Forward to another middleware | Distributed orchestration |
-| Custom | Your own | Register via API |
+
+Create custom workers via `POST /workers` using any of the above backends.
 
 ### Create a Worker
 
