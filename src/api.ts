@@ -338,7 +338,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   // POST /workers — add a custom worker
   app.post('/workers', async (c) => {
     const body = await c.req.json<{
-      name: string; backend?: string; model?: string;
+      name: string; backend?: string; model?: string; vendor?: string;
       description?: string; prompt?: string; tools?: string[];
       maxTurns?: number; timeout?: number;
     }>();
