@@ -501,6 +501,55 @@ main {
 
 .dispatch-bar input:focus { border-color: var(--accent); }
 
+/* Gateway Backend Cards */
+.backend-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: border-color 0.2s;
+}
+
+.backend-card:hover { border-color: var(--border-active); }
+
+.backend-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.backend-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.backend-cmd {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.session-pills {
+  display: flex;
+  gap: 4px;
+}
+
+.session-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.session-pill.idle { background: var(--accent-dim); color: var(--accent); }
+.session-pill.busy { background: var(--info-dim); color: var(--info); }
+.session-pill.dead { background: var(--error-dim); color: var(--error); }
+
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; }
   .worker-grid { grid-template-columns: repeat(2, 1fr); }
@@ -547,14 +596,15 @@ main {
     </div>
   </div>
 
-  <!-- Plans Panel -->
+  <!-- ACP Gateway Panel -->
   <div class="panel">
     <div class="panel-header">
-      <span class="panel-title">Plans</span>
-      <span class="panel-badge" id="plan-badge">0 plans</span>
+      <span class="panel-title">ACP Gateway</span>
+      <button class="btn" onclick="openAddBackend()" style="font-size:11px;padding:4px 10px;">+ Add Backend</button>
     </div>
-    <div class="panel-body" id="plan-list">
-      <div class="empty"><div class="empty-icon">◇</div>No plans submitted yet</div>
+    <div class="panel-body">
+      <div id="gateway-stats" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:12px;"></div>
+      <div id="gateway-backends"></div>
     </div>
   </div>
 
@@ -621,6 +671,33 @@ main {
   </div>
 </div>
 
+<!-- Backend Add Modal -->
+<div class="modal-overlay" id="backend-modal">
+  <div class="modal">
+    <h2>Register CLI Backend</h2>
+    <div class="form-group">
+      <label>Name</label>
+      <input id="bm-name" placeholder="e.g. gemini">
+    </div>
+    <div class="form-group">
+      <label>Command</label>
+      <input id="bm-command" placeholder="e.g. gemini">
+    </div>
+    <div class="form-group">
+      <label>Args (comma-separated)</label>
+      <input id="bm-args" placeholder="--acp, --trust-all-tools">
+    </div>
+    <div class="form-group">
+      <label>Max Sessions</label>
+      <input id="bm-max" type="number" value="2">
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeBackendModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBackend()">Register</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = window.location.origin;
 let workers = {};
@@ -631,8 +708,10 @@ let editingWorker = null;
 async function init() {
   await loadWorkers();
   await loadTasks();
+  await loadGateway();
   connectSSE();
   setInterval(loadTasks, 10000);
+  setInterval(loadGateway, 15000);
 }
 
 // ─── Workers ───
@@ -862,6 +941,91 @@ async function deleteWorker() {
     renderWorkerSelect();
     closeModal();
   }
+}
+
+// ─── ACP Gateway ───
+let gatewayData = null;
+
+async function loadGateway() {
+  try {
+    const res = await fetch(`${API}/gateway`);
+    gatewayData = await res.json();
+    renderGateway();
+  } catch { /* offline */ }
+}
+
+function renderGateway() {
+  if (!gatewayData) return;
+  const stats = document.getElementById('gateway-stats');
+  stats.innerHTML = `Total dispatched: <span style="color:var(--text)">${gatewayData.totalDispatched}</span> · Backends: <span style="color:var(--text)">${gatewayData.backends.length}</span>`;
+
+  const container = document.getElementById('gateway-backends');
+  if (gatewayData.backends.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="empty-icon">⬡</div>No CLI backends registered<br><span style="font-size:11px;color:var(--text-muted)">Install a CLI (claude, kiro, codex) or add one manually</span></div>';
+    return;
+  }
+
+  container.innerHTML = gatewayData.backends.map(b => {
+    const s = b.sessions;
+    const healthDot = b.healthy ? `<span style="color:var(--accent)">●</span>` : `<span style="color:var(--error)">●</span>`;
+    const pills = [];
+    if (s.idle > 0) pills.push(`<span class="session-pill idle">${s.idle} idle</span>`);
+    if (s.busy > 0) pills.push(`<span class="session-pill busy">${s.busy} busy</span>`);
+    if (s.dead > 0) pills.push(`<span class="session-pill dead">${s.dead} dead</span>`);
+    const pillsHtml = pills.length > 0 ? pills.join('') : '<span style="font-size:10px;color:var(--text-muted)">no sessions</span>';
+    return `
+      <div class="backend-card">
+        <div class="backend-info">
+          ${healthDot}
+          <span class="backend-name">${b.name}</span>
+          <span class="backend-cmd">${b.command}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="session-pills">${pillsHtml}</div>
+          <button class="btn-icon" onclick="removeBackend('${b.name}')" title="Remove">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openAddBackend() {
+  document.getElementById('bm-name').value = '';
+  document.getElementById('bm-command').value = '';
+  document.getElementById('bm-args').value = '';
+  document.getElementById('bm-max').value = '2';
+  document.getElementById('backend-modal').classList.add('active');
+}
+
+function closeBackendModal() {
+  document.getElementById('backend-modal').classList.remove('active');
+}
+
+async function saveBackend() {
+  const data = {
+    name: document.getElementById('bm-name').value.trim(),
+    command: document.getElementById('bm-command').value.trim(),
+    args: document.getElementById('bm-args').value.split(',').map(s => s.trim()).filter(Boolean),
+    maxSessions: parseInt(document.getElementById('bm-max').value) || 2,
+  };
+  if (!data.name || !data.command) return;
+  try {
+    const res = await fetch(`${API}/gateway/backends`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (result.error) { alert(result.error); return; }
+    await loadGateway();
+    closeBackendModal();
+  } catch (e) { alert('Failed: ' + e); }
+}
+
+async function removeBackend(name) {
+  if (!confirm(`Remove backend "${name}"? Active sessions will be terminated.`)) return;
+  try {
+    await fetch(`${API}/gateway/backends/${name}`, { method: 'DELETE' });
+    await loadGateway();
+  } catch (e) { alert('Failed: ' + e); }
 }
 
 // ─── Status ───
