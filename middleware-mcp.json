@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "middleware": {
+      "command": "node",
+      "args": ["dist/mcp-server.js"],
+      "cwd": "/Users/user/Workspace/agent-middleware"
+    }
+  }
+}
