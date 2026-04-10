@@ -146,7 +146,18 @@ function parseStructuredOutput(output: string): StructuredOutput | undefined {
     const jsonMatch = output.match(/```json\s*([\s\S]*?)```/) ?? output.match(/(\{[\s\S]*"summary"[\s\S]*\})/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[1]);
-      if (parsed.summary) return parsed as StructuredOutput;
+      if (parsed.summary) {
+        // Map synthesis output fields to StructuredOutput
+        return {
+          summary: parsed.summary,
+          findings: parsed.findings ?? parsed.recommendations ?? [],
+          confidence: parsed.accepted === true ? 1.0 : parsed.accepted === false ? 0.2 : undefined,
+          artifacts: parsed.deliverable ? [{ type: 'deliverable', content: parsed.deliverable }] : parsed.artifacts,
+          // Preserve extra fields (accepted, gaps, etc.) for downstream use
+          ...(parsed.accepted !== undefined ? { accepted: parsed.accepted } : {}),
+          ...(parsed.gaps ? { gaps: parsed.gaps } : {}),
+        } as StructuredOutput;
+      }
     }
   } catch { /* not structured */ }
   return undefined;
@@ -337,9 +348,21 @@ export class PlanEngine {
             ? `\n# 驗收條件\n${plan.acceptance}\n`
             : '';
 
-          const defaultPrompt = plan.acceptance
-            ? `根據以上所有任務結果，達成目標「${plan.goal}」。\n驗收條件：${plan.acceptance}\n\n確認是否達成驗收條件。如果達成，產出最終交付物。如果未達成，明確說明哪些條件未滿足。`
-            : `根據以上所有任務結果，完整達成目標「${plan.goal}」。\n產出最終交付物：摘要、關鍵發現、具體建議（可操作的行動項目）。`;
+          const acceptanceInstruction = plan.acceptance
+            ? `\n驗收條件：${plan.acceptance}\n\n確認是否達成驗收條件。`
+            : '';
+
+          const defaultPrompt = `根據以上所有任務結果，完整達成目標「${plan.goal}」。${acceptanceInstruction}
+
+你的輸出必須是 JSON 格式（放在 \`\`\`json ... \`\`\` block 裡）：
+{
+  "accepted": boolean,
+  "summary": "一段話總結",
+  "findings": ["關鍵發現1", "關鍵發現2"],
+  "recommendations": ["具體建議1", "具體建議2"],
+  "gaps": ["未達成的項目（若有）"],
+  "deliverable": "最終交付物的完整內容"
+}`;
 
           const synthPrompt = [
             `# 目標\n${plan.goal}\n`,
@@ -564,14 +587,17 @@ function buildResult(plan: ActionPlan, results: Map<string, StepResult>, start: 
     digestParts.push(`\n⚠ Replan candidates: ${replanCandidates.map(s => `${s.id}(${s.reason})`).join(', ')}`);
   }
 
-  // Check acceptance
+  // Check acceptance via structured output (not regex — Akari review: "職責錯置")
+  // Synthesis worker returns { accepted: bool } in JSON — language-independent
   let accepted: boolean | null = null;
-  if (plan.acceptance && synthStep?.status === 'completed') {
-    // Simple heuristic: if synthesis mentions "達成" or "通過" and no failures, consider accepted
-    const synthText = (synthStep.output ?? '').toLowerCase();
-    const hasPositive = /達成|通過|pass|success|完成|滿足/.test(synthText);
-    const hasNegative = /未達成|失敗|fail|未滿足|not met/.test(synthText);
-    accepted = hasPositive && !hasNegative;
+  if (synthStep?.status === 'completed') {
+    const structured = synthStep.structured ?? parseStructuredOutput(synthStep.output ?? '');
+    if (structured && 'accepted' in (structured as Record<string, unknown>)) {
+      accepted = Boolean((structured as Record<string, unknown>).accepted);
+    } else if (plan.acceptance) {
+      // Fallback: if no structured output, check if any gap was reported
+      accepted = failedSteps.length === 0 && replanCandidates.length === 0;
+    }
   }
 
   return {
