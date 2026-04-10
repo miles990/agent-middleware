@@ -31,13 +31,20 @@ export function createGoogleProvider(opts?: GoogleProviderOptions): LLMProvider 
 
       contents.push({ role: 'user', parts: [{ text: promptStr }] });
 
-      // Handle multimodal images
+      // Handle multimodal content
       if (typeof prompt !== 'string') {
         for (const block of prompt) {
-          if (block.type === 'image' && block.source.type === 'base64') {
-            contents[0].parts.push({
-              inline_data: { mime_type: block.source.mediaType, data: block.source.data },
-            });
+          if (block.type === 'image') {
+            if (block.source.type === 'base64') {
+              contents[0].parts.push({
+                inline_data: { mime_type: block.source.mediaType, data: block.source.data },
+              });
+            } else {
+              // URL images — Gemini supports file_data for GCS URIs, fallback to text ref
+              contents[0].parts.push({ text: `[Image URL: ${block.source.data}]` });
+            }
+          } else if (block.type === 'file') {
+            contents[0].parts.push({ text: `[File: ${block.path}${block.mediaType ? ` (${block.mediaType})` : ''}]` });
           }
         }
       }

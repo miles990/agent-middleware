@@ -24,11 +24,27 @@ export function createLocalProvider(opts?: LocalProviderOptions): LLMProvider {
 
       if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
 
-      const promptStr = typeof prompt === 'string'
-        ? prompt
-        : prompt.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('\n\n');
-
-      messages.push({ role: 'user', content: promptStr });
+      // Local models: most support text only, some (LLaVA, Qwen-VL) support vision
+      // For vision models: pass images as base64 in OpenAI-compatible format
+      if (typeof prompt === 'string') {
+        messages.push({ role: 'user', content: prompt });
+      } else {
+        const parts: Array<Record<string, unknown>> = [];
+        for (const block of prompt) {
+          if (block.type === 'text') {
+            parts.push({ type: 'text', text: block.text });
+          } else if (block.type === 'image') {
+            if (block.source.type === 'url') {
+              parts.push({ type: 'image_url', image_url: { url: block.source.data } });
+            } else {
+              parts.push({ type: 'image_url', image_url: { url: `data:${block.source.mediaType};base64,${block.source.data}` } });
+            }
+          } else if (block.type === 'file') {
+            parts.push({ type: 'text', text: `[File: ${block.path}${block.mediaType ? ` (${block.mediaType})` : ''}]` });
+          }
+        }
+        messages.push({ role: 'user', content: parts as unknown as string });
+      }
 
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',

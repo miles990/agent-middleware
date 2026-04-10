@@ -16,6 +16,10 @@ export interface TaskRecord {
   task: string;
   status: TaskStatus;
   result?: string;
+  /** Structured output: files created, images generated */
+  files?: Array<{ path: string; mediaType?: string }>;
+  images?: Array<{ mediaType: string; data: string }>;
+  metadata?: Record<string, unknown>;
   error?: string;
   submittedAt: Date;
   startedAt?: Date;

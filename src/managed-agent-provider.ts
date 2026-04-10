@@ -102,14 +102,33 @@ export function createManagedAgentProvider(opts?: ManagedAgentProviderOptions): 
     async think(prompt: Prompt, systemPrompt: string): Promise<string> {
       if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set for Managed Agents');
 
-      const promptStr = typeof prompt === 'string'
-        ? prompt
-        : prompt.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('\n\n');
+      // Build multimodal content blocks for Messages API
+      let userContent: unknown;
+      if (typeof prompt === 'string') {
+        userContent = prompt;
+      } else {
+        const blocks: Array<Record<string, unknown>> = [];
+        for (const block of prompt) {
+          if (block.type === 'text') {
+            blocks.push({ type: 'text', text: block.text });
+          } else if (block.type === 'image') {
+            blocks.push({
+              type: 'image',
+              source: block.source.type === 'url'
+                ? { type: 'url', url: block.source.data }
+                : { type: 'base64', media_type: block.source.mediaType, data: block.source.data },
+            });
+          } else if (block.type === 'file') {
+            blocks.push({ type: 'text', text: `[File: ${block.path}${block.mediaType ? ` (${block.mediaType})` : ''}]` });
+          }
+        }
+        userContent = blocks;
+      }
 
       const body: Record<string, unknown> = {
         model,
         max_tokens: maxTokens,
-        messages: [{ role: 'user', content: promptStr }],
+        messages: [{ role: 'user', content: userContent }],
         ...(systemPrompt ? { system: systemPrompt } : {}),
         ...(tools.length > 0 ? { tools } : {}),
         ...(container ? { container: activeContainerId ? { id: activeContainerId, ...container } : container } : {}),
