@@ -1,21 +1,29 @@
 /**
  * Middleware HTTP API — agent-agnostic, any caller can use.
  *
- * POST /dispatch     — single task
- * POST /plan         — action plan (DAG)
- * GET  /status/:id   — task status
- * GET  /plan/:id     — plan status + all steps
- * GET  /pool         — worker pool status
- * GET  /events       — SSE event stream
- * DELETE /task/:id   — cancel task
- * GET  /health       — health check
+ * POST /dispatch      — single task
+ * POST /plan          — action plan (DAG)
+ * GET  /status/:id    — task status
+ * GET  /plan/:id      — plan status + all steps
+ * GET  /pool          — worker pool status
+ * GET  /events        — SSE event stream
+ * DELETE /task/:id    — cancel task
+ * GET  /health        — health check
+ * GET  /workers       — list all workers
+ * POST /workers       — add custom worker
+ * PUT  /workers/:name — update worker
+ * DELETE /workers/:name — remove worker
+ * GET  /dashboard     — management UI
  */
 
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PlanEngine, parsePlan, type ActionPlan } from './plan-engine.js';
 import { ResultBuffer, type TaskEvent } from './result-buffer.js';
-import { WORKERS, getWorkerNames } from './workers.js';
+import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import type { LLMProvider } from './llm-provider.js';
 import { execSync } from 'node:child_process';
@@ -31,10 +39,35 @@ export interface MiddlewareConfig {
 export function createMiddleware(config?: MiddlewareConfig) {
   const cwd = config?.cwd ?? process.cwd();
   const buffer = new ResultBuffer();
+  const customWorkers = new Map<string, WorkerDefinition>();
 
-  // Create per-worker LLM providers
+  // Load persisted custom workers
+  const customWorkersPath = path.join(cwd, 'workers.json');
+  try {
+    const raw = fs.readFileSync(customWorkersPath, 'utf-8');
+    const saved = JSON.parse(raw) as Record<string, WorkerDefinition>;
+    for (const [name, def] of Object.entries(saved)) {
+      customWorkers.set(name, def);
+    }
+  } catch { /* no saved workers — normal on first run */ }
+
+  const persistCustomWorkers = () => {
+    try {
+      const obj: Record<string, WorkerDefinition> = {};
+      for (const [name, def] of customWorkers) obj[name] = def;
+      fs.writeFileSync(customWorkersPath, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch { /* fail-open */ }
+  };
+
+  // Create per-worker LLM providers (built-in + custom)
   const workerProviders = new Map<string, LLMProvider>();
-  for (const [name, def] of Object.entries(WORKERS)) {
+  const allWorkers = (): Record<string, WorkerDefinition> => {
+    const all = { ...WORKERS };
+    for (const [name, def] of customWorkers) all[name] = def;
+    return all;
+  };
+
+  for (const [name, def] of Object.entries(allWorkers())) {
     if (def.backend === 'sdk') {
       workerProviders.set(name, createSdkProvider({
         model: def.agent.model ?? 'sonnet',
@@ -46,9 +79,9 @@ export function createMiddleware(config?: MiddlewareConfig) {
     }
   }
 
-  // Worker executor — routes to correct backend
+  // Worker executor — routes to correct backend (built-in + custom)
   const executeWorker = async (worker: string, task: string, timeoutMs: number): Promise<string> => {
-    const def = WORKERS[worker];
+    const def = allWorkers()[worker];
     if (!def) throw new Error(`Unknown worker: ${worker}`);
 
     switch (def.backend) {
@@ -91,7 +124,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
   const plans = new Map<string, { plan: ActionPlan; resultPromise: Promise<import('./plan-engine.js').PlanResult> }>();
   let planCounter = 0;
 
-  return { buffer, planEngine, executeWorker, workerProviders, plans, planCounter };
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, plans, planCounter };
 }
 
 // =============================================================================
@@ -238,6 +271,134 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const tasks = mw.buffer.list({ status, limit });
     return c.json({ tasks, total: tasks.length });
   });
+
+  // ─── Worker CRUD API ───
+  // Custom workers are stored in runtime + persisted to workers.json
+
+  // GET /workers — list all workers (built-in + custom)
+  app.get('/workers', (c) => {
+    const all = Object.entries(WORKERS).map(([name, def]) => ({
+      name,
+      backend: def.backend,
+      model: def.agent.model,
+      description: def.agent.description,
+      prompt: def.agent.prompt,
+      tools: def.agent.tools,
+      maxTurns: def.agent.maxTurns,
+      timeout: def.defaultTimeoutSeconds,
+      builtin: true,
+    }));
+    // Add custom workers from runtime
+    for (const [name, def] of mw.customWorkers) {
+      all.push({
+        name,
+        backend: def.backend,
+        model: def.agent.model,
+        description: def.agent.description,
+        prompt: def.agent.prompt,
+        tools: def.agent.tools,
+        maxTurns: def.agent.maxTurns,
+        timeout: def.defaultTimeoutSeconds,
+        builtin: false,
+      });
+    }
+    return c.json({ workers: all });
+  });
+
+  // POST /workers — add a custom worker
+  app.post('/workers', async (c) => {
+    const body = await c.req.json<{
+      name: string; backend?: string; model?: string;
+      description?: string; prompt?: string; tools?: string[];
+      maxTurns?: number; timeout?: number;
+    }>();
+    if (!body.name) return c.json({ error: 'name required' }, 400);
+    if (WORKERS[body.name]) return c.json({ error: 'cannot override built-in worker' }, 400);
+
+    const def: WorkerDefinition = {
+      agent: {
+        description: body.description ?? `Custom worker: ${body.name}`,
+        tools: body.tools ?? ['Read', 'Grep', 'Glob', 'Bash'],
+        prompt: body.prompt ?? 'You are a helpful assistant.',
+        model: body.model ?? 'sonnet',
+        maxTurns: body.maxTurns ?? 10,
+      },
+      backend: (body.backend ?? 'sdk') as WorkerDefinition['backend'],
+      defaultTimeoutSeconds: body.timeout ?? 120,
+    };
+
+    mw.customWorkers.set(body.name, def);
+    // Also register SDK provider if sdk backend
+    if (def.backend === 'sdk') {
+      mw.workerProviders.set(body.name, createSdkProvider({
+        model: def.agent.model ?? 'sonnet',
+        cwd: config?.cwd ?? process.cwd(),
+        allowedTools: def.agent.tools as string[] | undefined,
+        maxTurns: def.agent.maxTurns,
+        maxBudgetUsd: 5,
+      }));
+    }
+    mw.persistCustomWorkers();
+    return c.json({ ok: true, name: body.name });
+  });
+
+  // PUT /workers/:name — update a custom worker
+  app.put('/workers/:name', async (c) => {
+    const name = c.req.param('name');
+    if (WORKERS[name]) return c.json({ error: 'cannot modify built-in worker' }, 400);
+    if (!mw.customWorkers.has(name)) return c.json({ error: 'worker not found' }, 404);
+
+    const body = await c.req.json<{
+      backend?: string; model?: string; description?: string;
+      prompt?: string; tools?: string[]; maxTurns?: number; timeout?: number;
+    }>();
+
+    const existing = mw.customWorkers.get(name)!;
+    const updated: WorkerDefinition = {
+      agent: {
+        description: body.description ?? existing.agent.description,
+        tools: body.tools ?? existing.agent.tools,
+        prompt: body.prompt ?? existing.agent.prompt,
+        model: body.model ?? existing.agent.model,
+        maxTurns: body.maxTurns ?? existing.agent.maxTurns,
+      },
+      backend: (body.backend ?? existing.backend) as WorkerDefinition['backend'],
+      defaultTimeoutSeconds: body.timeout ?? existing.defaultTimeoutSeconds,
+    };
+
+    mw.customWorkers.set(name, updated);
+    if (updated.backend === 'sdk') {
+      mw.workerProviders.set(name, createSdkProvider({
+        model: updated.agent.model ?? 'sonnet',
+        cwd: config?.cwd ?? process.cwd(),
+        allowedTools: updated.agent.tools as string[] | undefined,
+        maxTurns: updated.agent.maxTurns,
+        maxBudgetUsd: 5,
+      }));
+    }
+    mw.persistCustomWorkers();
+    return c.json({ ok: true, name });
+  });
+
+  // DELETE /workers/:name — remove a custom worker
+  app.delete('/workers/:name', (c) => {
+    const name = c.req.param('name');
+    if (WORKERS[name]) return c.json({ error: 'cannot delete built-in worker' }, 400);
+    if (!mw.customWorkers.has(name)) return c.json({ error: 'worker not found' }, 404);
+    mw.customWorkers.delete(name);
+    mw.workerProviders.delete(name);
+    mw.persistCustomWorkers();
+    return c.json({ ok: true });
+  });
+
+  // ─── Dashboard ───
+  app.get('/dashboard', (c) => {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf-8');
+    return c.html(html);
+  });
+  // Redirect root to dashboard
+  app.get('/', (c) => c.redirect('/dashboard'));
 
   return app;
 }
