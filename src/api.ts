@@ -25,6 +25,7 @@ import { PlanEngine, parsePlan, type ActionPlan } from './plan-engine.js';
 import { ResultBuffer, type TaskEvent } from './result-buffer.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
+import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.js';
 import type { LLMProvider } from './llm-provider.js';
 import { execSync } from 'node:child_process';
 
@@ -50,6 +51,9 @@ export function createMiddleware(config?: MiddlewareConfig) {
       customWorkers.set(name, def);
     }
   } catch { /* no saved workers — normal on first run */ }
+
+  // ACP Gateway — session pool for cross-CLI backends
+  const acpGateway = createGateway();
 
   const persistCustomWorkers = () => {
     try {
@@ -106,8 +110,9 @@ export function createMiddleware(config?: MiddlewareConfig) {
         }
       }
       case 'acp': {
-        // TODO: implement ACP session pool dispatch
-        throw new Error(`ACP backend not yet implemented for worker: ${worker}`);
+        const acpCommand = def.acpCommand ?? 'claude';
+        const taskStr = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('\n');
+        return acpGateway.dispatch(acpCommand, taskStr, timeoutMs);
       }
       default:
         throw new Error(`Unknown backend: ${def.backend}`);
@@ -125,7 +130,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
   const plans = new Map<string, { plan: ActionPlan; resultPromise: Promise<import('./plan-engine.js').PlanResult> }>();
   let planCounter = 0;
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, plans, planCounter };
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, plans, planCounter };
 }
 
 // =============================================================================
@@ -240,15 +245,16 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return ok ? c.json({ ok: true }) : c.json({ error: 'cannot cancel' }, 400);
   });
 
-  // GET /pool — worker pool status
+  // GET /pool — worker pool + ACP gateway status
   app.get('/pool', (c) => {
-    const pool = Object.entries(WORKERS).map(([name, def]) => ({
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const pool = Object.entries(allW).map(([name, def]) => ({
       name,
       backend: def.backend,
       model: def.agent.model,
       timeout: def.defaultTimeoutSeconds,
     }));
-    return c.json({ workers: pool });
+    return c.json({ workers: pool, gateway: mw.acpGateway.getStats() });
   });
 
   // GET /events — SSE stream
@@ -401,6 +407,43 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     mw.workerProviders.delete(name);
     mw.persistCustomWorkers();
     return c.json({ ok: true });
+  });
+
+  // ─── ACP Gateway API ───
+
+  // GET /gateway — gateway stats (backends, sessions, dispatch count)
+  app.get('/gateway', (c) => {
+    return c.json(mw.acpGateway.getStats());
+  });
+
+  // POST /gateway/backends — register a new CLI backend
+  app.post('/gateway/backends', async (c) => {
+    const body = await c.req.json<CLIBackend>();
+    if (!body.name || !body.command) return c.json({ error: 'name and command required' }, 400);
+    body.maxSessions ??= 2;
+    body.args ??= [];
+    mw.acpGateway.register(body);
+    return c.json({ ok: true, name: body.name });
+  });
+
+  // DELETE /gateway/backends/:name — unregister a CLI backend
+  app.delete('/gateway/backends/:name', (c) => {
+    const name = c.req.param('name');
+    mw.acpGateway.unregister(name);
+    return c.json({ ok: true });
+  });
+
+  // POST /gateway/dispatch — dispatch directly to ACP (bypass worker routing)
+  app.post('/gateway/dispatch', async (c) => {
+    const body = await c.req.json<{ backend: string; task: string; timeout?: number }>();
+    if (!body.backend || !body.task) return c.json({ error: 'backend and task required' }, 400);
+    const timeoutMs = (body.timeout ?? 120) * 1000;
+    const taskId = mw.buffer.submit({ worker: `acp:${body.backend}`, task: body.task });
+    mw.buffer.start(taskId);
+    mw.acpGateway.dispatch(body.backend, body.task, timeoutMs)
+      .then(result => mw.buffer.complete(taskId, result))
+      .catch(err => mw.buffer.fail(taskId, err instanceof Error ? err.message : String(err)));
+    return c.json({ taskId, status: 'running', backend: body.backend });
   });
 
   // ─── Dashboard ───

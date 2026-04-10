@@ -14,4 +14,6 @@ export { ResultBuffer } from './result-buffer.js';
 export { WORKERS, getSdkAgentDefinitions, getWorkerNames } from './workers.js';
 export { createSdkProvider } from './sdk-provider.js';
 export { createBrain } from './brain.js';
+export { ACPGateway, createGateway, DEFAULT_BACKENDS } from './acp-gateway.js';
+export type { CLIBackend, ACPSession, GatewayStats } from './acp-gateway.js';
 export { createRouter, createMiddleware } from './api.js';
