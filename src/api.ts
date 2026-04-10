@@ -546,10 +546,15 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const tpl = PLAN_TEMPLATES.find(t => t.name === body.template);
     if (!tpl) return c.json({ error: `Unknown template: ${body.template}` }, 400);
 
-    // Instantiate template — replace {{param}} in goal, steps, tasks
+    // Validate required params
+    const missing = tpl.params.filter(p => p.required && !body.params[p.name]);
+    if (missing.length > 0) return c.json({ error: 'missing_params', missing: missing.map(p => p.name) }, 400);
+
+    // Instantiate template — replace all params (required + optional fallback to empty)
     let planJson = JSON.stringify(tpl.plan);
-    for (const [k, v] of Object.entries(body.params)) {
-      planJson = planJson.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+    for (const param of tpl.params) {
+      const value = body.params[param.name] ?? '';
+      planJson = planJson.replaceAll(`{{${param.name}}}`, value);
     }
     const plan = JSON.parse(planJson) as ActionPlan;
 

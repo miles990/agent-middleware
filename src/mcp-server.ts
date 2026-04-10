@@ -242,6 +242,20 @@ server.tool(
   },
 );
 
+// ─── Plan from Template ───
+server.tool(
+  'middleware_plan_from_template',
+  'Create and execute a plan from a template. One-liner — just template name + params.',
+  { template: z.string().describe('Template name: codebase-analysis, research-report, deploy-verify'),
+    params: z.record(z.string()).describe('Template parameters, e.g. { "target": "/path/to/repo" }') },
+  async ({ template, params }) => {
+    const result = await mwFetch('/plan/from-template', {
+      method: 'POST', body: JSON.stringify({ template, params, caller: 'mcp' }),
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
 // ─── Start ───
 async function main() {
   const transport = new StdioServerTransport();

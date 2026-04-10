@@ -244,6 +244,9 @@ If connected via MCP, you have these tools:
 | `middleware_create_preset` | Create a custom preset |
 | `middleware_delete_preset` | Remove a custom preset |
 | `middleware_gateway` | ACP gateway status |
+| `middleware_plan_validate` | Dry-run plan validation (catches cycles, unknown workers) |
+| `middleware_templates` | List available plan templates |
+| `middleware_plan_from_template` | Create plan from template with params (one-liner) |
 
 ### MCP Config
 

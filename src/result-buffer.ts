@@ -204,6 +204,14 @@ export class ResultBuffer {
       }
     }
 
+    // Compact JSONL: rewrite with only active + archived tasks (remove expired)
+    if ((archivedCount > 0 || expiredCount > 0) && this.persistPath) {
+      try {
+        const allRecords = [...this.tasks.values(), ...this.archived.values()];
+        fs.writeFileSync(this.persistPath, allRecords.map(r => JSON.stringify(r)).join('\n') + '\n');
+      } catch { /* fail-open */ }
+    }
+
     return { archived: archivedCount, expired: expiredCount };
   }
 
