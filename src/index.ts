@@ -16,6 +16,8 @@ export { createSdkProvider } from './sdk-provider.js';
 export { createOpenAIProvider } from './openai-provider.js';
 export { createGoogleProvider } from './google-provider.js';
 export { createLocalProvider } from './local-provider.js';
+export { createManagedAgentProvider } from './managed-agent-provider.js';
+export type { ManagedAgentProviderOptions } from './managed-agent-provider.js';
 export { createProvider, listVendors } from './provider-registry.js';
 export type { Vendor, ProviderConfig } from './provider-registry.js';
 export { createBrain } from './brain.js';

@@ -97,6 +97,13 @@ const BUILTIN_PRESETS: WorkerPreset[] = [
     model: 'opus', vendor: 'anthropic', backend: 'sdk',
     timeout: 300, maxTurns: 20, builtin: true,
   },
+  {
+    name: 'cloud-agent',
+    description: 'Anthropic Managed Agent — cloud sandbox with web search + code execution. No local tools.',
+    tools: [],
+    model: 'claude-sonnet-4-6', vendor: 'anthropic-managed', backend: 'sdk',
+    timeout: 180, maxTurns: 10, builtin: true,
+  },
 ];
 
 // =============================================================================

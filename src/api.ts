@@ -90,9 +90,9 @@ export function createMiddleware(config?: MiddlewareConfig) {
           maxBudgetUsd: 5,
         }));
       } else {
-        // Other vendors use direct API (no tool use, simpler)
+        // Other vendors (openai, google, local, anthropic-managed) use direct API
         workerProviders.set(name, createProvider({
-          vendor,
+          vendor: vendor as import('./provider-registry.js').Vendor,
           model: def.agent.model,
         }));
       }

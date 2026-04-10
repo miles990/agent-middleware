@@ -12,8 +12,9 @@ import { createSdkProvider, type SdkProviderOptions } from './sdk-provider.js';
 import { createOpenAIProvider, type OpenAIProviderOptions } from './openai-provider.js';
 import { createGoogleProvider, type GoogleProviderOptions } from './google-provider.js';
 import { createLocalProvider, type LocalProviderOptions } from './local-provider.js';
+import { createManagedAgentProvider, type ManagedAgentProviderOptions } from './managed-agent-provider.js';
 
-export type Vendor = 'anthropic' | 'openai' | 'google' | 'local';
+export type Vendor = 'anthropic' | 'anthropic-managed' | 'openai' | 'google' | 'local';
 
 export interface ProviderConfig {
   vendor: Vendor;
@@ -24,10 +25,11 @@ export interface ProviderConfig {
 
 /** Default models per vendor */
 const VENDOR_DEFAULTS: Record<Vendor, { model: string; description: string }> = {
-  anthropic: { model: 'sonnet', description: 'Claude (Anthropic Agent SDK, subscription auth)' },
-  openai:    { model: 'gpt-4o', description: 'GPT-4o (OpenAI API, requires OPENAI_API_KEY)' },
-  google:    { model: 'gemini-2.0-flash', description: 'Gemini (Google AI Studio, requires GOOGLE_API_KEY)' },
-  local:     { model: 'llama3:8b', description: 'Local LLM (Ollama/llama.cpp/vLLM, requires running server)' },
+  'anthropic':         { model: 'sonnet', description: 'Claude (Agent SDK, subscription auth, tool use)' },
+  'anthropic-managed': { model: 'claude-sonnet-4-6', description: 'Claude Managed Agents (cloud sandbox, web search, code exec, ANTHROPIC_API_KEY)' },
+  'openai':            { model: 'gpt-4o', description: 'GPT-4o (OpenAI API, requires OPENAI_API_KEY)' },
+  'google':            { model: 'gemini-2.0-flash', description: 'Gemini (Google AI Studio, requires GOOGLE_API_KEY)' },
+  'local':             { model: 'llama3:8b', description: 'Local LLM (Ollama/llama.cpp/vLLM, requires running server)' },
 };
 
 /**
@@ -41,6 +43,12 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       return createSdkProvider({
         model,
         ...(config.options as SdkProviderOptions ?? {}),
+      });
+
+    case 'anthropic-managed':
+      return createManagedAgentProvider({
+        model,
+        ...(config.options as ManagedAgentProviderOptions ?? {}),
       });
 
     case 'openai':

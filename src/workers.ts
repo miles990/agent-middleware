@@ -89,6 +89,19 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'sdk',
     defaultTimeoutSeconds: 60,
   },
+
+  'cloud-agent': {
+    agent: {
+      description: 'Cloud-hosted managed agent with web search and code execution. No local tools needed — runs in Anthropic sandbox. Use for: tasks requiring internet access, running untrusted code, isolated execution.',
+      tools: [],
+      prompt: 'You are a cloud-hosted research and execution agent. You have web search and code execution in a sandbox. Complete the task and return results.',
+      model: 'claude-sonnet-4-6',
+      maxTurns: 10,
+    },
+    backend: 'sdk',
+    vendor: 'anthropic-managed',
+    defaultTimeoutSeconds: 180,
+  },
 };
 
 /** Get AgentDefinitions for brain's SDK options (SDK workers only) */
