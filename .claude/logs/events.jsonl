@@ -1,0 +1,56 @@
+{
+  "id": "evt_20260410_135112_5ff50f",
+  "timestamp": "2026-04-10T05:51:12.000Z",
+  "session_id": "unknown",
+  "workflow_id": "general",
+  "event_type": "tool_call",
+  "phase": "pre",
+  "tool_name": "unknown",
+  "data": {},
+  "status": "pending"
+}
+{
+  "id": "evt_20260410_135112_303606",
+  "timestamp": "2026-04-10T05:51:12.000Z",
+  "session_id": "unknown",
+  "workflow_id": "general",
+  "event_type": "tool_call",
+  "phase": "post",
+  "tool_name": "unknown",
+  "data": {
+    "output_length": 0,
+    "output_preview": null,
+    "exit_code": 0
+  },
+  "duration_ms": 0,
+  "status": "success",
+  "related_event": "evt_20260410_135112_5ff50f"
+}
+{
+  "id": "evt_20260410_135132_1bb553",
+  "timestamp": "2026-04-10T05:51:32.000Z",
+  "session_id": "unknown",
+  "workflow_id": "general",
+  "event_type": "tool_call",
+  "phase": "pre",
+  "tool_name": "unknown",
+  "data": {},
+  "status": "pending"
+}
+{
+  "id": "evt_20260410_135133_65ebbe",
+  "timestamp": "2026-04-10T05:51:33.000Z",
+  "session_id": "unknown",
+  "workflow_id": "general",
+  "event_type": "tool_call",
+  "phase": "post",
+  "tool_name": "unknown",
+  "data": {
+    "output_length": 0,
+    "output_preview": null,
+    "exit_code": 0
+  },
+  "duration_ms": 0,
+  "status": "success",
+  "related_event": "evt_20260410_135132_1bb553"
+}

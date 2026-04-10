@@ -37,6 +37,16 @@ export interface PlanStep {
 export interface ActionPlan {
   goal: string;
   steps: PlanStep[];
+  /**
+   * Synthesis config — every plan auto-synthesizes results using the goal.
+   * Set to false to disable (rare — only for fire-and-forget plans).
+   * Override worker/prompt for custom synthesis behavior.
+   */
+  synthesis?: false | {
+    worker?: string;
+    prompt?: string;
+    label?: string;
+  };
   afterExecution?: 'digest' | 'continue';
 }
 
@@ -201,6 +211,56 @@ export class PlanEngine {
     const workerRunning = new Map<string, number>();
 
     return new Promise<PlanResult>((resolve) => {
+      // Finalize: auto-synthesize results to achieve the plan's goal.
+      // Every plan synthesizes by default — goal IS the synthesis instruction.
+      // Set synthesis: false to disable (fire-and-forget plans only).
+      const finalize = async () => {
+        if (plan.synthesis !== false) {
+          const synthConfig = typeof plan.synthesis === 'object' ? plan.synthesis : {};
+          const synthWorker = synthConfig.worker ?? 'analyst';
+          const synthLabel = synthConfig.label ?? '達成目標：匯總分析';
+          const synthId = '__synthesis__';
+
+          // Build context from all completed steps
+          const completedSteps = [...results.values()].filter(r => r.status === 'completed');
+          const context = completedSteps.map(s => {
+            const label = s.structured?.summary ? `## ${s.id}\n${s.structured.summary}` : `## ${s.id}\n${s.output?.slice(0, 2000) ?? ''}`;
+            return label;
+          }).join('\n\n');
+
+          // Goal-driven synthesis: the plan's goal is the convergence condition
+          const synthPrompt = [
+            `# 目標\n${plan.goal}\n\n`,
+            `# 收集到的資料\n以下是為達成目標而執行的所有任務結果：\n\n${context}\n\n`,
+            `# 你的任務\n`,
+            synthConfig.prompt ?? `根據以上收集到的資料，完整達成目標「${plan.goal}」。\n產出一份結構化的報告：\n1. 摘要（一段話總結）\n2. 關鍵發現（列點）\n3. 具體建議（可操作的行動項目）\n\n用清楚、有邏輯的方式呈現，讓讀者看完就知道結論和下一步。`,
+          ].join('');
+
+          this.onStepDispatch?.({ id: synthId, worker: synthWorker, task: synthPrompt, label: synthLabel, dependsOn: [] });
+
+          try {
+            const synthStart = Date.now();
+            const output = await this.executor(synthWorker, synthPrompt, 180_000);
+            const structured = parseStructuredOutput(output);
+            const synthResult: StepResult = {
+              id: synthId, worker: synthWorker, status: 'completed',
+              output, structured, durationMs: Date.now() - synthStart, dispatchOrder: dispatchOrder++,
+            };
+            results.set(synthId, synthResult);
+            this.onStepComplete?.(synthResult);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const synthResult: StepResult = {
+              id: synthId, worker: synthWorker, status: 'failed',
+              output: msg, durationMs: 0, dispatchOrder: dispatchOrder++,
+            };
+            results.set(synthId, synthResult);
+            this.onStepComplete?.(synthResult);
+          }
+        }
+        resolve(buildResult(plan, results, start));
+      };
+
       const tryDispatch = () => {
         if (aborted) return; // cancel-all: stop dispatching
 
@@ -289,13 +349,13 @@ export class PlanEngine {
                   }
                 }
                 // Wait for running steps to finish naturally, then resolve
-                if (running.size === 0) resolve(buildResult(plan, results, start));
+                if (running.size === 0) finalize();
                 return;
               }
 
               // Check if all done
               if (results.size === plan.steps.length && running.size === 0) {
-                resolve(buildResult(plan, results, start));
+                finalize();
               } else {
                 tryDispatch();
               }
@@ -313,7 +373,7 @@ export class PlanEngine {
               });
             }
           }
-          resolve(buildResult(plan, results, start));
+          finalize();
         }
       };
 

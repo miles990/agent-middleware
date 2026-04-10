@@ -224,7 +224,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   // POST /plan — submit action plan
   app.post('/plan', async (c) => {
     const body = await c.req.json<ActionPlan & { caller?: string }>();
-    const plan: ActionPlan = { goal: body.goal, steps: body.steps };
+    const plan: ActionPlan = { goal: body.goal, steps: body.steps, synthesis: body.synthesis };
 
     // Validate
     const errors = mw.planEngine.validate(plan, new Set(getWorkerNames()));
