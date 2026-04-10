@@ -452,6 +452,19 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ ok: true });
   });
 
+  // ─── Archived (Achieved) API ───
+
+  // GET /archived — completed tasks moved from main list
+  app.get('/archived', (c) => {
+    const limit = parseInt(c.req.query('limit') ?? '50');
+    return c.json({ tasks: mw.buffer.getArchived(limit) });
+  });
+
+  // Periodic cleanup: archive completed tasks after 1h, expire after 7d
+  setInterval(() => {
+    mw.buffer.cleanup({ archiveAfterMs: 3_600_000, expireAfterMs: 7 * 24 * 3_600_000 });
+  }, 60_000);
+
   // ─── Presets API ───
 
   // GET /presets — list all presets

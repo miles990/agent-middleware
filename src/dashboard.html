@@ -220,6 +220,7 @@ header { display: flex; align-items: center; justify-content: space-between; pad
   <div class="tab" onclick="switchTab('plans')">PLANS</div>
   <div class="tab" onclick="switchTab('workers')">WORKERS</div>
   <div class="tab" onclick="switchTab('gateway')">GATEWAY</div>
+  <div class="tab" onclick="switchTab('achieved')">ACHIEVED</div>
   <div class="tab" onclick="switchTab('events')">EVENTS</div>
 </div>
 
@@ -253,6 +254,12 @@ header { display: flex; align-items: center; justify-content: space-between; pad
     <button class="btn btn-sm" onclick="openAddBackend()">+ Add Backend</button>
   </div>
   <div id="gateway-backends"></div>
+</div>
+
+<!-- Achieved -->
+<div class="panel-area" id="panel-achieved">
+  <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:10px;">Completed tasks auto-move here after 1 hour. Removed after 7 days.</div>
+  <div id="achieved-list"><div class="empty"><div class="empty-icon">✓</div>No archived tasks yet</div></div>
 </div>
 
 <!-- Events -->
@@ -320,6 +327,8 @@ function switchTab(name) {
   document.querySelectorAll('.panel-area').forEach(p => p.classList.remove('active'));
   document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
   document.getElementById(`panel-${name}`).classList.add('active');
+  if (name === 'achieved') loadAchieved();
+  if (name === 'plans') renderPlans();
 }
 
 // ─── Workers ───
@@ -563,6 +572,40 @@ async function deleteWorker() { if(!editingWorker||!confirm(`Delete "${editingWo
 function openAddBackend() { ['bm-name','bm-command','bm-args'].forEach(id=>document.getElementById(id).value=''); document.getElementById('bm-max').value='2'; document.getElementById('backend-modal').classList.add('active'); }
 async function saveBackend() { const d={name:document.getElementById('bm-name').value.trim(),command:document.getElementById('bm-command').value.trim(),args:document.getElementById('bm-args').value.split(',').map(s=>s.trim()).filter(Boolean),maxSessions:parseInt(document.getElementById('bm-max').value)||2}; if(!d.name||!d.command)return; await fetch(`${API}/gateway/backends`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); await loadGateway(); closeModal('backend-modal'); }
 async function removeBackend(name) { if(!confirm(`Remove "${name}"?`))return; await fetch(`${API}/gateway/backends/${name}`,{method:'DELETE'}); await loadGateway(); }
+
+// ─── Achieved ───
+async function loadAchieved() {
+  try {
+    const res = await fetch(`${API}/archived?limit=50`);
+    const data = await res.json();
+    renderAchieved(data.tasks);
+  } catch {}
+}
+
+function renderAchieved(achieved) {
+  const list = document.getElementById('achieved-list');
+  if (!achieved?.length) { list.innerHTML = '<div class="empty"><div class="empty-icon">✓</div>No archived tasks yet</div>'; return; }
+  list.innerHTML = achieved.map(t => {
+    const dur = t.durationMs ? `${(t.durationMs/1000).toFixed(1)}s` : '';
+    const date = t.completedAt ? new Date(t.completedAt).toLocaleString('zh-TW', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    const label = t.label || (typeof t.task === 'string' ? t.task?.slice(0,80) : t.id);
+    const statusIcon = t.status === 'completed' ? '✅' : t.status === 'failed' ? '❌' : '⏭';
+    return `<div class="task-item" onclick="this.classList.toggle('expanded')" style="opacity:0.8;">
+      <div class="task-header">
+        <div style="font-size:12px">${statusIcon}</div>
+        <div>
+          <div class="task-worker">${t.worker} <span style="color:var(--text-muted);font-weight:300">${t.status}</span></div>
+          <div class="task-desc">${escHtml(label)}</div>
+        </div>
+        <div class="task-meta">${dur}<br>${date}</div>
+      </div>
+      <div class="task-detail">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;">ID: ${t.id}${t.planId ? ` · Plan: ${t.planId}` : ''}</div>
+        <pre>${escHtml((typeof t.result === 'string' ? t.result : JSON.stringify(t.result,null,2))?.slice(0,2000) || '')}</pre>
+      </div>
+    </div>`;
+  }).join('');
+}
 
 // ─── Utils ───
 function setOnline() { document.getElementById('status-dot').className='status-dot'; document.getElementById('status-text').textContent='connected'; }

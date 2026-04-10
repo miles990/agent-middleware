@@ -131,18 +131,47 @@ export class ResultBuffer {
     return () => this.listeners.delete(listener);
   }
 
-  /** Cleanup old completed tasks (keep last N) */
-  cleanup(keepLast: number = 100): number {
-    const completed = [...this.tasks.values()]
-      .filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
-      .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0));
+  /** Move completed tasks to archived after archiveAfterMs (default 1 hour) */
+  private archived = new Map<string, TaskRecord>();
 
-    let removed = 0;
-    for (const task of completed.slice(keepLast)) {
-      this.tasks.delete(task.id);
-      removed++;
+  /** Get archived (achieved) tasks */
+  getArchived(limit: number = 50): TaskRecord[] {
+    return [...this.archived.values()]
+      .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0))
+      .slice(0, limit);
+  }
+
+  /**
+   * Archive completed tasks older than archiveAfterMs.
+   * Remove archived tasks older than expireAfterMs.
+   * Called periodically.
+   */
+  cleanup(opts?: { archiveAfterMs?: number; expireAfterMs?: number }): { archived: number; expired: number } {
+    const archiveAfter = opts?.archiveAfterMs ?? 3_600_000;  // 1 hour → move to achieved
+    const expireAfter = opts?.expireAfterMs ?? 7 * 24 * 3_600_000; // 7 days → remove
+    const now = Date.now();
+    let archivedCount = 0;
+    let expiredCount = 0;
+
+    // Archive: completed tasks older than archiveAfter → move from tasks to archived
+    for (const [id, task] of this.tasks) {
+      if ((task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled')
+        && task.completedAt && (now - task.completedAt.getTime()) > archiveAfter) {
+        this.archived.set(id, task);
+        this.tasks.delete(id);
+        archivedCount++;
+      }
     }
-    return removed;
+
+    // Expire: archived tasks older than expireAfter → remove completely
+    for (const [id, task] of this.archived) {
+      if (task.completedAt && (now - task.completedAt.getTime()) > expireAfter) {
+        this.archived.delete(id);
+        expiredCount++;
+      }
+    }
+
+    return { archived: archivedCount, expired: expiredCount };
   }
 
   private emit(event: TaskEvent): void {
