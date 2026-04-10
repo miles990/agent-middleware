@@ -10,550 +10,179 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #0a0a0c;
-  --surface: #111115;
-  --surface-2: #1a1a20;
-  --border: #2a2a35;
-  --border-active: #3a3a48;
+  --bg: #08080b;
+  --surface: #0e0e13;
+  --surface-2: #16161e;
+  --surface-3: #1e1e28;
+  --border: #252530;
+  --border-active: #35354a;
   --text: #e0e0e8;
   --text-dim: #6a6a78;
-  --text-muted: #4a4a58;
+  --text-muted: #45455a;
   --accent: #00d4aa;
-  --accent-dim: #00d4aa33;
+  --accent-dim: #00d4aa22;
   --warn: #f5a623;
-  --warn-dim: #f5a62333;
+  --warn-dim: #f5a62322;
   --error: #e74c5e;
-  --error-dim: #e74c5e33;
+  --error-dim: #e74c5e22;
   --success: #00d4aa;
   --info: #5b8def;
-  --info-dim: #5b8def33;
+  --info-dim: #5b8def22;
+  --purple: #a78bfa;
+  --purple-dim: #a78bfa22;
   --mono: 'JetBrains Mono', monospace;
   --sans: 'Instrument Sans', sans-serif;
+  --radius: 6px;
 }
 
-body {
-  font-family: var(--sans);
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  overflow-x: hidden;
-}
-
-/* Noise overlay */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 9999;
-}
+body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; }
+body::before { content: ''; position: fixed; inset: 0; background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E"); pointer-events: none; z-index: 9999; }
 
 /* Header */
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo-icon {
-  width: 32px;
-  height: 32px;
-  background: var(--accent);
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--bg);
-}
-
-.logo h1 {
-  font-family: var(--mono);
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-}
-
+header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 5px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 11px; color: var(--bg); }
+.logo h1 { font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.5px; }
 .logo h1 span { color: var(--text-dim); font-weight: 300; }
-
-.header-status {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.status-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: pulse 2s ease infinite;
-}
-
+.header-right { display: flex; align-items: center; gap: 14px; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2s ease infinite; }
 .status-dot.offline { background: var(--error); animation: none; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-/* Main Grid */
-main {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr;
-  gap: 1px;
-  background: var(--border);
-  min-height: calc(100vh - 57px);
-}
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 20px; }
+.tab { font-family: var(--mono); font-size: 11px; padding: 10px 16px; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; letter-spacing: 0.5px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: var(--accent-dim); color: var(--accent); margin-left: 6px; }
 
 /* Panels */
-.panel {
-  background: var(--surface);
-  padding: 20px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+.panel-area { display: none; padding: 16px 20px; min-height: calc(100vh - 90px); }
+.panel-area.active { display: block; }
 
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  flex-shrink: 0;
-}
+/* Grid layouts */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
-.panel-title {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: var(--text-dim);
-}
+/* Cards */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.card-title { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); }
+.card-body { max-height: 500px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 
-.panel-badge {
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  background: var(--accent-dim);
-  color: var(--accent);
-}
+/* Worker cards */
+.worker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.worker-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; cursor: pointer; transition: all 0.15s; position: relative; }
+.worker-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.worker-card .name { font-family: var(--mono); font-size: 12px; font-weight: 500; margin-bottom: 3px; }
+.worker-card .meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tag { font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 2px; letter-spacing: 0.3px; }
+.tag.sdk { background: var(--accent-dim); color: var(--accent); }
+.tag.shell { background: var(--warn-dim); color: var(--warn); }
+.tag.acp { background: var(--info-dim); color: var(--info); }
+.tag.middleware { background: var(--purple-dim); color: var(--purple); }
+.tag.custom { background: var(--warn-dim); color: var(--warn); font-size: 8px; }
+.worker-status { font-size: 10px; margin-top: 4px; }
 
-.panel-body {
-  flex: 1;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-/* Worker Cards */
-.worker-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.worker-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  cursor: pointer;
-  transition: border-color 0.2s, transform 0.15s;
-  position: relative;
-}
-
-.worker-card:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-}
-
-.worker-card .name {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.worker-card .meta {
-  font-size: 11px;
-  color: var(--text-dim);
-  display: flex;
-  gap: 8px;
-}
-
-.worker-card .backend-tag {
-  font-family: var(--mono);
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 2px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.backend-tag.sdk { background: var(--accent-dim); color: var(--accent); }
-.backend-tag.shell { background: var(--warn-dim); color: var(--warn); }
-.backend-tag.acp { background: var(--info-dim); color: var(--info); }
-
-.worker-card .model {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.worker-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.worker-card:hover .worker-actions { opacity: 1; }
-
-.btn-icon {
-  width: 24px; height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--text-dim);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  transition: all 0.15s;
-}
-
-.btn-icon:hover { border-color: var(--accent); color: var(--accent); }
-
-/* Task List */
-.task-item {
-  display: grid;
-  grid-template-columns: 8px 1fr auto;
-  gap: 12px;
-  align-items: start;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.task-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  margin-top: 5px;
-}
-
+/* Task list */
+.task-item { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; cursor: pointer; transition: border-color 0.2s; overflow: hidden; }
+.task-item:hover { border-color: var(--border-active); }
+.task-item.expanded { border-color: var(--accent); }
+.task-header { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; }
+.task-dot { width: 8px; height: 8px; border-radius: 50%; }
 .task-dot.pending { background: var(--text-muted); }
 .task-dot.running { background: var(--info); animation: pulse 1s ease infinite; }
 .task-dot.completed { background: var(--success); }
-.task-dot.failed { background: var(--error); }
-.task-dot.timeout { background: var(--warn); }
-.task-dot.skipped { background: var(--text-muted); opacity: 0.5; }
-.task-dot.cancelled { background: var(--text-muted); opacity: 0.3; }
+.task-dot.failed, .task-dot.timeout { background: var(--error); }
+.task-dot.skipped, .task-dot.condition_skipped, .task-dot.cancelled { background: var(--text-muted); opacity: 0.4; }
+.task-worker { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.task-desc { font-size: 12px; color: var(--text); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; }
+.task-meta { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-align: right; white-space: nowrap; }
+.task-detail { display: none; padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.task-item.expanded .task-detail { display: block; }
+.task-detail pre { font-family: var(--mono); font-size: 11px; color: var(--text-dim); background: var(--surface-3); padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; margin-top: 8px; }
 
-.task-info .task-worker {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--accent);
-}
+/* Plan DAG visualization */
+.plan-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+.plan-goal { font-size: 13px; font-weight: 500; margin-bottom: 10px; }
+.plan-summary { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 12px; }
+.dag-container { position: relative; padding: 8px 0; }
+.dag-wave { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 4px; }
+.dag-wave-label { font-family: var(--mono); font-size: 9px; color: var(--text-muted); min-width: 32px; padding-top: 6px; }
+.dag-nodes { display: flex; gap: 6px; flex-wrap: wrap; }
+.dag-node { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-3); position: relative; cursor: default; transition: all 0.15s; }
+.dag-node:hover { border-color: var(--accent); }
+.dag-node.completed { border-color: var(--success); color: var(--success); }
+.dag-node.running { border-color: var(--info); color: var(--info); animation: pulse 1.5s ease infinite; }
+.dag-node.failed, .dag-node.timeout { border-color: var(--error); color: var(--error); }
+.dag-node.pending { border-color: var(--text-muted); color: var(--text-muted); }
+.dag-node.skipped, .dag-node.condition_skipped { border-color: var(--text-muted); color: var(--text-muted); opacity: 0.4; }
+.dag-node .node-worker { font-size: 8px; color: var(--text-muted); }
+.dag-arrow { display: flex; align-items: center; justify-content: center; padding: 0 4px; color: var(--text-muted); font-size: 10px; }
+.dag-connector { width: 100%; height: 1px; border-top: 1px dashed var(--border); margin: 2px 0; }
 
-.task-info .task-desc {
-  font-size: 13px;
-  color: var(--text);
-  margin-top: 2px;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+/* Gateway */
+.backend-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
+.backend-info { display: flex; align-items: center; gap: 8px; }
+.backend-name { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+.backend-cmd { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+.session-pill { font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 3px; }
+.session-pill.idle { background: var(--accent-dim); color: var(--accent); }
+.session-pill.busy { background: var(--info-dim); color: var(--info); }
+.session-pill.dead { background: var(--error-dim); color: var(--error); }
+.circuit-badge { font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 3px; }
+.circuit-badge.closed { background: var(--accent-dim); color: var(--accent); }
+.circuit-badge.open { background: var(--error-dim); color: var(--error); }
+.circuit-badge.half-open { background: var(--warn-dim); color: var(--warn); }
 
-.task-meta {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  text-align: right;
-  white-space: nowrap;
-}
-
-/* Event Stream */
-.event-line {
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-dim);
-  padding: 2px 0;
-  animation: fadeIn 0.2s ease;
-}
-
+/* Event stream */
+.event-line { font-family: var(--mono); font-size: 10px; line-height: 1.7; color: var(--text-dim); padding: 1px 0; }
 .event-line .ts { color: var(--text-muted); }
 .event-line .type { font-weight: 500; }
 .event-line .type.submitted { color: var(--info); }
 .event-line .type.started { color: var(--warn); }
 .event-line .type.completed { color: var(--success); }
 .event-line .type.failed { color: var(--error); }
-.event-line .type.cancelled { color: var(--text-muted); }
 
-/* Plan DAG */
-.plan-item {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  margin-bottom: 8px;
-}
-
-.plan-goal {
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-
-.plan-steps {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.plan-step-chip {
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-}
-
-.plan-step-chip.completed { border-color: var(--success); color: var(--success); }
-.plan-step-chip.running { border-color: var(--info); color: var(--info); }
-.plan-step-chip.failed { border-color: var(--error); color: var(--error); }
-.plan-step-chip.pending { border-color: var(--text-muted); color: var(--text-muted); }
-
-.plan-summary {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-top: 8px;
-}
-
-/* Worker Modal */
-.modal-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.7);
-  z-index: 1000;
-  place-items: center;
-  backdrop-filter: blur(4px);
-}
-
-.modal-overlay.active { display: grid; }
-
-.modal {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 24px;
-  width: 480px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.modal h2 {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 500;
-  margin-bottom: 16px;
-}
-
-.form-group {
-  margin-bottom: 12px;
-}
-
-.form-group label {
-  display: block;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.form-group input, .form-group select, .form-group textarea {
-  width: 100%;
-  padding: 8px 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-  border-color: var(--accent);
-}
-
-.form-group textarea { resize: vertical; min-height: 60px; }
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.btn {
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 8px 16px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.btn:hover { border-color: var(--accent); }
-
-.btn-primary {
-  background: var(--accent);
-  color: var(--bg);
-  border-color: var(--accent);
-}
-
-.btn-primary:hover { opacity: 0.9; }
-
-.btn-danger {
-  border-color: var(--error);
-  color: var(--error);
-}
-
-.btn-danger:hover { background: var(--error-dim); }
-
-/* Empty State */
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 120px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.empty-icon { font-size: 24px; margin-bottom: 8px; opacity: 0.5; }
-
-/* Dispatch Bar */
-.dispatch-bar {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  flex-shrink: 0;
-}
-
-.dispatch-bar select {
-  padding: 6px 8px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-}
-
-.dispatch-bar input {
-  flex: 1;
-  padding: 6px 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-  outline: none;
-}
-
+/* Dispatch bar */
+.dispatch-bar { display: flex; gap: 6px; margin-top: 12px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.dispatch-bar select, .dispatch-bar input { padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 11px; outline: none; }
+.dispatch-bar input { flex: 1; }
 .dispatch-bar input:focus { border-color: var(--accent); }
 
-/* Gateway Backend Cards */
-.backend-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  transition: border-color 0.2s;
-}
+/* Buttons */
+.btn { font-family: var(--mono); font-size: 11px; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; transition: all 0.15s; }
+.btn:hover { border-color: var(--accent); }
+.btn-sm { font-size: 10px; padding: 4px 8px; }
+.btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.btn-primary:hover { opacity: 0.9; }
+.btn-icon { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-dim); cursor: pointer; display: grid; place-items: center; font-size: 11px; }
+.btn-icon:hover { border-color: var(--accent); color: var(--accent); }
 
-.backend-card:hover { border-color: var(--border-active); }
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; place-items: center; backdrop-filter: blur(4px); }
+.modal-overlay.active { display: grid; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 460px; max-height: 80vh; overflow-y: auto; }
+.modal h2 { font-family: var(--mono); font-size: 13px; font-weight: 500; margin-bottom: 14px; }
+.form-group { margin-bottom: 10px; }
+.form-group label { display: block; font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 12px; outline: none; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
+.form-group textarea { resize: vertical; min-height: 50px; }
+.form-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
 
-.backend-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+/* Empty */
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100px; color: var(--text-muted); font-size: 12px; }
+.empty-icon { font-size: 20px; margin-bottom: 6px; opacity: 0.4; }
 
-.backend-name {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 500;
-}
+/* Stats bar */
+.stats-bar { display: flex; gap: 20px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.stat-item .stat-val { color: var(--text); font-weight: 500; }
 
-.backend-cmd {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+.task-item { animation: fadeIn 0.2s ease; }
 
-.session-pills {
-  display: flex;
-  gap: 4px;
-}
-
-.session-pill {
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-
-.session-pill.idle { background: var(--accent-dim); color: var(--accent); }
-.session-pill.busy { background: var(--info-dim); color: var(--info); }
-.session-pill.dead { background: var(--error-dim); color: var(--error); }
-
-@media (max-width: 900px) {
-  main { grid-template-columns: 1fr; }
-  .worker-grid { grid-template-columns: repeat(2, 1fr); }
-}
+@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } .worker-grid { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
 <body>
@@ -563,136 +192,101 @@ main {
     <div class="logo-icon">MW</div>
     <h1>AGENT MIDDLEWARE <span>· CONTROL</span></h1>
   </div>
-  <div class="header-status">
+  <div class="header-right">
     <div class="status-dot" id="status-dot"></div>
     <span id="status-text">connecting...</span>
-    <span id="task-count">0 tasks</span>
   </div>
 </header>
 
-<main>
-  <!-- Workers Panel -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Workers</span>
-      <button class="btn" onclick="openAddWorker()" style="font-size:11px;padding:4px 10px;">+ Add Worker</button>
-    </div>
-    <div class="panel-body">
-      <div class="worker-grid" id="worker-grid"></div>
-    </div>
-  </div>
+<div class="stats-bar">
+  <div class="stat-item">Tasks: <span class="stat-val" id="stat-tasks">0</span></div>
+  <div class="stat-item">Running: <span class="stat-val" id="stat-running">0</span></div>
+  <div class="stat-item">Workers: <span class="stat-val" id="stat-workers">0</span></div>
+  <div class="stat-item">Backends: <span class="stat-val" id="stat-backends">0</span></div>
+</div>
 
-  <!-- Tasks Panel -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Tasks</span>
-      <span class="panel-badge" id="active-badge">0 active</span>
-    </div>
-    <div class="panel-body" id="task-list"></div>
-    <div class="dispatch-bar">
-      <select id="dispatch-worker"></select>
-      <input id="dispatch-task" placeholder="Task description..." onkeydown="if(event.key==='Enter')dispatch()">
-      <button class="btn btn-primary" onclick="dispatch()" style="padding:6px 12px;">Send</button>
-    </div>
-  </div>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('tasks')">TASKS<span class="tab-badge" id="tab-tasks-badge">0</span></div>
+  <div class="tab" onclick="switchTab('plans')">PLANS</div>
+  <div class="tab" onclick="switchTab('workers')">WORKERS</div>
+  <div class="tab" onclick="switchTab('gateway')">GATEWAY</div>
+  <div class="tab" onclick="switchTab('events')">EVENTS</div>
+</div>
 
-  <!-- ACP Gateway Panel -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">ACP Gateway</span>
-      <button class="btn" onclick="openAddBackend()" style="font-size:11px;padding:4px 10px;">+ Add Backend</button>
-    </div>
-    <div class="panel-body">
-      <div id="gateway-stats" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:12px;"></div>
-      <div id="gateway-backends"></div>
-    </div>
+<!-- Tasks -->
+<div class="panel-area active" id="panel-tasks">
+  <div class="card-body" id="task-list"></div>
+  <div class="dispatch-bar">
+    <select id="dispatch-worker"></select>
+    <input id="dispatch-task" placeholder="Task description..." onkeydown="if(event.key==='Enter')dispatch()">
+    <button class="btn btn-primary" onclick="dispatch()">Dispatch</button>
   </div>
+</div>
 
-  <!-- Event Stream Panel -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Event Stream</span>
-      <span class="panel-badge">SSE</span>
-    </div>
-    <div class="panel-body" id="event-stream" style="font-size:11px;"></div>
+<!-- Plans -->
+<div class="panel-area" id="panel-plans">
+  <div id="plan-list"><div class="empty"><div class="empty-icon">◇</div>No plans submitted</div></div>
+</div>
+
+<!-- Workers -->
+<div class="panel-area" id="panel-workers">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+    <button class="btn btn-sm" onclick="openAddWorker()">+ Add Worker</button>
   </div>
-</main>
+  <div class="worker-grid" id="worker-grid"></div>
+</div>
 
-<!-- Worker Edit Modal -->
+<!-- Gateway -->
+<div class="panel-area" id="panel-gateway">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <div id="gateway-stats" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);"></div>
+    <button class="btn btn-sm" onclick="openAddBackend()">+ Add Backend</button>
+  </div>
+  <div id="gateway-backends"></div>
+</div>
+
+<!-- Events -->
+<div class="panel-area" id="panel-events">
+  <div class="card-body" id="event-stream" style="font-size:10px;max-height:calc(100vh - 160px);"></div>
+</div>
+
+<!-- Worker Modal -->
 <div class="modal-overlay" id="worker-modal">
   <div class="modal">
     <h2 id="modal-title">Add Worker</h2>
-    <div class="form-group">
-      <label>Name</label>
-      <input id="wm-name" placeholder="e.g. translator">
+    <div class="form-group"><label>Name</label><input id="wm-name" placeholder="e.g. translator"></div>
+    <div class="form-group"><label>Backend</label>
+      <select id="wm-backend"><option value="sdk">SDK</option><option value="acp">ACP</option><option value="shell">Shell</option><option value="middleware">Middleware</option></select>
     </div>
-    <div class="form-group">
-      <label>Backend</label>
-      <select id="wm-backend">
-        <option value="sdk">SDK (Agent SDK subagent)</option>
-        <option value="acp">ACP (cross-CLI session)</option>
-        <option value="shell">Shell (direct bash)</option>
-      </select>
+    <div class="form-group"><label>Vendor</label>
+      <select id="wm-vendor"><option value="anthropic">Anthropic</option><option value="anthropic-managed">Anthropic Managed</option><option value="openai">OpenAI</option><option value="google">Google</option><option value="local">Local</option></select>
     </div>
-    <div class="form-group">
-      <label>Model</label>
-      <select id="wm-model">
-        <option value="sonnet">Sonnet (balanced)</option>
-        <option value="opus">Opus (deep reasoning)</option>
-        <option value="haiku">Haiku (fast + cheap)</option>
-      </select>
+    <div class="form-group"><label>Model</label>
+      <select id="wm-model"><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></select>
     </div>
-    <div class="form-group">
-      <label>Description</label>
-      <textarea id="wm-desc" placeholder="When to use this worker..."></textarea>
-    </div>
-    <div class="form-group">
-      <label>Prompt (Identity)</label>
-      <textarea id="wm-prompt" placeholder="You are a..."></textarea>
-    </div>
-    <div class="form-group">
-      <label>Tools (comma-separated)</label>
-      <input id="wm-tools" placeholder="Read, Grep, Glob, Bash">
-    </div>
-    <div class="form-group">
-      <label>Max Turns</label>
-      <input id="wm-turns" type="number" value="10">
-    </div>
-    <div class="form-group">
-      <label>Timeout (seconds)</label>
-      <input id="wm-timeout" type="number" value="120">
-    </div>
+    <div class="form-group"><label>Description</label><textarea id="wm-desc" placeholder="When to use..."></textarea></div>
+    <div class="form-group"><label>Prompt</label><textarea id="wm-prompt" placeholder="You are a..."></textarea></div>
+    <div class="form-group"><label>Tools</label><input id="wm-tools" placeholder="Read, Grep, Glob, Bash"></div>
+    <div class="form-group"><label>Timeout (s)</label><input id="wm-timeout" type="number" value="120"></div>
     <div class="form-actions">
-      <button class="btn btn-danger" id="wm-delete" onclick="deleteWorker()" style="display:none;">Delete</button>
+      <button class="btn" id="wm-delete" onclick="deleteWorker()" style="display:none;color:var(--error);border-color:var(--error);">Delete</button>
       <div style="flex:1"></div>
-      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="closeModal('worker-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveWorker()">Save</button>
     </div>
   </div>
 </div>
 
-<!-- Backend Add Modal -->
+<!-- Backend Modal -->
 <div class="modal-overlay" id="backend-modal">
   <div class="modal">
     <h2>Register CLI Backend</h2>
-    <div class="form-group">
-      <label>Name</label>
-      <input id="bm-name" placeholder="e.g. gemini">
-    </div>
-    <div class="form-group">
-      <label>Command</label>
-      <input id="bm-command" placeholder="e.g. gemini">
-    </div>
-    <div class="form-group">
-      <label>Args (comma-separated)</label>
-      <input id="bm-args" placeholder="--acp, --trust-all-tools">
-    </div>
-    <div class="form-group">
-      <label>Max Sessions</label>
-      <input id="bm-max" type="number" value="2">
-    </div>
+    <div class="form-group"><label>Name</label><input id="bm-name" placeholder="e.g. gemini"></div>
+    <div class="form-group"><label>Command</label><input id="bm-command" placeholder="e.g. gemini"></div>
+    <div class="form-group"><label>Args</label><input id="bm-args" placeholder="--acp, --trust-all-tools"></div>
+    <div class="form-group"><label>Max Sessions</label><input id="bm-max" type="number" value="2"></div>
     <div class="form-actions">
-      <button class="btn" onclick="closeBackendModal()">Cancel</button>
+      <button class="btn" onclick="closeModal('backend-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveBackend()">Register</button>
     </div>
   </div>
@@ -700,18 +294,22 @@ main {
 
 <script>
 const API = window.location.origin;
-let workers = {};
-let tasks = [];
-let editingWorker = null;
+let workers = {}, tasks = [], gatewayData = null, editingWorker = null;
 
 // ─── Init ───
 async function init() {
-  await loadWorkers();
-  await loadTasks();
-  await loadGateway();
+  await Promise.all([loadWorkers(), loadTasks(), loadGateway()]);
   connectSSE();
-  setInterval(loadTasks, 10000);
-  setInterval(loadGateway, 15000);
+  setInterval(() => { loadTasks(); loadGateway(); }, 8000);
+  setInterval(loadWorkers, 15000);
+}
+
+// ─── Tabs ───
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel-area').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
+  document.getElementById(`panel-${name}`).classList.add('active');
 }
 
 // ─── Workers ───
@@ -720,8 +318,9 @@ async function loadWorkers() {
     const res = await fetch(`${API}/workers`);
     const data = await res.json();
     workers = {};
-    for (const w of data.workers) workers[w.name] = { ...w, activeTasks: 0 };
-    // Count active tasks per worker
+    for (const w of data.workers) {
+      workers[w.name] = { ...w, activeTasks: 0 };
+    }
     for (const t of tasks) {
       if ((t.status === 'running' || t.status === 'pending') && workers[t.worker]) {
         workers[t.worker].activeTasks = (workers[t.worker].activeTasks || 0) + 1;
@@ -729,46 +328,39 @@ async function loadWorkers() {
     }
     renderWorkers();
     renderWorkerSelect();
+    document.getElementById('stat-workers').textContent = Object.keys(workers).length;
   } catch { setOffline(); }
 }
 
 function renderWorkers() {
   const grid = document.getElementById('worker-grid');
   const entries = Object.entries(workers);
-  if (entries.length === 0) {
-    grid.innerHTML = '<div class="empty"><div class="empty-icon">⚙</div>No workers configured</div>';
-    return;
-  }
+  if (!entries.length) { grid.innerHTML = '<div class="empty"><div class="empty-icon">⚙</div>No workers</div>'; return; }
   grid.innerHTML = entries.map(([name, w]) => {
     const active = w.activeTasks || 0;
-    const statusColor = active > 0 ? 'var(--info)' : 'var(--text-muted)';
+    const color = active > 0 ? 'var(--info)' : 'var(--text-muted)';
     const statusText = active > 0 ? `${active} running` : 'idle';
-    const builtinTag = w.builtin === false ? '<span style="font-size:9px;color:var(--warn);margin-left:4px;">custom</span>' : '';
-    return `
-    <div class="worker-card" onclick="editWorker('${name}')" style="border-left:3px solid ${statusColor};">
-      <div class="worker-actions"><button class="btn-icon" title="Edit">✎</button></div>
-      <div class="name">${name}${builtinTag}</div>
+    const customTag = w.builtin === false ? '<span class="tag custom">custom</span>' : '';
+    return `<div class="worker-card" onclick="editWorker('${name}')" style="border-left:3px solid ${color}">
+      <div class="name">${name}</div>
       <div class="meta">
-        <span class="backend-tag ${w.backend}">${w.backend}</span>
-        <span class="model">${w.model || '—'}</span>
+        <span class="tag ${w.backend}">${w.backend}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text-muted)">${w.model||'—'}</span>
+        ${customTag}
       </div>
-      <div style="font-size:11px;margin-top:4px;">
-        <span style="color:${statusColor};">${statusText}</span>
-        <span style="color:var(--text-muted);margin-left:6px;">${w.timeout}s</span>
-      </div>
+      <div class="worker-status" style="color:${color}">${statusText}</div>
     </div>`;
   }).join('');
 }
 
 function renderWorkerSelect() {
-  const select = document.getElementById('dispatch-worker');
-  select.innerHTML = Object.keys(workers).map(n => `<option value="${n}">${n}</option>`).join('');
+  document.getElementById('dispatch-worker').innerHTML = Object.keys(workers).map(n => `<option value="${n}">${n}</option>`).join('');
 }
 
 // ─── Tasks ───
 async function loadTasks() {
   try {
-    const res = await fetch(`${API}/tasks?limit=50`);
+    const res = await fetch(`${API}/tasks?limit=100`);
     const data = await res.json();
     tasks = data.tasks;
     renderTasks();
@@ -779,27 +371,63 @@ async function loadTasks() {
 function renderTasks() {
   const list = document.getElementById('task-list');
   const active = tasks.filter(t => t.status === 'running' || t.status === 'pending');
-  document.getElementById('active-badge').textContent = `${active.length} active`;
-  document.getElementById('task-count').textContent = `${tasks.length} tasks`;
-
-  if (tasks.length === 0) {
-    list.innerHTML = '<div class="empty"><div class="empty-icon">◎</div>No tasks yet. Dispatch one below.</div>';
-    return;
-  }
-
+  document.getElementById('stat-tasks').textContent = tasks.length;
+  document.getElementById('stat-running').textContent = active.length;
+  document.getElementById('tab-tasks-badge').textContent = active.length;
+  if (!tasks.length) { list.innerHTML = '<div class="empty"><div class="empty-icon">◎</div>No tasks. Dispatch one below.</div>'; return; }
   list.innerHTML = tasks.map(t => {
-    const dur = t.durationMs ? `${(t.durationMs / 1000).toFixed(1)}s` : '';
-    const time = t.submittedAt ? new Date(t.submittedAt).toLocaleTimeString('en', {hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
-    return `
-      <div class="task-item">
+    const dur = t.durationMs ? `${(t.durationMs/1000).toFixed(1)}s` : '';
+    const time = t.submittedAt ? new Date(t.submittedAt).toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
+    const taskStr = typeof t.task === 'string' ? t.task : JSON.stringify(t.task);
+    const resultStr = t.result ? (typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)) : t.error || 'Pending...';
+    return `<div class="task-item" onclick="this.classList.toggle('expanded')">
+      <div class="task-header">
         <div class="task-dot ${t.status}"></div>
-        <div class="task-info">
-          <div class="task-worker">${t.worker} <span style="color:var(--text-muted);font-weight:300;">${t.status}</span></div>
-          <div class="task-desc">${escHtml(t.task?.slice(0, 200) || '')}</div>
+        <div>
+          <div class="task-worker">${t.worker} <span style="color:var(--text-muted);font-weight:300">${t.status}</span></div>
+          <div class="task-desc">${escHtml(taskStr?.slice(0,200)||'')}</div>
         </div>
         <div class="task-meta">${dur}<br>${time}</div>
       </div>
-    `;
+      <div class="task-detail">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;">ID: ${t.id}${t.planId ? ` · Plan: ${t.planId}` : ''}${t.caller ? ` · Caller: ${t.caller}` : ''}</div>
+        <pre>${escHtml(resultStr?.slice(0,3000)||'')}</pre>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Plans (DAG visualization) ───
+// TODO: plans endpoint not yet implemented — show from tasks grouped by planId
+function renderPlans() {
+  const planMap = new Map();
+  for (const t of tasks) {
+    if (t.planId) {
+      if (!planMap.has(t.planId)) planMap.set(t.planId, []);
+      planMap.get(t.planId).push(t);
+    }
+  }
+  const container = document.getElementById('plan-list');
+  if (planMap.size === 0) { container.innerHTML = '<div class="empty"><div class="empty-icon">◇</div>No plans submitted</div>'; return; }
+
+  container.innerHTML = [...planMap.entries()].map(([planId, steps]) => {
+    const completed = steps.filter(s => s.status === 'completed').length;
+    const failed = steps.filter(s => s.status === 'failed' || s.status === 'timeout').length;
+    const total = steps.length;
+
+    // Build simple DAG visualization by dispatch order
+    const sorted = [...steps].sort((a,b) => (a.dispatchOrder??0) - (b.dispatchOrder??0));
+    const dagHtml = sorted.map(s => {
+      return `<div class="dag-node ${s.status}" title="${escHtml(typeof s.task === 'string' ? s.task?.slice(0,100) : '')}">
+        ${s.id || s.worker}<br><span class="node-worker">${s.worker}</span>
+      </div>`;
+    }).join('');
+
+    return `<div class="plan-card">
+      <div class="plan-goal">${planId}</div>
+      <div class="plan-summary">${completed}/${total} completed · ${failed} failed</div>
+      <div class="dag-container"><div class="dag-nodes">${dagHtml}</div></div>
+    </div>`;
   }).join('');
 }
 
@@ -808,242 +436,79 @@ async function dispatch() {
   const worker = document.getElementById('dispatch-worker').value;
   const task = document.getElementById('dispatch-task').value.trim();
   if (!task) return;
-
-  try {
-    await fetch(`${API}/dispatch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ worker, task, caller: 'dashboard' }),
-    });
-    document.getElementById('dispatch-task').value = '';
-    setTimeout(loadTasks, 500);
-  } catch (e) { console.error('Dispatch failed:', e); }
+  await fetch(`${API}/dispatch`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({worker, task, caller:'dashboard'}) });
+  document.getElementById('dispatch-task').value = '';
+  setTimeout(loadTasks, 500);
 }
 
-// ─── SSE Events ───
-function connectSSE() {
-  const es = new EventSource(`${API}/events`);
-  const stream = document.getElementById('event-stream');
-
-  const addEvent = (type, data) => {
-    const ts = new Date().toLocaleTimeString('en', {hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    const shortType = type.replace('task.', '');
-    const line = document.createElement('div');
-    line.className = 'event-line';
-    let info = '';
-    try {
-      const d = JSON.parse(data);
-      info = `${d.worker || ''} ${(d.task || '').slice(0, 60)}`;
-    } catch { info = data.slice(0, 60); }
-    line.innerHTML = `<span class="ts">${ts}</span> <span class="type ${shortType}">${shortType}</span> ${escHtml(info)}`;
-    stream.prepend(line);
-    if (stream.children.length > 200) stream.lastChild.remove();
-  };
-
-  for (const evt of ['task.submitted','task.started','task.completed','task.failed','task.cancelled']) {
-    es.addEventListener(evt, (e) => {
-      addEvent(evt, e.data);
-      loadTasks().then(loadWorkers); // refresh worker active counts too
-    });
-  }
-
-  es.onerror = () => {
-    addEvent('error', 'SSE disconnected — retrying...');
-    setOffline();
-  };
-  es.onopen = () => setOnline();
-}
-
-// ─── Worker Modal ───
-function openAddWorker() {
-  editingWorker = null;
-  document.getElementById('modal-title').textContent = 'Add Worker';
-  document.getElementById('wm-name').value = '';
-  document.getElementById('wm-name').disabled = false;
-  document.getElementById('wm-backend').value = 'sdk';
-  document.getElementById('wm-model').value = 'sonnet';
-  document.getElementById('wm-desc').value = '';
-  document.getElementById('wm-prompt').value = '';
-  document.getElementById('wm-tools').value = 'Read, Grep, Glob, Bash';
-  document.getElementById('wm-turns').value = '10';
-  document.getElementById('wm-timeout').value = '120';
-  document.getElementById('wm-delete').style.display = 'none';
-  document.getElementById('worker-modal').classList.add('active');
-}
-
-function editWorker(name) {
-  editingWorker = name;
-  const w = workers[name];
-  document.getElementById('modal-title').textContent = `Edit: ${name}`;
-  document.getElementById('wm-name').value = name;
-  document.getElementById('wm-name').disabled = true;
-  document.getElementById('wm-backend').value = w.backend || 'sdk';
-  document.getElementById('wm-model').value = w.model || 'sonnet';
-  document.getElementById('wm-desc').value = w.description || '';
-  document.getElementById('wm-prompt').value = w.prompt || '';
-  document.getElementById('wm-tools').value = (w.tools || []).join(', ');
-  document.getElementById('wm-turns').value = w.maxTurns || 10;
-  document.getElementById('wm-timeout').value = w.timeout || 120;
-  document.getElementById('wm-delete').style.display = 'block';
-  document.getElementById('worker-modal').classList.add('active');
-}
-
-function closeModal() {
-  document.getElementById('worker-modal').classList.remove('active');
-}
-
-async function saveWorker() {
-  const data = {
-    name: document.getElementById('wm-name').value.trim(),
-    backend: document.getElementById('wm-backend').value,
-    model: document.getElementById('wm-model').value,
-    description: document.getElementById('wm-desc').value,
-    prompt: document.getElementById('wm-prompt').value,
-    tools: document.getElementById('wm-tools').value.split(',').map(s => s.trim()).filter(Boolean),
-    maxTurns: parseInt(document.getElementById('wm-turns').value) || 10,
-    timeout: parseInt(document.getElementById('wm-timeout').value) || 120,
-  };
-  if (!data.name) return;
-
-  try {
-    const isUpdate = editingWorker && editingWorker === data.name;
-    const url = isUpdate ? `${API}/workers/${data.name}` : `${API}/workers`;
-    const method = isUpdate ? 'PUT' : 'POST';
-    const res = await fetch(url, {
-      method, headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    const result = await res.json();
-    if (result.error) { alert(result.error); return; }
-    await loadWorkers();
-    closeModal();
-  } catch (e) {
-    // Fallback: update local state
-    workers[data.name] = data;
-    renderWorkers();
-    renderWorkerSelect();
-    closeModal();
-  }
-}
-
-async function deleteWorker() {
-  if (!editingWorker) return;
-  if (!confirm(`Delete worker "${editingWorker}"?`)) return;
-  try {
-    const res = await fetch(`${API}/workers/${editingWorker}`, { method: 'DELETE' });
-    const result = await res.json();
-    if (result.error) { alert(result.error); return; }
-    await loadWorkers();
-    closeModal();
-  } catch {
-    delete workers[editingWorker];
-    renderWorkers();
-    renderWorkerSelect();
-    closeModal();
-  }
-}
-
-// ─── ACP Gateway ───
-let gatewayData = null;
-
+// ─── Gateway ───
 async function loadGateway() {
   try {
     const res = await fetch(`${API}/gateway`);
     gatewayData = await res.json();
     renderGateway();
-  } catch { /* offline */ }
+    document.getElementById('stat-backends').textContent = gatewayData.backends.length;
+  } catch {}
 }
 
 function renderGateway() {
   if (!gatewayData) return;
-  const stats = document.getElementById('gateway-stats');
-  stats.innerHTML = `Total dispatched: <span style="color:var(--text)">${gatewayData.totalDispatched}</span> · Backends: <span style="color:var(--text)">${gatewayData.backends.length}</span>`;
-
-  const container = document.getElementById('gateway-backends');
-  if (gatewayData.backends.length === 0) {
-    container.innerHTML = '<div class="empty"><div class="empty-icon">⬡</div>No CLI backends registered<br><span style="font-size:11px;color:var(--text-muted)">Install a CLI (claude, kiro, codex) or add one manually</span></div>';
-    return;
-  }
-
-  container.innerHTML = gatewayData.backends.map(b => {
+  document.getElementById('gateway-stats').innerHTML = `Dispatched: <span style="color:var(--text)">${gatewayData.totalDispatched}</span>`;
+  const c = document.getElementById('gateway-backends');
+  if (!gatewayData.backends.length) { c.innerHTML = '<div class="empty"><div class="empty-icon">⬡</div>No CLI backends</div>'; return; }
+  c.innerHTML = gatewayData.backends.map(b => {
     const s = b.sessions;
-    const healthDot = b.healthy ? `<span style="color:var(--accent)">●</span>` : `<span style="color:var(--error)">●</span>`;
     const pills = [];
-    if (s.idle > 0) pills.push(`<span class="session-pill idle">${s.idle} idle</span>`);
-    if (s.busy > 0) pills.push(`<span class="session-pill busy">${s.busy} busy</span>`);
-    if (s.dead > 0) pills.push(`<span class="session-pill dead">${s.dead} dead</span>`);
-    const pillsHtml = pills.length > 0 ? pills.join('') : '<span style="font-size:10px;color:var(--text-muted)">no sessions</span>';
-    return `
-      <div class="backend-card">
-        <div class="backend-info">
-          ${healthDot}
-          <span class="backend-name">${b.name}</span>
-          <span class="backend-cmd">${b.command}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div class="session-pills">${pillsHtml}</div>
-          <button class="btn-icon" onclick="removeBackend('${b.name}')" title="Remove">✕</button>
-        </div>
-      </div>`;
+    if (s.idle>0) pills.push(`<span class="session-pill idle">${s.idle} idle</span>`);
+    if (s.busy>0) pills.push(`<span class="session-pill busy">${s.busy} busy</span>`);
+    if (s.dead>0) pills.push(`<span class="session-pill dead">${s.dead} dead</span>`);
+    const circuit = b.circuit ? `<span class="circuit-badge ${b.circuit.state}">${b.circuit.state}${b.circuit.failures ? ` (${b.circuit.failures})` : ''}</span>` : '';
+    const healthDot = b.healthy ? '●' : '<span style="color:var(--error)">●</span>';
+    return `<div class="backend-card">
+      <div class="backend-info">${healthDot} <span class="backend-name">${b.name}</span> <span class="backend-cmd">${b.command}</span> ${circuit}</div>
+      <div style="display:flex;gap:4px;align-items:center">${pills.join('')} <button class="btn-icon" onclick="removeBackend('${b.name}')" title="Remove">✕</button></div>
+    </div>`;
   }).join('');
 }
 
-function openAddBackend() {
-  document.getElementById('bm-name').value = '';
-  document.getElementById('bm-command').value = '';
-  document.getElementById('bm-args').value = '';
-  document.getElementById('bm-max').value = '2';
-  document.getElementById('backend-modal').classList.add('active');
-}
-
-function closeBackendModal() {
-  document.getElementById('backend-modal').classList.remove('active');
-}
-
-async function saveBackend() {
-  const data = {
-    name: document.getElementById('bm-name').value.trim(),
-    command: document.getElementById('bm-command').value.trim(),
-    args: document.getElementById('bm-args').value.split(',').map(s => s.trim()).filter(Boolean),
-    maxSessions: parseInt(document.getElementById('bm-max').value) || 2,
+// ─── SSE ───
+function connectSSE() {
+  const es = new EventSource(`${API}/events`);
+  const stream = document.getElementById('event-stream');
+  const addEvent = (type, data) => {
+    const ts = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const shortType = type.replace('task.','');
+    let info = '';
+    try { const d = JSON.parse(data); info = `${d.worker||''} ${(typeof d.task==='string'?d.task:'').slice(0,50)}`; } catch { info = data.slice(0,50); }
+    const line = document.createElement('div');
+    line.className = 'event-line';
+    line.innerHTML = `<span class="ts">${ts}</span> <span class="type ${shortType}">${shortType}</span> ${escHtml(info)}`;
+    stream.prepend(line);
+    if (stream.children.length > 300) stream.lastChild.remove();
   };
-  if (!data.name || !data.command) return;
-  try {
-    const res = await fetch(`${API}/gateway/backends`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    const result = await res.json();
-    if (result.error) { alert(result.error); return; }
-    await loadGateway();
-    closeBackendModal();
-  } catch (e) { alert('Failed: ' + e); }
+  ['task.submitted','task.started','task.completed','task.failed','task.cancelled'].forEach(evt => {
+    es.addEventListener(evt, e => { addEvent(evt, e.data); loadTasks().then(() => { loadWorkers(); renderPlans(); }); });
+  });
+  es.onerror = () => setOffline();
+  es.onopen = () => setOnline();
 }
 
-async function removeBackend(name) {
-  if (!confirm(`Remove backend "${name}"? Active sessions will be terminated.`)) return;
-  try {
-    await fetch(`${API}/gateway/backends/${name}`, { method: 'DELETE' });
-    await loadGateway();
-  } catch (e) { alert('Failed: ' + e); }
-}
+// ─── Worker Modal ───
+function openAddWorker() { editingWorker=null; document.getElementById('modal-title').textContent='Add Worker'; ['wm-name','wm-desc','wm-prompt'].forEach(id=>document.getElementById(id).value=''); document.getElementById('wm-name').disabled=false; document.getElementById('wm-tools').value='Read, Grep, Glob, Bash'; document.getElementById('wm-timeout').value='120'; document.getElementById('wm-delete').style.display='none'; document.getElementById('worker-modal').classList.add('active'); }
+function editWorker(name) { editingWorker=name; const w=workers[name]; document.getElementById('modal-title').textContent=`Edit: ${name}`; document.getElementById('wm-name').value=name; document.getElementById('wm-name').disabled=true; document.getElementById('wm-backend').value=w.backend||'sdk'; document.getElementById('wm-vendor').value=w.vendor||'anthropic'; document.getElementById('wm-model').value=w.model||'sonnet'; document.getElementById('wm-desc').value=w.description||''; document.getElementById('wm-prompt').value=w.prompt||''; document.getElementById('wm-tools').value=(w.tools||[]).join(', '); document.getElementById('wm-timeout').value=w.timeout||120; document.getElementById('wm-delete').style.display=w.builtin===false?'block':'none'; document.getElementById('worker-modal').classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+async function saveWorker() { const d={name:document.getElementById('wm-name').value.trim(),backend:document.getElementById('wm-backend').value,vendor:document.getElementById('wm-vendor').value,model:document.getElementById('wm-model').value,description:document.getElementById('wm-desc').value,prompt:document.getElementById('wm-prompt').value,tools:document.getElementById('wm-tools').value.split(',').map(s=>s.trim()).filter(Boolean),timeout:parseInt(document.getElementById('wm-timeout').value)||120}; if(!d.name)return; try{const url=editingWorker?`${API}/workers/${d.name}`:`${API}/workers`;const r=await fetch(url,{method:editingWorker?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});const res=await r.json();if(res.error){alert(res.error);return;}await loadWorkers();closeModal('worker-modal');}catch(e){alert(e);}}
+async function deleteWorker() { if(!editingWorker||!confirm(`Delete "${editingWorker}"?`))return; await fetch(`${API}/workers/${editingWorker}`,{method:'DELETE'}); await loadWorkers(); closeModal('worker-modal'); }
 
-// ─── Status ───
-function setOnline() {
-  document.getElementById('status-dot').className = 'status-dot';
-  document.getElementById('status-text').textContent = 'connected';
-}
+// ─── Backend Modal ───
+function openAddBackend() { ['bm-name','bm-command','bm-args'].forEach(id=>document.getElementById(id).value=''); document.getElementById('bm-max').value='2'; document.getElementById('backend-modal').classList.add('active'); }
+async function saveBackend() { const d={name:document.getElementById('bm-name').value.trim(),command:document.getElementById('bm-command').value.trim(),args:document.getElementById('bm-args').value.split(',').map(s=>s.trim()).filter(Boolean),maxSessions:parseInt(document.getElementById('bm-max').value)||2}; if(!d.name||!d.command)return; await fetch(`${API}/gateway/backends`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); await loadGateway(); closeModal('backend-modal'); }
+async function removeBackend(name) { if(!confirm(`Remove "${name}"?`))return; await fetch(`${API}/gateway/backends/${name}`,{method:'DELETE'}); await loadGateway(); }
 
-function setOffline() {
-  document.getElementById('status-dot').className = 'status-dot offline';
-  document.getElementById('status-text').textContent = 'disconnected';
-}
-
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
+// ─── Utils ───
+function setOnline() { document.getElementById('status-dot').className='status-dot'; document.getElementById('status-text').textContent='connected'; }
+function setOffline() { document.getElementById('status-dot').className='status-dot offline'; document.getElementById('status-text').textContent='disconnected'; }
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
 init();
 </script>
