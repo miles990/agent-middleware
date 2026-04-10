@@ -592,8 +592,8 @@ function buildResult(plan: ActionPlan, results: Map<string, StepResult>, start: 
   let accepted: boolean | null = null;
   if (synthStep?.status === 'completed') {
     const structured = synthStep.structured ?? parseStructuredOutput(synthStep.output ?? '');
-    if (structured && 'accepted' in (structured as Record<string, unknown>)) {
-      accepted = Boolean((structured as Record<string, unknown>).accepted);
+    if (structured && 'accepted' in (structured as unknown as Record<string, unknown>)) {
+      accepted = Boolean((structured as unknown as Record<string, unknown>).accepted);
     } else if (plan.acceptance) {
       // Fallback: if no structured output, check if any gap was reported
       accepted = failedSteps.length === 0 && replanCandidates.length === 0;
