@@ -413,7 +413,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       name: string; backend?: string; model?: string; vendor?: string;
       description?: string; prompt?: string; tools?: string[];
       maxTurns?: number; timeout?: number;
-      webhook?: { url: string; method?: string; headers?: Record<string, string>; bodyTemplate?: string; resultPath?: string };
+      webhook?: { url: string; method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers?: Record<string, string>; bodyTemplate?: string; resultPath?: string };
       logicFn?: string;
     }>();
     if (!body.name) return c.json({ error: 'name required' }, 400);
