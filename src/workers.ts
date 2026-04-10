@@ -1,6 +1,12 @@
 /**
  * Worker Definitions — pluggable backends (SDK / ACP / Shell).
  * Each worker is a specialized execution unit with scoped tools and identity.
+ *
+ * Timeout philosophy:
+ * - SDK workers: maxTurns is the real scope control. Timeout is a safety net,
+ *   auto-derived from maxTurns (2min/turn) at execution time. defaultTimeoutSeconds
+ *   is only a fallback for non-plan dispatch.
+ * - Shell workers: timeout is the real control (deterministic execution).
  */
 
 import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
@@ -32,6 +38,7 @@ export interface WorkerDefinition {
   vendor?: 'anthropic' | 'anthropic-managed' | 'openai' | 'google' | 'local';
   /** Max concurrent instances of this worker type (readers=high, writers=low) */
   maxConcurrency?: number;
+  /** Fallback timeout for non-plan dispatch. For SDK workers in plans, actual timeout = max(this, maxTurns * 120s) */
   defaultTimeoutSeconds: number;
 }
 
@@ -45,8 +52,8 @@ export const WORKERS: Record<string, WorkerDefinition> = {
       maxTurns: 10,
     },
     backend: 'sdk',
-    maxConcurrency: 8,  // read-only, safe to parallelize
-    defaultTimeoutSeconds: 120,
+    maxConcurrency: 8,
+    defaultTimeoutSeconds: 300,
   },
 
   coder: {
@@ -58,8 +65,8 @@ export const WORKERS: Record<string, WorkerDefinition> = {
       maxTurns: 15,
     },
     backend: 'sdk',
-    maxConcurrency: 2,  // writes to filesystem — limit concurrency to avoid conflicts
-    defaultTimeoutSeconds: 180,
+    maxConcurrency: 2,
+    defaultTimeoutSeconds: 300,
   },
 
   reviewer: {
@@ -71,15 +78,15 @@ export const WORKERS: Record<string, WorkerDefinition> = {
       maxTurns: 5,
     },
     backend: 'sdk',
-    maxConcurrency: 6,  // read-only reviews
-    defaultTimeoutSeconds: 60,
+    maxConcurrency: 6,
+    defaultTimeoutSeconds: 120,
   },
 
   shell: {
     agent: {
       description: 'Execute shell commands. For: tests, git ops, curl, file queries.',
-      tools: [],   // shell backend uses execSync directly, not LLM tools
-      prompt: '',   // no LLM involved
+      tools: [],
+      prompt: '',
     },
     backend: 'shell',
     maxConcurrency: 4,
@@ -96,7 +103,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 120,
+    defaultTimeoutSeconds: 300,
   },
 
   explorer: {
@@ -108,34 +115,52 @@ export const WORKERS: Record<string, WorkerDefinition> = {
       maxTurns: 10,
     },
     backend: 'sdk',
-    maxConcurrency: 8,  // read-only exploration
-    defaultTimeoutSeconds: 60,
+    maxConcurrency: 8,
+    defaultTimeoutSeconds: 120,
   },
 
   'cloud-agent': {
     agent: {
       description: 'Cloud-hosted managed agent with web search and code execution. No local tools needed — runs in Anthropic sandbox. Use for: tasks requiring internet access, running untrusted code, isolated execution.',
       tools: [],
-      prompt: 'You are a cloud-hosted research and execution agent. You have web search and code execution in a sandbox. Complete the task and return results.',
-      model: 'claude-sonnet-4-6',
-      maxTurns: 10,
+      prompt: '',
     },
     backend: 'sdk',
     vendor: 'anthropic-managed',
-    defaultTimeoutSeconds: 180,
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 300,
   },
 };
 
-/** Get AgentDefinitions for brain's SDK options (SDK workers only) */
-export function getSdkAgentDefinitions(): Record<string, AgentDefinition> {
-  const defs: Record<string, AgentDefinition> = {};
-  for (const [name, w] of Object.entries(WORKERS)) {
-    if (w.backend === 'sdk') defs[name] = w.agent;
-  }
-  return defs;
+// ─── Runtime Worker Registry ───
+
+const customWorkers: Record<string, WorkerDefinition> = {};
+
+export function allWorkers(): Record<string, WorkerDefinition> {
+  return { ...WORKERS, ...customWorkers };
 }
 
-/** Get all available worker names */
 export function getWorkerNames(): string[] {
-  return Object.keys(WORKERS);
+  return Object.keys(allWorkers());
+}
+
+export function addCustomWorker(name: string, def: WorkerDefinition): void {
+  customWorkers[name] = def;
+}
+
+export function removeCustomWorker(name: string): boolean {
+  if (WORKERS[name]) return false;
+  delete customWorkers[name];
+  return true;
+}
+
+/** Get SDK agent definitions for brain planning context */
+export function getSdkAgentDefinitions(): Record<string, { description: string; tools: string[]; model?: string; prompt?: string }> {
+  const result: Record<string, { description: string; tools: string[]; model?: string; prompt?: string }> = {};
+  for (const [name, def] of Object.entries(allWorkers())) {
+    if (def.backend === 'sdk' || def.backend === 'acp') {
+      result[name] = { description: def.agent.description ?? '', tools: (def.agent.tools ?? []) as string[], model: def.agent.model, prompt: def.agent.prompt };
+    }
+  }
+  return result;
 }

@@ -110,10 +110,14 @@ export function createMiddleware(config?: MiddlewareConfig) {
       case 'sdk': {
         const provider = workerProviders.get(worker);
         if (!provider) throw new Error(`No SDK provider for worker: ${worker}`);
+        // SDK workers: maxTurns is the real scope control.
+        // Timeout is a safety net — derived from maxTurns (2min per turn) or caller's explicit timeout, whichever is larger.
+        const maxTurns = def.agent.maxTurns ?? 10;
+        const safetyTimeout = Math.max(timeoutMs, maxTurns * 120_000);
         return Promise.race([
           provider.think(task, def.agent.prompt ?? ''),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Worker ${worker} timeout after ${timeoutMs}ms`)), timeoutMs),
+            setTimeout(() => reject(new Error(`Worker ${worker} timeout after ${safetyTimeout}ms (maxTurns=${maxTurns})`)), safetyTimeout),
           ),
         ]);
       }
@@ -203,6 +207,8 @@ export function createMiddleware(config?: MiddlewareConfig) {
 
   // Plan engine with event callbacks
   const planEngine = new PlanEngine(executeWorker, {
+    // Let plan engine use worker-specific timeouts instead of hardcoded 120s
+    getWorkerTimeoutSeconds: (workerName) => allWorkers()[workerName]?.defaultTimeoutSeconds ?? 120,
     // Bridge ALL plan events to result buffer → SSE stream
     onEvent: (event) => {
       switch (event.type) {

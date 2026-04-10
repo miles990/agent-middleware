@@ -66,7 +66,7 @@ export function createBrain(config?: BrainConfig): LLMProvider {
     model: config?.model ?? 'opus',
     cwd: config?.cwd ?? process.cwd(),
     allowedTools: ['Agent', ...(config?.additionalTools ?? [])],
-    agents: getSdkAgentDefinitions(),
+    agents: getSdkAgentDefinitions() as Record<string, import('@anthropic-ai/claude-agent-sdk').AgentDefinition>,
     identityMode: 'override',
   });
 }

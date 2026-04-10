@@ -204,6 +204,8 @@ export interface PlanEngineOptions {
   confirmationGate?: (plan: ActionPlan, risks: Array<{ step: PlanStep; risk: StepRisk }>) => Promise<ConfirmationResult>;
   /** Max backoff cap in ms (default: 30000) — prevents 2^N explosion */
   maxBackoffMs?: number;
+  /** Resolve timeout for a worker — lets plan engine use worker-specific defaults instead of hardcoded 120s */
+  getWorkerTimeoutSeconds?: (workerName: string) => number;
 }
 
 export class PlanEngine {
@@ -380,7 +382,8 @@ export class PlanEngine {
           this.emit({ type: 'step.dispatched', step });
 
           const resolvedTask = resolveStepContext(step.task, results);
-          const timeoutMs = (step.timeoutSeconds ?? 120) * 1000;
+          const defaultTimeout = this.opts.getWorkerTimeoutSeconds?.(step.worker) ?? 120;
+          const timeoutMs = (step.timeoutSeconds ?? defaultTimeout) * 1000;
           const order = dispatchOrder++;
 
           this.executeWithRetry(step, resolvedTask, timeoutMs, order, retryCounts, ac.signal)
