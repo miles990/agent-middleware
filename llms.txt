@@ -1,0 +1,240 @@
+# Agent Middleware
+
+> AI-native task orchestration. You plan, middleware executes.
+
+## What This Is
+
+A middleware server that lets you (an AI agent) dispatch tasks to workers, run multi-step plans as DAGs, and get results back. Like n8n, but your nodes can be AI workers, API calls, shell commands, or pure logic — mixed in the same flow.
+
+## Quick Start
+
+Server runs on `http://localhost:3100`. Use HTTP API or MCP tools.
+
+### Dispatch a single task
+
+```
+POST /dispatch
+{ "worker": "researcher", "task": "Read https://example.com and summarize" }
+→ { "taskId": "task-123", "status": "running" }
+```
+
+### Submit a plan (DAG)
+
+```
+POST /plan
+{
+  "goal": "Analyze the auth module and suggest improvements",
+  "acceptance": "Report covers security, performance, and maintainability",
+  "steps": [
+    { "id": "read-code", "worker": "explorer", "label": "Read auth module", "task": "Read all files in src/auth/", "dependsOn": [] },
+    { "id": "check-deps", "worker": "shell", "label": "Check dependencies", "task": "npm ls | grep auth", "dependsOn": [] },
+    { "id": "security-review", "worker": "reviewer", "label": "Security audit", "task": "Review {{read-code.summary}} for OWASP top 10", "dependsOn": ["read-code"] },
+    { "id": "report", "worker": "analyst", "label": "Write improvement report", "task": "Based on {{read-code.summary}}, {{check-deps.result}}, and {{security-review.findings}}, write a report achieving: {{goal}}", "dependsOn": ["read-code", "check-deps", "security-review"] }
+  ]
+}
+→ { "planId": "plan-456", "status": "executing", "steps": 4 }
+```
+
+### Get results
+
+```
+GET /status/task-123    → { "status": "completed", "result": "..." }
+GET /plans              → [{ "planId": "plan-456", "goal": "...", "completed": 4, ... }]
+```
+
+## MCP Tools (Agent-Friendly)
+
+If connected via MCP, you have these tools:
+
+| Tool | What it does |
+|------|-------------|
+| `middleware_dispatch` | Send a task to a worker |
+| `middleware_plan` | Submit a DAG plan |
+| `middleware_status` | Check task/plan status |
+| `middleware_result` | Get result (with optional wait/poll) |
+| `middleware_workers` | List available workers |
+| `middleware_create_worker` | Create a new worker on the fly |
+| `middleware_delete_worker` | Remove a custom worker |
+| `middleware_presets` | List worker presets |
+| `middleware_create_preset` | Create a custom preset |
+| `middleware_delete_preset` | Remove a custom preset |
+| `middleware_gateway` | ACP gateway status |
+
+### MCP Config
+
+```json
+{
+  "mcpServers": {
+    "middleware": {
+      "command": "node",
+      "args": ["dist/mcp-server.js"],
+      "cwd": "/path/to/agent-middleware"
+    }
+  }
+}
+```
+
+## Workers
+
+Workers are execution units. Each has a name, backend, model, and tools.
+
+### Built-in Workers (7)
+
+| Worker | Backend | Model | Use for |
+|--------|---------|-------|---------|
+| `researcher` | sdk | sonnet | Read URLs, search web, gather info |
+| `coder` | sdk | sonnet | Write/edit code, run tests |
+| `reviewer` | sdk | haiku | Code review, fact check |
+| `shell` | shell | — | Run bash commands (zero LLM) |
+| `analyst` | sdk | sonnet | Data analysis, structured reports |
+| `explorer` | sdk | haiku | Explore codebase, map architecture |
+| `cloud-agent` | sdk | sonnet | Anthropic Managed Agent (cloud sandbox) |
+
+### Backends (7 types)
+
+| Backend | What | When to use |
+|---------|------|-------------|
+| `sdk` | Anthropic Agent SDK (AI with tools) | Most tasks — research, code, review |
+| `acp` | CLI session pool (Claude/Kiro/Codex/Gemini) | Cross-CLI, observable |
+| `shell` | Direct bash execution | Commands, scripts, zero LLM |
+| `webhook` | HTTP API call | External APIs, data fetching |
+| `logic` | Pure JS function | Transform, merge, format (deterministic) |
+| `middleware` | Forward to another middleware | Distributed orchestration |
+| Custom | Your own | Register via API |
+
+### Create a Worker
+
+Simple mode (auto-configured):
+```
+middleware_create_worker(name="translator", description="Translate text", prompt="You are a translator.")
+```
+
+With preset:
+```
+middleware_create_worker(name="security-scanner", description="Scan for vulns", prompt="...", preset="review")
+```
+
+Webhook worker:
+```
+middleware_create_worker(name="weather", backend="webhook", webhookUrl="https://api.weather.com/current", description="Get weather data")
+```
+
+Logic worker:
+```
+middleware_create_worker(name="merger", backend="logic", logicFn="return JSON.parse(input).map(x => x.summary).join('\\n')", description="Merge summaries")
+```
+
+### Presets (12)
+
+`research`, `code`, `review`, `shell`, `creative`, `analysis`, `translation`, `fast`, `deep`, `cloud-agent`, `webhook`, `logic`
+
+## Plan Design Guide
+
+### How to write a plan
+
+1. **goal** — What you want to achieve (human-readable)
+2. **acceptance** — How to verify success (optional but recommended)
+3. **steps** — DAG of tasks. Each step has:
+   - `id` — unique kebab-case
+   - `worker` — which worker runs it
+   - `task` — what to do (can reference `{{stepId.result}}` or `{{stepId.summary}}`)
+   - `label` — human-readable description (shown on dashboard)
+   - `dependsOn` — which steps must complete first (empty = parallel)
+   - `retry` — optional `{ maxRetries: 2, onExhausted: "skip" }`
+   - `condition` — optional dynamic branching
+   - `verifyCommand` — optional shell command (must exit 0 = verified)
+
+### Step context references
+
+| Template | What you get |
+|----------|-------------|
+| `{{stepId.result}}` | Full output (max 4000 chars) |
+| `{{stepId.summary}}` | Structured summary (shorter) |
+| `{{stepId.findings}}` | Key findings list |
+| `{{stepId.status}}` | completed/failed/skipped |
+| `{{stepId.confidence}}` | 0-1 confidence score |
+
+### The last step IS your deliverable
+
+You decide what the last step does. The middleware doesn't auto-synthesize.
+
+- Goal is "write a report" → last step is a report-writing step
+- Goal is "deploy" → last step is a health-check step
+- Goal is "refactor code" → last step is a test-verification step
+
+The last step should return structured JSON:
+```json
+{ "accepted": true, "summary": "...", "deliverable": "...", "findings": [...] }
+```
+
+### Retry unreliable steps
+
+```json
+{ "id": "web-search", "worker": "researcher", "task": "...", "retry": { "maxRetries": 2, "backoffMs": 2000, "onExhausted": "skip" } }
+```
+
+### Dynamic branching
+
+```json
+{ "id": "deep-search", "worker": "researcher", "task": "...", "dependsOn": ["quick-search"], "condition": { "stepId": "quick-search", "check": "contains", "value": "insufficient" } }
+```
+
+### Convergence loop
+
+For tasks that need iteration until a condition is met:
+
+```json
+{
+  "goal": "Refactor until all tests pass",
+  "convergence": { "maxIterations": 5, "checkStepId": "run-tests" },
+  "steps": [...]
+}
+```
+
+The check step should return `{ "converged": true/false, "nextSteps": [...] }`.
+
+## API Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /dispatch | Dispatch single task |
+| POST | /plan | Submit DAG plan |
+| GET | /status/:id | Task status + result |
+| GET | /plans | List all plans with goals + steps |
+| GET | /plan/:id | Plan detail |
+| GET | /tasks | List recent tasks |
+| DELETE | /task/:id | Cancel task |
+| GET | /workers | List workers (built-in + custom) |
+| POST | /workers | Create custom worker |
+| PUT | /workers/:name | Update worker |
+| DELETE | /workers/:name | Delete worker |
+| GET | /presets | List presets |
+| POST | /presets | Create preset |
+| DELETE | /presets/:name | Delete preset |
+| GET | /gateway | ACP gateway stats |
+| POST | /gateway/backends | Register CLI backend |
+| DELETE | /gateway/backends/:name | Remove backend |
+| POST | /gateway/dispatch | Direct ACP dispatch |
+| GET | /archived | Completed tasks (auto-archived after 1h) |
+| GET | /events | SSE event stream |
+| GET | /health | Health check |
+| GET | /dashboard | Web UI |
+
+## Vendors
+
+| Vendor | Provider | Auth |
+|--------|----------|------|
+| `anthropic` | Agent SDK | Subscription |
+| `anthropic-managed` | Messages API + Container | ANTHROPIC_API_KEY |
+| `openai` | GPT-4o/o1 | OPENAI_API_KEY |
+| `google` | Gemini | GOOGLE_API_KEY |
+| `local` | Ollama/llama.cpp/vLLM | Local server |
+
+## Dashboard
+
+Open `http://localhost:3100` to see:
+- **Plans** — DAG visualization with status, click nodes for detail
+- **Workers** — Grid with active counts, add/edit/delete
+- **Gateway** — ACP backends, session pools, circuit breakers
+- **Achieved** — Completed tasks archive
+- **Events** — Live SSE stream
