@@ -71,9 +71,26 @@ export function createBrain(config?: BrainConfig): LLMProvider {
   });
 }
 
-export async function brainPlan(brain: LLMProvider, goal: string, context?: string): Promise<string> {
-  const prompt = [context ? `Context:\n${context}\n\n` : '', `Goal: ${goal}`].join('');
-  return brain.think(prompt, PLANNING_SYSTEM);
+/** Worker info for brain's planning context */
+export interface WorkerInfo {
+  name: string;
+  description: string;
+  backend: string;
+  model?: string;
+  maxConcurrency?: number;
+}
+
+export async function brainPlan(brain: LLMProvider, goal: string, opts?: { context?: string; availableWorkers?: WorkerInfo[]; convergenceIteration?: number }): Promise<string> {
+  const parts: string[] = [];
+  if (opts?.context) parts.push(`Context:\n${opts.context}\n`);
+  if (opts?.availableWorkers?.length) {
+    parts.push(`Available workers:\n${opts.availableWorkers.map(w => `- ${w.name} (${w.backend}/${w.model ?? 'default'}): ${w.description}`).join('\n')}\n`);
+  }
+  if (opts?.convergenceIteration) {
+    parts.push(`⚠ This is convergence iteration ${opts.convergenceIteration}. Refine the plan based on previous results.\n`);
+  }
+  parts.push(`Goal: ${goal}`);
+  return brain.think(parts.join('\n'), PLANNING_SYSTEM);
 }
 
 export async function brainDigest(

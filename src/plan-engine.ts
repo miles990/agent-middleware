@@ -41,6 +41,8 @@ export interface PlanStep {
     backoffMs?: number;       // base backoff (default 1000), doubles each retry
     onExhausted: 'skip' | 'fail';  // what to do when retries exhausted
   };
+  /** Mechanical verification: shell command that must exit 0 for step to count as completed */
+  verifyCommand?: string;
 }
 
 export interface ActionPlan {
@@ -180,22 +182,55 @@ function sleep(ms: number): Promise<void> {
 // Plan Engine — Pure DAG Executor
 // =============================================================================
 
+export type PlanEvent =
+  | { type: 'step.dispatched'; step: PlanStep }
+  | { type: 'step.completed'; result: StepResult }
+  | { type: 'step.failed'; result: StepResult }
+  | { type: 'step.retrying'; step: PlanStep; attempt: number; error: string }
+  | { type: 'step.cancelled'; stepId: string }
+  | { type: 'plan.mutation'; action: 'add' | 'skip' | 'replace'; stepId: string }
+  | { type: 'convergence.check'; iteration: number; converged: boolean }
+  | { type: 'plan.completed'; result: PlanResult };
+
 export interface PlanEngineOptions {
+  /** Unified event handler — replaces individual callbacks */
+  onEvent?: (event: PlanEvent) => void;
+  // Legacy callbacks (still supported)
   onStepComplete?: (step: StepResult) => void;
   onStepDispatch?: (step: PlanStep) => void;
   onStepRetry?: (step: PlanStep, attempt: number, error: string) => void;
   onPlanMutation?: (type: 'add' | 'skip' | 'replace', stepId: string) => void;
   failurePolicy?: 'none' | 'cancel-dependents' | 'cancel-all';
   confirmationGate?: (plan: ActionPlan, risks: Array<{ step: PlanStep; risk: StepRisk }>) => Promise<ConfirmationResult>;
+  /** Max backoff cap in ms (default: 30000) — prevents 2^N explosion */
+  maxBackoffMs?: number;
 }
 
 export class PlanEngine {
   private executor: WorkerExecutor;
   private opts: PlanEngineOptions;
+  /** Abort controllers per running step — enables cancellation */
+  private abortControllers = new Map<string, AbortController>();
 
   constructor(executor: WorkerExecutor, opts?: PlanEngineOptions) {
     this.executor = executor;
     this.opts = opts ?? {};
+  }
+
+  private emit(event: PlanEvent): void {
+    this.opts.onEvent?.(event);
+    // Legacy callbacks
+    if (event.type === 'step.dispatched') this.opts.onStepDispatch?.(event.step);
+    if (event.type === 'step.completed' || event.type === 'step.failed') this.opts.onStepComplete?.(event.result);
+    if (event.type === 'step.retrying') this.opts.onStepRetry?.(event.step, event.attempt, event.error);
+    if (event.type === 'plan.mutation') this.opts.onPlanMutation?.(event.action, event.stepId);
+  }
+
+  /** Cancel a running step */
+  cancelStep(stepId: string): boolean {
+    const ac = this.abortControllers.get(stepId);
+    if (ac) { ac.abort(); this.emit({ type: 'step.cancelled', stepId }); return true; }
+    return false;
   }
 
   // ─── Validation ───
@@ -244,12 +279,13 @@ export class PlanEngine {
     }
   }
 
-  /** Replace a step's task/worker (must not have started yet) */
-  replaceStep(plan: ActionPlan, stepId: string, updates: Partial<PlanStep>): boolean {
+  /** Replace a step's task/worker (must not be running — race condition guard) */
+  replaceStep(plan: ActionPlan, stepId: string, updates: Partial<PlanStep>, running?: Set<string>): boolean {
+    if (running?.has(stepId)) throw new Error(`Cannot replace step '${stepId}' — currently running`);
     const idx = plan.steps.findIndex(s => s.id === stepId);
     if (idx === -1) return false;
     plan.steps[idx] = { ...plan.steps[idx], ...updates, id: stepId };
-    this.opts.onPlanMutation?.('replace', stepId);
+    this.emit({ type: 'plan.mutation', action: 'replace', stepId });
     return true;
   }
 
@@ -336,25 +372,34 @@ export class PlanEngine {
           const currentConc = workerRunning.get(step.worker) ?? 0;
           if (currentConc >= maxConc) continue;
 
-          // DISPATCH
+          // DISPATCH with abort controller
           running.add(step.id);
           workerRunning.set(step.worker, currentConc + 1);
-          this.opts.onStepDispatch?.(step);
+          const ac = new AbortController();
+          this.abortControllers.set(step.id, ac);
+          this.emit({ type: 'step.dispatched', step });
 
           const resolvedTask = resolveStepContext(step.task, results);
           const timeoutMs = (step.timeoutSeconds ?? 120) * 1000;
           const order = dispatchOrder++;
 
-          this.executeWithRetry(step, resolvedTask, timeoutMs, order, retryCounts)
+          this.executeWithRetry(step, resolvedTask, timeoutMs, order, retryCounts, ac.signal)
             .then(res => {
               running.delete(step.id);
+              this.abortControllers.delete(step.id);
               workerRunning.set(step.worker, (workerRunning.get(step.worker) ?? 1) - 1);
               results.set(res.id, res);
-              this.opts.onStepComplete?.(res);
 
-              // Cancel-all policy
-              if ((res.status === 'failed' || res.status === 'timeout') && this.opts.failurePolicy === 'cancel-all') {
+              const isFail = res.status === 'failed' || res.status === 'timeout';
+              this.emit({ type: isFail ? 'step.failed' : 'step.completed', result: res });
+
+              // Cancel-all policy: abort + cancel all running steps
+              if (isFail && this.opts.failurePolicy === 'cancel-all') {
                 aborted = true;
+                // Cancel all currently running steps
+                for (const runningId of running) {
+                  this.cancelStep(runningId);
+                }
                 for (const s of plan.steps) {
                   if (!results.has(s.id) && !running.has(s.id))
                     results.set(s.id, { id: s.id, worker: s.worker, status: 'skipped', output: 'Aborted: cancel-all', durationMs: 0, dispatchOrder: dispatchOrder++ });
@@ -385,7 +430,9 @@ export class PlanEngine {
 
               // All done?
               if (results.size === plan.steps.length && running.size === 0) {
-                resolve(buildResult(plan, results, start, convergenceIterations));
+                const finalResult = buildResult(plan, results, start, convergenceIterations);
+                this.emit({ type: 'plan.completed', result: finalResult });
+                resolve(finalResult);
               } else {
                 tryDispatch();
               }
@@ -408,24 +455,51 @@ export class PlanEngine {
 
   // ─── Execute with Retry ───
 
-  private async executeWithRetry(step: PlanStep, task: string, timeoutMs: number, order: number, retryCounts: Map<string, number>): Promise<StepResult> {
+  private async executeWithRetry(step: PlanStep, task: string, timeoutMs: number, order: number, retryCounts: Map<string, number>, signal?: AbortSignal): Promise<StepResult> {
     const maxRetries = step.retry?.maxRetries ?? 0;
     const baseBackoff = step.retry?.backoffMs ?? 1000;
+    const maxBackoff = this.opts.maxBackoffMs ?? 30_000;
     let lastError = '';
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // Check abort
+      if (signal?.aborted) {
+        return { id: step.id, worker: step.worker, status: 'skipped', output: 'Cancelled', durationMs: 0, dispatchOrder: order, retryCount: attempt };
+      }
+
       if (attempt > 0) {
         retryCounts.set(step.id, attempt);
-        this.opts.onStepRetry?.(step, attempt, lastError);
-        await sleep(baseBackoff * Math.pow(2, attempt - 1));
+        this.emit({ type: 'step.retrying', step, attempt, error: lastError });
+        const backoff = Math.min(baseBackoff * Math.pow(2, attempt - 1), maxBackoff);
+        await sleep(backoff);
       }
 
       const stepStart = Date.now();
       try {
         const output = await this.executor(step.worker, task, timeoutMs);
+
+        // Mechanical verification: run verifyCommand if defined
+        if (step.verifyCommand) {
+          try {
+            const { execSync } = await import('node:child_process');
+            execSync(step.verifyCommand, { timeout: 30_000, encoding: 'utf-8' });
+          } catch (verifyErr) {
+            const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+            // Verification failed — treat as step failure (may retry)
+            lastError = `Verify failed: ${msg}`;
+            if (attempt === maxRetries) {
+              return { id: step.id, worker: step.worker, status: 'failed', output: `${output}\n\n[VERIFY FAILED] ${lastError}`, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
+            }
+            continue;
+          }
+        }
+
         const structured = parseStructuredOutput(output);
         return { id: step.id, worker: step.worker, status: 'completed', output, structured, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
       } catch (err) {
+        if (signal?.aborted) {
+          return { id: step.id, worker: step.worker, status: 'skipped', output: 'Cancelled', durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
+        }
         lastError = err instanceof Error ? err.message : String(err);
         if (attempt === maxRetries) {
           const status = lastError.includes('timeout') ? 'timeout' as const : 'failed' as const;
@@ -437,7 +511,6 @@ export class PlanEngine {
       }
     }
 
-    // Should never reach here
     return { id: step.id, worker: step.worker, status: 'failed', output: lastError, durationMs: 0, dispatchOrder: order };
   }
 }
