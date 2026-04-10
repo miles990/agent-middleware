@@ -16,6 +16,9 @@ export interface SdkProviderOptions {
   agents?: Record<string, import('@anthropic-ai/claude-agent-sdk').AgentDefinition>;
   /** 'override' = agent's own identity, 'inherit-claude-code' = CC defaults + append */
   identityMode?: 'override' | 'inherit-claude-code';
+  /** MCP servers available to this worker */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mcpServers?: Record<string, any>;
 }
 
 export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
@@ -49,6 +52,7 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
           ...sysOpt,
           ...(opts?.model ? { model: opts.model } : {}),
           ...(opts?.agents ? { agents: opts.agents } : {}),
+          ...(opts?.mcpServers ? { mcpServers: opts.mcpServers } : {}),
         },
       })) {
         if ('result' in msg && typeof msg.result === 'string') {

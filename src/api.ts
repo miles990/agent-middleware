@@ -84,13 +84,20 @@ export function createMiddleware(config?: MiddlewareConfig) {
       const vendor = def.vendor ?? 'anthropic';
       if (vendor === 'anthropic') {
         // Anthropic uses Agent SDK (has tools, subagents, permissions)
+        // Skills: inject into worker prompt as additional context
+        const skillsPrompt = def.skills?.length
+          ? `\n\n<skills>\n${def.skills.join('\n---\n')}\n</skills>`
+          : '';
         workerProviders.set(name, createSdkProvider({
           model: def.agent.model ?? 'sonnet',
           cwd,
           allowedTools: def.agent.tools as string[] | undefined,
           maxTurns: def.agent.maxTurns,
           maxBudgetUsd: 5,
+          mcpServers: def.mcpServers,
         }));
+        // Patch prompt with skills if any
+        if (skillsPrompt) def.agent.prompt = (def.agent.prompt ?? '') + skillsPrompt;
       } else {
         // Other vendors (openai, google, local, anthropic-managed) use direct API
         workerProviders.set(name, createProvider({
@@ -429,6 +436,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       maxTurns?: number; timeout?: number;
       webhook?: { url: string; method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers?: Record<string, string>; bodyTemplate?: string; resultPath?: string };
       logicFn?: string;
+      mcpServers?: Record<string, unknown>; skills?: string[];
     }>();
     if (!body.name) return c.json({ error: 'name required' }, 400);
     if (WORKERS[body.name]) return c.json({ error: 'cannot override built-in worker' }, 400);
@@ -446,7 +454,14 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       defaultTimeoutSeconds: body.timeout ?? 120,
       ...(body.webhook ? { webhook: body.webhook } : {}),
       ...(body.logicFn ? { logicFn: body.logicFn } : {}),
+      ...(body.mcpServers ? { mcpServers: body.mcpServers } : {}),
+      ...(body.skills ? { skills: body.skills } : {}),
     };
+
+    // Skills: inject into worker prompt
+    if (def.skills?.length) {
+      def.agent.prompt = (def.agent.prompt ?? '') + `\n\n<skills>\n${def.skills.join('\n---\n')}\n</skills>`;
+    }
 
     mw.customWorkers.set(body.name, def);
     // Also register SDK provider if sdk backend
@@ -457,6 +472,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         allowedTools: def.agent.tools as string[] | undefined,
         maxTurns: def.agent.maxTurns,
         maxBudgetUsd: 5,
+        mcpServers: def.mcpServers,
       }));
     }
     mw.persistCustomWorkers();
@@ -472,6 +488,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const body = await c.req.json<{
       backend?: string; model?: string; description?: string;
       prompt?: string; tools?: string[]; maxTurns?: number; timeout?: number;
+      mcpServers?: Record<string, unknown>; skills?: string[];
     }>();
 
     const existing = mw.customWorkers.get(name)!;
@@ -485,7 +502,14 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       },
       backend: (body.backend ?? existing.backend) as WorkerDefinition['backend'],
       defaultTimeoutSeconds: body.timeout ?? existing.defaultTimeoutSeconds,
+      mcpServers: body.mcpServers ?? existing.mcpServers,
+      skills: body.skills ?? existing.skills,
     };
+
+    // Skills: inject into prompt
+    if (updated.skills?.length) {
+      updated.agent.prompt = (updated.agent.prompt ?? '') + `\n\n<skills>\n${updated.skills.join('\n---\n')}\n</skills>`;
+    }
 
     mw.customWorkers.set(name, updated);
     if (updated.backend === 'sdk') {
@@ -495,6 +519,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         allowedTools: updated.agent.tools as string[] | undefined,
         maxTurns: updated.agent.maxTurns,
         maxBudgetUsd: 5,
+        mcpServers: updated.mcpServers,
       }));
     }
     mw.persistCustomWorkers();
