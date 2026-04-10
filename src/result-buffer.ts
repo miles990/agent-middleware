@@ -13,7 +13,9 @@ export interface TaskRecord {
   id: string;
   planId?: string;
   worker: string;
-  /** Task input — pass-through, any format (text, multimodal, structured) */
+  /** Human-readable label (from PlanStep.label) */
+  label?: string;
+  /** Task input — pass-through, any format */
   task: unknown;
   status: TaskStatus;
   /** Task output — pass-through, any format */
@@ -49,12 +51,13 @@ export class ResultBuffer {
   }
 
   /** Submit a new task (task is pass-through — any format) */
-  submit(opts: { id?: string; planId?: string; worker: string; task: unknown; caller?: string }): string {
+  submit(opts: { id?: string; planId?: string; worker: string; task: unknown; label?: string; caller?: string }): string {
     const id = opts.id ?? this.nextId();
     const record: TaskRecord = {
       id,
       planId: opts.planId,
       worker: opts.worker,
+      label: opts.label,
       task: opts.task,
       status: 'pending',
       submittedAt: new Date(),

@@ -18,8 +18,10 @@
 export interface PlanStep {
   id: string;
   worker: string;
-  /** Task — can reference previous results via {{stepId.result}}, {{stepId.summary}}, {{stepId.findings}} */
+  /** Task — detailed instruction for worker, can reference {{stepId.result}} */
   task: string;
+  /** Human-readable label for dashboard display (< 30 chars) */
+  label?: string;
   dependsOn: string[];
   backend?: 'sdk' | 'acp' | 'shell' | 'middleware';
   timeoutSeconds?: number;

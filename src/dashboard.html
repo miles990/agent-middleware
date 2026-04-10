@@ -106,20 +106,30 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .plan-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
 .plan-goal { font-size: 13px; font-weight: 500; margin-bottom: 10px; }
 .plan-summary { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 12px; }
-.dag-container { position: relative; padding: 8px 0; }
-.dag-wave { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 4px; }
-.dag-wave-label { font-family: var(--mono); font-size: 9px; color: var(--text-muted); min-width: 32px; padding-top: 6px; }
-.dag-nodes { display: flex; gap: 6px; flex-wrap: wrap; }
-.dag-node { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-3); position: relative; cursor: default; transition: all 0.15s; }
-.dag-node:hover { border-color: var(--accent); }
-.dag-node.completed { border-color: var(--success); color: var(--success); }
-.dag-node.running { border-color: var(--info); color: var(--info); animation: pulse 1.5s ease infinite; }
-.dag-node.failed, .dag-node.timeout { border-color: var(--error); color: var(--error); }
-.dag-node.pending { border-color: var(--text-muted); color: var(--text-muted); }
-.dag-node.skipped, .dag-node.condition_skipped { border-color: var(--text-muted); color: var(--text-muted); opacity: 0.4; }
-.dag-node .node-worker { font-size: 8px; color: var(--text-muted); }
-.dag-arrow { display: flex; align-items: center; justify-content: center; padding: 0 4px; color: var(--text-muted); font-size: 10px; }
-.dag-connector { width: 100%; height: 1px; border-top: 1px dashed var(--border); margin: 2px 0; }
+.dag-container { position: relative; padding: 12px 0; }
+.dag-layer { display: flex; align-items: center; margin-bottom: 0; }
+.dag-layer-label { font-family: var(--mono); font-size: 9px; color: var(--text-muted); min-width: 24px; text-align: center; padding-top: 2px; }
+.dag-layer-nodes { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; padding: 6px 0; }
+.dag-node { font-family: var(--mono); font-size: 10px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-3); position: relative; cursor: default; transition: all 0.2s; min-width: 120px; }
+.dag-node:hover { border-color: var(--accent); transform: translateY(-1px); }
+.dag-node.completed { border-color: var(--success); background: linear-gradient(135deg, var(--surface-3), #00d4aa08); }
+.dag-node.completed .node-label { color: var(--success); }
+.dag-node.running { border-color: var(--info); background: linear-gradient(135deg, var(--surface-3), #5b8def08); }
+.dag-node.running .node-label { color: var(--info); }
+.dag-node.running::after { content: ''; position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px; border-radius: 6px; border: 1px solid var(--info); animation: node-pulse 2s ease infinite; pointer-events: none; }
+@keyframes node-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.dag-node.failed, .dag-node.timeout { border-color: var(--error); background: linear-gradient(135deg, var(--surface-3), #e74c5e08); }
+.dag-node.failed .node-label, .dag-node.timeout .node-label { color: var(--error); }
+.dag-node.pending { border-color: var(--text-muted); }
+.dag-node.pending .node-label { color: var(--text-dim); }
+.dag-node.skipped, .dag-node.condition_skipped { border-color: var(--text-muted); opacity: 0.35; }
+.node-label { font-size: 11px; font-weight: 500; margin-bottom: 2px; }
+.node-meta { font-size: 9px; color: var(--text-muted); display: flex; gap: 6px; }
+.node-status-icon { position: absolute; top: 4px; right: 6px; font-size: 10px; }
+.dag-arrows { display: flex; align-items: center; justify-content: center; padding: 0 24px; height: 20px; position: relative; }
+.dag-arrows svg { width: 100%; height: 20px; }
+.dag-arrow-line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 3; }
+.dag-arrow-head { fill: var(--text-muted); }
 
 /* Gateway */
 .backend-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
@@ -380,12 +390,13 @@ function renderTasks() {
     const time = t.submittedAt ? new Date(t.submittedAt).toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
     const taskStr = typeof t.task === 'string' ? t.task : JSON.stringify(t.task);
     const resultStr = t.result ? (typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)) : t.error || 'Pending...';
+    const displayLabel = t.label || taskStr?.slice(0,120) || '';
     return `<div class="task-item" onclick="this.classList.toggle('expanded')">
       <div class="task-header">
         <div class="task-dot ${t.status}"></div>
         <div>
-          <div class="task-worker">${t.worker} <span style="color:var(--text-muted);font-weight:300">${t.status}</span></div>
-          <div class="task-desc">${escHtml(taskStr?.slice(0,200)||'')}</div>
+          <div class="task-worker">${t.worker} <span style="color:var(--text-muted);font-weight:300">${t.status}</span>${t.planId ? ` <span style="font-size:9px;color:var(--purple)">plan</span>` : ''}</div>
+          <div class="task-desc">${escHtml(displayLabel)}</div>
         </div>
         <div class="task-meta">${dur}<br>${time}</div>
       </div>
@@ -413,20 +424,68 @@ function renderPlans() {
   container.innerHTML = [...planMap.entries()].map(([planId, steps]) => {
     const completed = steps.filter(s => s.status === 'completed').length;
     const failed = steps.filter(s => s.status === 'failed' || s.status === 'timeout').length;
+    const running = steps.filter(s => s.status === 'running').length;
     const total = steps.length;
+    const allDone = completed + failed === total;
+    const statusIcon = allDone ? (failed > 0 ? '⚠' : '✅') : running > 0 ? '⏳' : '◻';
+    const pct = total > 0 ? Math.round(completed / total * 100) : 0;
 
-    // Build simple DAG visualization by dispatch order
-    const sorted = [...steps].sort((a,b) => (a.dispatchOrder??0) - (b.dispatchOrder??0));
-    const dagHtml = sorted.map(s => {
-      return `<div class="dag-node ${s.status}" title="${escHtml(typeof s.task === 'string' ? s.task?.slice(0,100) : '')}">
-        ${s.id || s.worker}<br><span class="node-worker">${s.worker}</span>
+    // Group steps by dependency depth for DAG layers
+    const depthMap = new Map();
+    const getDepth = (s) => {
+      if (depthMap.has(s.id)) return depthMap.get(s.id);
+      const deps = steps.filter(d => s.dependsOn?.includes?.(d.id));
+      const depth = deps.length === 0 ? 0 : Math.max(...deps.map(getDepth)) + 1;
+      depthMap.set(s.id, depth);
+      return depth;
+    };
+    steps.forEach(getDepth);
+    const maxDepth = Math.max(0, ...depthMap.values());
+
+    // Build DAG layers with flow arrows
+    let dagHtml = '';
+    for (let d = 0; d <= maxDepth; d++) {
+      const layerSteps = steps.filter(s => depthMap.get(s.id) === d);
+      const nodesHtml = layerSteps.map(s => {
+        const label = s.label || s.id || s.worker;
+        const taskStr = typeof s.task === 'string' ? s.task : '';
+        const dur = s.durationMs ? `${(s.durationMs/1000).toFixed(1)}s` : '';
+        const statusIcon = s.status === 'completed' ? '✓' : s.status === 'running' ? '●' : s.status === 'failed' || s.status === 'timeout' ? '✗' : s.status === 'pending' ? '○' : '—';
+        const deps = (s.dependsOn||[]).length;
+        return `<div class="dag-node ${s.status}" title="${escHtml(taskStr.slice(0,300))}">
+          <div class="node-status-icon">${statusIcon}</div>
+          <div class="node-label">${escHtml(label)}</div>
+          <div class="node-meta">
+            <span>${s.worker}</span>
+            ${dur ? `<span>${dur}</span>` : ''}
+            ${deps ? `<span>← ${deps} dep${deps>1?'s':''}</span>` : '<span>parallel</span>'}
+          </div>
+        </div>`;
+      }).join('');
+
+      dagHtml += `<div class="dag-layer">
+        <div class="dag-layer-label">${d}</div>
+        <div class="dag-layer-nodes">${nodesHtml}</div>
       </div>`;
-    }).join('');
+
+      if (d < maxDepth) {
+        dagHtml += `<div class="dag-arrows"><svg viewBox="0 0 200 20" preserveAspectRatio="none">
+          <defs><marker id="ah" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><path d="M0,0 L6,2 L0,4" class="dag-arrow-head"/></marker></defs>
+          <line x1="100" y1="2" x2="100" y2="16" class="dag-arrow-line" marker-end="url(#ah)"/>
+        </svg></div>`;
+      }
+    }
 
     return `<div class="plan-card">
-      <div class="plan-goal">${planId}</div>
-      <div class="plan-summary">${completed}/${total} completed · ${failed} failed</div>
-      <div class="dag-container"><div class="dag-nodes">${dagHtml}</div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="plan-goal">${statusIcon} ${escHtml(planId)}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">${pct}%</div>
+      </div>
+      <div class="plan-summary">${completed} done · ${running} running · ${failed} failed · ${total} total</div>
+      <div style="height:3px;background:var(--surface-3);border-radius:2px;margin:8px 0;">
+        <div style="height:100%;width:${pct}%;background:${failed>0?'var(--warn)':'var(--accent)'};border-radius:2px;transition:width 0.3s;"></div>
+      </div>
+      <div class="dag-container">${dagHtml}</div>
     </div>`;
   }).join('');
 }

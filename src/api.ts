@@ -234,7 +234,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     // Submit all steps to buffer
     for (const step of plan.steps) {
-      mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, caller: body.caller });
+      mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
     }
 
     // Execute in background
