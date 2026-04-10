@@ -104,6 +104,20 @@ const BUILTIN_PRESETS: WorkerPreset[] = [
     model: 'claude-sonnet-4-6', vendor: 'anthropic-managed', backend: 'sdk',
     timeout: 180, maxTurns: 10, builtin: true,
   },
+  {
+    name: 'webhook',
+    description: 'HTTP API call — GET/POST any endpoint, extract result from response',
+    tools: [],
+    model: '', vendor: '', backend: 'webhook',
+    timeout: 30, maxTurns: 1, builtin: true,
+  },
+  {
+    name: 'logic',
+    description: 'Pure JS function — deterministic transform, zero LLM cost',
+    tools: [],
+    model: '', vendor: '', backend: 'logic',
+    timeout: 10, maxTurns: 1, builtin: true,
+  },
 ];
 
 // =============================================================================

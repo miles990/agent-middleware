@@ -130,8 +130,50 @@ export function createMiddleware(config?: MiddlewareConfig) {
         const taskStr = typeof task === 'string' ? task : JSON.stringify(task);
         return acpGateway.dispatch(acpCommand, taskStr, timeoutMs);
       }
+      case 'webhook': {
+        // HTTP API call — like n8n's HTTP node
+        const wh = def.webhook;
+        if (!wh?.url) throw new Error(`Worker ${worker}: webhook.url not configured`);
+        const method = wh.method ?? 'GET';
+        const taskStr = typeof task === 'string' ? task : JSON.stringify(task);
+        const body = method !== 'GET'
+          ? (wh.bodyTemplate ? wh.bodyTemplate.replace('{{input}}', taskStr) : taskStr)
+          : undefined;
+        const res = await fetch(wh.url, {
+          method,
+          headers: { 'Content-Type': 'application/json', ...wh.headers },
+          body,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!res.ok) throw new Error(`Webhook ${wh.url} returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        const responseText = await res.text();
+        // Extract result from response via simple path
+        if (wh.resultPath) {
+          try {
+            const json = JSON.parse(responseText);
+            const value = wh.resultPath.split('.').reduce((o: unknown, k: string) => (o as Record<string, unknown>)?.[k], json);
+            return typeof value === 'string' ? value : JSON.stringify(value);
+          } catch { return responseText; }
+        }
+        return responseText;
+      }
+      case 'logic': {
+        // Pure JS function — deterministic, zero LLM
+        const fn = def.logicFn;
+        if (!fn) throw new Error(`Worker ${worker}: logicFn not configured`);
+        const taskStr = typeof task === 'string' ? task : JSON.stringify(task);
+        try {
+          // Create function with `input` and `context` args
+          const execFn = new Function('input', 'context', fn) as (input: string, context: Record<string, unknown>) => unknown;
+          const result = execFn(taskStr, { cwd, worker });
+          // Handle async functions
+          const resolved = result instanceof Promise ? await result : result;
+          return typeof resolved === 'string' ? resolved : JSON.stringify(resolved);
+        } catch (err) {
+          throw new Error(`Logic error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       case 'middleware': {
-        // Forward to upstream middleware — enables middleware chaining
         const url = def.middlewareUrl;
         if (!url) throw new Error(`Worker ${worker}: middlewareUrl not configured`);
         const upstreamWorker = def.middlewareWorker ?? worker;
@@ -371,6 +413,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       name: string; backend?: string; model?: string; vendor?: string;
       description?: string; prompt?: string; tools?: string[];
       maxTurns?: number; timeout?: number;
+      webhook?: { url: string; method?: string; headers?: Record<string, string>; bodyTemplate?: string; resultPath?: string };
+      logicFn?: string;
     }>();
     if (!body.name) return c.json({ error: 'name required' }, 400);
     if (WORKERS[body.name]) return c.json({ error: 'cannot override built-in worker' }, 400);
@@ -386,6 +430,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       backend: (body.backend ?? 'sdk') as WorkerDefinition['backend'],
       vendor: (body.vendor ?? 'anthropic') as WorkerDefinition['vendor'],
       defaultTimeoutSeconds: body.timeout ?? 120,
+      ...(body.webhook ? { webhook: body.webhook } : {}),
+      ...(body.logicFn ? { logicFn: body.logicFn } : {}),
     };
 
     mw.customWorkers.set(body.name, def);

@@ -5,17 +5,29 @@
 
 import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 
-export type WorkerBackend = 'sdk' | 'acp' | 'shell' | 'middleware';
+export type WorkerBackend = 'sdk' | 'acp' | 'shell' | 'middleware' | 'webhook' | 'logic';
 
 export interface WorkerDefinition {
   agent: AgentDefinition;
   backend: WorkerBackend;
   /** For ACP backend: CLI command (e.g. 'claude', 'kiro-cli', 'codex') */
   acpCommand?: string;
-  /** For middleware backend: URL of upstream middleware (e.g. 'http://10.0.0.2:3100') */
+  /** For middleware backend: URL of upstream middleware */
   middlewareUrl?: string;
   /** For middleware backend: worker name on the upstream middleware */
   middlewareWorker?: string;
+  /** For webhook backend: HTTP config */
+  webhook?: {
+    url: string;
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    headers?: Record<string, string>;
+    /** Template: {{input}} replaced with task content */
+    bodyTemplate?: string;
+    /** jq-style path to extract result from response (default: entire body) */
+    resultPath?: string;
+  };
+  /** For logic backend: inline JS/TS function body (receives `input` and `context` args) */
+  logicFn?: string;
   /** LLM vendor: 'anthropic' (default), 'anthropic-managed', 'openai', 'google', 'local' */
   vendor?: 'anthropic' | 'anthropic-managed' | 'openai' | 'google' | 'local';
   /** Max concurrent instances of this worker type (readers=high, writers=low) */
