@@ -280,8 +280,8 @@ export class PlanEngine {
   }
 
   /** Replace a step's task/worker (must not be running — race condition guard) */
-  replaceStep(plan: ActionPlan, stepId: string, updates: Partial<PlanStep>, running?: Set<string>): boolean {
-    if (running?.has(stepId)) throw new Error(`Cannot replace step '${stepId}' — currently running`);
+  replaceStep(plan: ActionPlan, stepId: string, updates: Partial<PlanStep>): boolean {
+    if (this.abortControllers.has(stepId)) throw new Error(`Cannot replace step '${stepId}' — currently running`);
     const idx = plan.steps.findIndex(s => s.id === stepId);
     if (idx === -1) return false;
     plan.steps[idx] = { ...plan.steps[idx], ...updates, id: stepId };
@@ -412,9 +412,10 @@ export class PlanEngine {
               if (plan.convergence && results.size === plan.steps.length && running.size === 0) {
                 convergenceIterations++;
                 if (convergenceIterations < plan.convergence.maxIterations) {
-                  // Check if converged via designated check step
                   const checkResult = plan.convergence.checkStepId ? results.get(plan.convergence.checkStepId) : undefined;
                   const structured = checkResult?.structured;
+                  const converged = structured?.converged !== false;
+                  this.emit({ type: 'convergence.check', iteration: convergenceIterations, converged });
                   if (structured?.converged === false && structured.nextSteps?.length) {
                     // Add new steps and continue
                     for (const ns of structured.nextSteps) {
@@ -478,11 +479,12 @@ export class PlanEngine {
       try {
         const output = await this.executor(step.worker, task, timeoutMs);
 
-        // Mechanical verification: run verifyCommand if defined
+        // Mechanical verification: run verifyCommand if defined (async — won't block event loop)
         if (step.verifyCommand) {
           try {
-            const { execSync } = await import('node:child_process');
-            execSync(step.verifyCommand, { timeout: 30_000, encoding: 'utf-8' });
+            const { exec } = await import('node:child_process');
+            const { promisify } = await import('node:util');
+            await promisify(exec)(step.verifyCommand, { timeout: 30_000 });
           } catch (verifyErr) {
             const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
             // Verification failed — treat as step failure (may retry)
