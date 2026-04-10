@@ -25,6 +25,7 @@ import { PlanEngine, parsePlan, type ActionPlan } from './plan-engine.js';
 import { ResultBuffer, type TaskEvent } from './result-buffer.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
+import { createProvider, type Vendor } from './provider-registry.js';
 import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.js';
 import type { LLMProvider } from './llm-provider.js';
 import { execSync } from 'node:child_process';
@@ -72,14 +73,25 @@ export function createMiddleware(config?: MiddlewareConfig) {
   };
 
   for (const [name, def] of Object.entries(allWorkers())) {
-    if (def.backend === 'sdk') {
-      workerProviders.set(name, createSdkProvider({
-        model: def.agent.model ?? 'sonnet',
-        cwd,
-        allowedTools: def.agent.tools as string[] | undefined,
-        maxTurns: def.agent.maxTurns,
-        maxBudgetUsd: 5,
-      }));
+    if (def.backend === 'sdk' || def.backend === 'acp') {
+      // Use vendor from worker def, default to anthropic
+      const vendor = def.vendor ?? 'anthropic';
+      if (vendor === 'anthropic') {
+        // Anthropic uses Agent SDK (has tools, subagents, permissions)
+        workerProviders.set(name, createSdkProvider({
+          model: def.agent.model ?? 'sonnet',
+          cwd,
+          allowedTools: def.agent.tools as string[] | undefined,
+          maxTurns: def.agent.maxTurns,
+          maxBudgetUsd: 5,
+        }));
+      } else {
+        // Other vendors use direct API (no tool use, simpler)
+        workerProviders.set(name, createProvider({
+          vendor,
+          model: def.agent.model,
+        }));
+      }
     }
   }
 
@@ -342,6 +354,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         maxTurns: body.maxTurns ?? 10,
       },
       backend: (body.backend ?? 'sdk') as WorkerDefinition['backend'],
+      vendor: (body.vendor ?? 'anthropic') as WorkerDefinition['vendor'],
       defaultTimeoutSeconds: body.timeout ?? 120,
     };
 

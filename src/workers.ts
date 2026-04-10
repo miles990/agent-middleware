@@ -12,6 +12,8 @@ export interface WorkerDefinition {
   backend: WorkerBackend;
   /** For ACP backend: CLI command (e.g. 'claude', 'kiro-cli', 'codex') */
   acpCommand?: string;
+  /** LLM vendor: 'anthropic' (default), 'openai', 'google', 'local' */
+  vendor?: 'anthropic' | 'openai' | 'google' | 'local';
   defaultTimeoutSeconds: number;
 }
 
