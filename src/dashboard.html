@@ -216,17 +216,16 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 </div>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('tasks')">TASKS<span class="tab-badge" id="tab-tasks-badge">0</span></div>
-  <div class="tab" onclick="switchTab('plans')">PLANS</div>
+  <div class="tab active" onclick="switchTab('plans')">PLANS<span class="tab-badge" id="tab-tasks-badge">0</span></div>
   <div class="tab" onclick="switchTab('workers')">WORKERS</div>
   <div class="tab" onclick="switchTab('gateway')">GATEWAY</div>
   <div class="tab" onclick="switchTab('achieved')">ACHIEVED</div>
   <div class="tab" onclick="switchTab('events')">EVENTS</div>
 </div>
 
-<!-- Tasks -->
-<div class="panel-area active" id="panel-tasks">
-  <div class="card-body" id="task-list"></div>
+<!-- Plans (default tab) -->
+<div class="panel-area active" id="panel-plans">
+  <div id="plan-list"><div class="empty"><div class="empty-icon">◇</div>No plans submitted</div></div>
   <div class="dispatch-bar">
     <select id="dispatch-worker"></select>
     <input id="dispatch-task" placeholder="Task description..." onkeydown="if(event.key==='Enter')dispatch()">
@@ -234,9 +233,25 @@ header { display: flex; align-items: center; justify-content: space-between; pad
   </div>
 </div>
 
-<!-- Plans -->
-<div class="panel-area" id="panel-plans">
-  <div id="plan-list"><div class="empty"><div class="empty-icon">◇</div>No plans submitted</div></div>
+<!-- Task Detail Modal (shown on DAG node click) -->
+<div class="modal-overlay" id="task-detail-modal">
+  <div class="modal" style="width:600px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 id="td-title">Task Detail</h2>
+      <button class="btn-icon" onclick="closeModal('task-detail-modal')">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">ID</span><br><span id="td-id" style="font-family:var(--mono);font-size:12px;"></span></div>
+      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">STATUS</span><br><span id="td-status" style="font-family:var(--mono);font-size:12px;font-weight:500;"></span></div>
+      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">WORKER</span><br><span id="td-worker" style="font-family:var(--mono);font-size:12px;color:var(--accent);"></span></div>
+      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">DURATION</span><br><span id="td-duration" style="font-family:var(--mono);font-size:12px;"></span></div>
+      <div style="grid-column:span 2"><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">DEPENDS ON</span><br><span id="td-deps" style="font-family:var(--mono);font-size:12px;"></span></div>
+    </div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:4px;">TASK</div>
+    <pre id="td-task" style="font-family:var(--mono);font-size:11px;color:var(--text);background:var(--surface-2);padding:10px;border-radius:4px;white-space:pre-wrap;max-height:100px;overflow-y:auto;margin-bottom:10px;"></pre>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:4px;">RESULT</div>
+    <pre id="td-result" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);background:var(--surface-3);padding:10px;border-radius:4px;white-space:pre-wrap;max-height:250px;overflow-y:auto;"></pre>
+  </div>
 </div>
 
 <!-- Workers -->
@@ -315,9 +330,9 @@ let workers = {}, tasks = [], gatewayData = null, editingWorker = null;
 
 // ─── Init ───
 async function init() {
-  await Promise.all([loadWorkers(), loadTasks(), loadGateway()]);
+  await Promise.all([loadWorkers(), loadTasks(), loadGateway(), loadPlans()]);
   connectSSE();
-  setInterval(() => { loadTasks(); loadGateway(); }, 8000);
+  setInterval(() => { loadTasks(); loadGateway(); loadPlans(); }, 8000);
   setInterval(loadWorkers, 15000);
 }
 
@@ -382,39 +397,42 @@ async function loadTasks() {
     const res = await fetch(`${API}/tasks?limit=100`);
     const data = await res.json();
     tasks = data.tasks;
-    renderTasks();
+    const active = tasks.filter(t => t.status === 'running' || t.status === 'pending');
+    document.getElementById('stat-tasks').textContent = tasks.length;
+    document.getElementById('stat-running').textContent = active.length;
+    document.getElementById('tab-tasks-badge').textContent = active.length;
     setOnline();
   } catch { setOffline(); }
 }
 
-function renderTasks() {
-  const list = document.getElementById('task-list');
-  const active = tasks.filter(t => t.status === 'running' || t.status === 'pending');
-  document.getElementById('stat-tasks').textContent = tasks.length;
-  document.getElementById('stat-running').textContent = active.length;
-  document.getElementById('tab-tasks-badge').textContent = active.length;
-  if (!tasks.length) { list.innerHTML = '<div class="empty"><div class="empty-icon">◎</div>No tasks. Dispatch one below.</div>'; return; }
-  list.innerHTML = tasks.map(t => {
-    const dur = t.durationMs ? `${(t.durationMs/1000).toFixed(1)}s` : '';
-    const time = t.submittedAt ? new Date(t.submittedAt).toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
-    const taskStr = typeof t.task === 'string' ? t.task : JSON.stringify(t.task);
-    const resultStr = t.result ? (typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)) : t.error || 'Pending...';
-    const displayLabel = t.label || taskStr?.slice(0,120) || '';
-    return `<div class="task-item" onclick="this.classList.toggle('expanded')">
-      <div class="task-header">
-        <div class="task-dot ${t.status}"></div>
-        <div>
-          <div class="task-worker">${t.worker} <span style="color:var(--text-muted);font-weight:300">${t.status}</span>${t.planId ? ` <span style="font-size:9px;color:var(--purple)">plan</span>` : ''}</div>
-          <div class="task-desc">${escHtml(displayLabel)}</div>
-        </div>
-        <div class="task-meta">${dur}<br>${time}</div>
-      </div>
-      <div class="task-detail">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;">ID: ${t.id}${t.planId ? ` · Plan: ${t.planId}` : ''}${t.caller ? ` · Caller: ${t.caller}` : ''}</div>
-        <pre>${escHtml(resultStr?.slice(0,3000)||'')}</pre>
-      </div>
-    </div>`;
-  }).join('');
+// Show task detail modal when clicking a DAG node
+async function showTaskDetail(taskId, planId) {
+  // Find task in local cache or fetch from API
+  let task = tasks.find(t => t.id === taskId);
+  if (!task) {
+    try {
+      const res = await fetch(`${API}/status/${taskId}`);
+      task = await res.json();
+    } catch { return; }
+  }
+  if (!task) return;
+
+  // Find plan step for dependency info
+  const plan = plansData.find(p => p.planId === planId);
+  const step = plan?.steps?.find(s => s.id === taskId);
+
+  const statusColors = { completed: 'var(--success)', running: 'var(--info)', failed: 'var(--error)', timeout: 'var(--warn)', pending: 'var(--text-muted)', skipped: 'var(--text-muted)' };
+  document.getElementById('td-title').textContent = task.label || step?.label || taskId;
+  document.getElementById('td-id').textContent = taskId;
+  document.getElementById('td-status').textContent = task.status;
+  document.getElementById('td-status').style.color = statusColors[task.status] || 'var(--text)';
+  document.getElementById('td-worker').textContent = task.worker;
+  document.getElementById('td-duration').textContent = task.durationMs ? `${(task.durationMs/1000).toFixed(1)}s` : 'pending';
+  document.getElementById('td-deps').textContent = step?.dependsOn?.length ? step.dependsOn.join(', ') : 'none (parallel)';
+  document.getElementById('td-task').textContent = typeof task.task === 'string' ? task.task : JSON.stringify(task.task, null, 2);
+  const resultText = task.result ? (typeof task.result === 'string' ? task.result : JSON.stringify(task.result, null, 2)) : task.error || 'Pending...';
+  document.getElementById('td-result').textContent = resultText;
+  document.getElementById('task-detail-modal').classList.add('active');
 }
 
 // ─── Plans (DAG visualization) ───
@@ -461,7 +479,7 @@ function renderPlans() {
         const dur = s.durationMs ? `${(s.durationMs/1000).toFixed(1)}s` : '';
         const statusIcon = s.status === 'completed' ? '✓' : s.status === 'running' ? '●' : s.status === 'failed' || s.status === 'timeout' ? '✗' : s.status === 'pending' ? '○' : '—';
         const deps = (s.dependsOn||[]).length;
-        return `<div class="dag-node ${s.status}" title="${escHtml(taskStr.slice(0,300))}">
+        return `<div class="dag-node ${s.status}" onclick="showTaskDetail('${escHtml(s.id)}','${escHtml(planId)}')" style="cursor:pointer;">
           <div class="node-status-icon">${statusIcon}</div>
           <div class="node-label">${escHtml(label)}</div>
           <div class="node-meta">
