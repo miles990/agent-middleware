@@ -29,6 +29,7 @@ import { createProvider, type Vendor } from './provider-registry.js';
 import { PresetManager } from './presets.js';
 import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.js';
 import type { LLMProvider } from './llm-provider.js';
+import { PLAN_TEMPLATES } from './templates.js';
 import { execSync } from 'node:child_process';
 
 // =============================================================================
@@ -42,6 +43,7 @@ export interface MiddlewareConfig {
 export function createMiddleware(config?: MiddlewareConfig) {
   const cwd = config?.cwd ?? process.cwd();
   const buffer = new ResultBuffer();
+  buffer.enablePersistence(cwd);
   const customWorkers = new Map<string, WorkerDefinition>();
 
   // Load persisted custom workers
@@ -524,6 +526,46 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       };
     });
     return c.json({ plans });
+  });
+
+  // ─── Plan Validate (dry-run) ───
+  app.post('/plan/validate', async (c) => {
+    const body = await c.req.json<ActionPlan>();
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const errors = mw.planEngine.validate(body, new Set(Object.keys(allW)));
+    return c.json({ valid: errors.length === 0, errors });
+  });
+
+  // ─── Plan Templates ───
+  app.get('/templates', (c) => {
+    return c.json({ templates: PLAN_TEMPLATES });
+  });
+
+  app.post('/plan/from-template', async (c) => {
+    const body = await c.req.json<{ template: string; params: Record<string, string>; caller?: string }>();
+    const tpl = PLAN_TEMPLATES.find(t => t.name === body.template);
+    if (!tpl) return c.json({ error: `Unknown template: ${body.template}` }, 400);
+
+    // Instantiate template — replace {{param}} in goal, steps, tasks
+    let planJson = JSON.stringify(tpl.plan);
+    for (const [k, v] of Object.entries(body.params)) {
+      planJson = planJson.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+    }
+    const plan = JSON.parse(planJson) as ActionPlan;
+
+    // Submit as normal plan
+    const errors = mw.planEngine.validate(plan, new Set(Object.keys({ ...WORKERS, ...Object.fromEntries(mw.customWorkers) })));
+    if (errors.length > 0) return c.json({ error: 'template_validation_failed', errors }, 400);
+
+    const planId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
+    for (const step of plan.steps) {
+      mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+    }
+    const resultPromise = mw.planEngine.execute(plan);
+    mw.plans.set(planId, { plan, resultPromise });
+    resultPromise.catch(() => {});
+
+    return c.json({ planId, status: 'executing', steps: plan.steps.length, template: body.template });
   });
 
   // ─── Archived (Achieved) API ───

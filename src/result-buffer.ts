@@ -1,7 +1,11 @@
 /**
- * Result Buffer — task tracking + event subscription.
+ * Result Buffer — task tracking + event subscription + JSONL persistence.
  * Any caller can submit tasks, poll results, subscribe to SSE events.
+ * Results persisted to results.jsonl — survives restarts.
  */
+
+import fs from 'node:fs';
+import path from 'node:path';
 
 // =============================================================================
 // Types
@@ -44,6 +48,33 @@ export class ResultBuffer {
   private tasks = new Map<string, TaskRecord>();
   private listeners = new Set<(event: TaskEvent) => void>();
   private counter = 0;
+  private persistPath: string | null = null;
+
+  /** Enable JSONL persistence — results survive restarts */
+  enablePersistence(cwd: string): void {
+    this.persistPath = path.join(cwd, 'results.jsonl');
+    // Load existing results
+    try {
+      const lines = fs.readFileSync(this.persistPath, 'utf-8').split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const record = JSON.parse(line) as TaskRecord;
+          if (record.id) {
+            // Restore dates
+            if (record.submittedAt) record.submittedAt = new Date(record.submittedAt);
+            if (record.startedAt) record.startedAt = new Date(record.startedAt);
+            if (record.completedAt) record.completedAt = new Date(record.completedAt);
+            this.tasks.set(record.id, record);
+          }
+        } catch { /* skip malformed lines */ }
+      }
+    } catch { /* no file yet — normal on first run */ }
+  }
+
+  private persist(record: TaskRecord): void {
+    if (!this.persistPath) return;
+    try { fs.appendFileSync(this.persistPath, JSON.stringify(record) + '\n'); } catch { /* fail-open */ }
+  }
 
   /** Generate unique task ID */
   nextId(): string {
@@ -85,6 +116,7 @@ export class ResultBuffer {
     task.result = result;
     task.completedAt = new Date();
     task.durationMs = task.startedAt ? Date.now() - task.startedAt.getTime() : 0;
+    this.persist(task);
     this.emit({ type: 'task.completed', task, timestamp: new Date() });
   }
 
@@ -96,6 +128,7 @@ export class ResultBuffer {
     task.error = error;
     task.completedAt = new Date();
     task.durationMs = task.startedAt ? Date.now() - task.startedAt.getTime() : 0;
+    this.persist(task);
     this.emit({ type: 'task.failed', task, timestamp: new Date() });
   }
 

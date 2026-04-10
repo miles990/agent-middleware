@@ -27,3 +27,4 @@ export { PresetManager, type WorkerPreset } from './presets.js';
 export { ACPGateway, createGateway, DEFAULT_BACKENDS } from './acp-gateway.js';
 export type { CLIBackend, ACPSession, GatewayStats } from './acp-gateway.js';
 export { createRouter, createMiddleware } from './api.js';
+export { PLAN_TEMPLATES, type PlanTemplate } from './templates.js';
