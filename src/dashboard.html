@@ -328,7 +328,7 @@ function switchTab(name) {
   document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
   document.getElementById(`panel-${name}`).classList.add('active');
   if (name === 'achieved') loadAchieved();
-  if (name === 'plans') renderPlans();
+  if (name === 'plans') loadPlans();
 }
 
 // ─── Workers ───
@@ -418,23 +418,23 @@ function renderTasks() {
 }
 
 // ─── Plans (DAG visualization) ───
-// TODO: plans endpoint not yet implemented — show from tasks grouped by planId
-function renderPlans() {
-  const planMap = new Map();
-  for (const t of tasks) {
-    if (t.planId) {
-      if (!planMap.has(t.planId)) planMap.set(t.planId, []);
-      planMap.get(t.planId).push(t);
-    }
-  }
-  const container = document.getElementById('plan-list');
-  if (planMap.size === 0) { container.innerHTML = '<div class="empty"><div class="empty-icon">◇</div>No plans submitted</div>'; return; }
+let plansData = [];
 
-  container.innerHTML = [...planMap.entries()].map(([planId, steps]) => {
-    const completed = steps.filter(s => s.status === 'completed').length;
-    const failed = steps.filter(s => s.status === 'failed' || s.status === 'timeout').length;
-    const running = steps.filter(s => s.status === 'running').length;
-    const total = steps.length;
+async function loadPlans() {
+  try {
+    const res = await fetch(`${API}/plans`);
+    const data = await res.json();
+    plansData = data.plans || [];
+    renderPlans();
+  } catch {}
+}
+
+function renderPlans() {
+  const container = document.getElementById('plan-list');
+  if (!plansData.length) { container.innerHTML = '<div class="empty"><div class="empty-icon">◇</div>No plans submitted</div>'; return; }
+
+  container.innerHTML = plansData.map(plan => {
+    const { planId, goal, steps, completed, failed, running, totalSteps: total } = plan;
     const allDone = completed + failed === total;
     const statusIcon = allDone ? (failed > 0 ? '⚠' : '✅') : running > 0 ? '⏳' : '◻';
     const pct = total > 0 ? Math.round(completed / total * 100) : 0;
@@ -443,7 +443,7 @@ function renderPlans() {
     const depthMap = new Map();
     const getDepth = (s) => {
       if (depthMap.has(s.id)) return depthMap.get(s.id);
-      const deps = steps.filter(d => s.dependsOn?.includes?.(d.id));
+      const deps = steps.filter(d => (s.dependsOn||[]).includes(d.id));
       const depth = deps.length === 0 ? 0 : Math.max(...deps.map(getDepth)) + 1;
       depthMap.set(s.id, depth);
       return depth;
@@ -487,9 +487,10 @@ function renderPlans() {
 
     return `<div class="plan-card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div class="plan-goal">${statusIcon} ${escHtml(planId)}</div>
+        <div class="plan-goal">${statusIcon} ${escHtml(goal || planId)}</div>
         <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">${pct}%</div>
       </div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--text-muted);margin-bottom:4px;">${planId}</div>
       <div class="plan-summary">${completed} done · ${running} running · ${failed} failed · ${total} total</div>
       <div style="height:3px;background:var(--surface-3);border-radius:2px;margin:8px 0;">
         <div style="height:100%;width:${pct}%;background:${failed>0?'var(--warn)':'var(--accent)'};border-radius:2px;transition:width 0.3s;"></div>
@@ -555,7 +556,7 @@ function connectSSE() {
     if (stream.children.length > 300) stream.lastChild.remove();
   };
   ['task.submitted','task.started','task.completed','task.failed','task.cancelled'].forEach(evt => {
-    es.addEventListener(evt, e => { addEvent(evt, e.data); loadTasks().then(() => { loadWorkers(); renderPlans(); }); });
+    es.addEventListener(evt, e => { addEvent(evt, e.data); loadTasks().then(() => { loadWorkers(); loadPlans(); }); });
   });
   es.onerror = () => setOffline();
   es.onopen = () => setOnline();

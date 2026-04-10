@@ -452,6 +452,28 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ ok: true });
   });
 
+  // GET /plans — list all plans with goals
+  app.get('/plans', (c) => {
+    const plans = [...mw.plans.entries()].map(([id, entry]) => {
+      const steps = mw.buffer.list({ planId: id });
+      const completed = steps.filter(s => s.status === 'completed').length;
+      const failed = steps.filter(s => s.status === 'failed' || s.status === 'timeout').length;
+      const running = steps.filter(s => s.status === 'running').length;
+      return {
+        planId: id,
+        goal: entry.plan.goal,
+        totalSteps: entry.plan.steps.length,
+        completed, failed, running,
+        steps: entry.plan.steps.map(s => ({
+          id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn,
+          status: steps.find(t => t.id === s.id)?.status ?? 'pending',
+          durationMs: steps.find(t => t.id === s.id)?.durationMs,
+        })),
+      };
+    });
+    return c.json({ plans });
+  });
+
   // ─── Archived (Achieved) API ───
 
   // GET /archived — completed tasks moved from main list
