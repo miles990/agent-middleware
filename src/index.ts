@@ -19,6 +19,7 @@ export { createLocalProvider } from './local-provider.js';
 export { createProvider, listVendors } from './provider-registry.js';
 export type { Vendor, ProviderConfig } from './provider-registry.js';
 export { createBrain } from './brain.js';
+export { PresetManager, type WorkerPreset } from './presets.js';
 export { ACPGateway, createGateway, DEFAULT_BACKENDS } from './acp-gateway.js';
 export type { CLIBackend, ACPSession, GatewayStats } from './acp-gateway.js';
 export { createRouter, createMiddleware } from './api.js';

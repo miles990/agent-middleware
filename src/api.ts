@@ -26,6 +26,7 @@ import { ResultBuffer, type TaskEvent } from './result-buffer.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
+import { PresetManager } from './presets.js';
 import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.js';
 import type { LLMProvider } from './llm-provider.js';
 import { execSync } from 'node:child_process';
@@ -55,6 +56,9 @@ export function createMiddleware(config?: MiddlewareConfig) {
 
   // ACP Gateway — session pool for cross-CLI backends
   const acpGateway = createGateway();
+
+  // Preset Manager — templates for quick worker creation
+  const presetManager = new PresetManager(cwd);
 
   const persistCustomWorkers = () => {
     try {
@@ -142,7 +146,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
   const plans = new Map<string, { plan: ActionPlan; resultPromise: Promise<import('./plan-engine.js').PlanResult> }>();
   let planCounter = 0;
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, plans, planCounter };
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter };
 }
 
 // =============================================================================
@@ -420,6 +424,41 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     mw.workerProviders.delete(name);
     mw.persistCustomWorkers();
     return c.json({ ok: true });
+  });
+
+  // ─── Presets API ───
+
+  // GET /presets — list all presets
+  app.get('/presets', (c) => c.json({ presets: mw.presetManager.list() }));
+
+  // POST /presets — create custom preset
+  app.post('/presets', async (c) => {
+    const body = await c.req.json<{
+      name: string; description?: string; tools?: string[]; model?: string;
+      vendor?: string; backend?: string; timeout?: number; maxTurns?: number;
+    }>();
+    if (!body.name) return c.json({ error: 'name required' }, 400);
+    try {
+      mw.presetManager.set({
+        name: body.name,
+        description: body.description ?? `Custom preset: ${body.name}`,
+        tools: body.tools ?? ['Read', 'Grep', 'Glob', 'Bash'],
+        model: body.model ?? 'sonnet',
+        vendor: body.vendor ?? 'anthropic',
+        backend: body.backend ?? 'sdk',
+        timeout: body.timeout ?? 120,
+        maxTurns: body.maxTurns ?? 10,
+      });
+      return c.json({ ok: true, name: body.name });
+    } catch (e) { return c.json({ error: e instanceof Error ? e.message : String(e) }, 400); }
+  });
+
+  // DELETE /presets/:name — delete custom preset
+  app.delete('/presets/:name', (c) => {
+    try {
+      const ok = mw.presetManager.delete(c.req.param('name'));
+      return ok ? c.json({ ok: true }) : c.json({ error: 'not found' }, 404);
+    } catch (e) { return c.json({ error: e instanceof Error ? e.message : String(e) }, 400); }
   });
 
   // ─── ACP Gateway API ───

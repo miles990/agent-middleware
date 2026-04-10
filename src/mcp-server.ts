@@ -157,6 +157,38 @@ Worker is immediately available for dispatch. Persisted across restarts.`,
       },
     },
     {
+      name: 'middleware_presets',
+      description: 'List available worker presets (templates). Use a preset name when creating workers for quick setup.',
+      inputSchema: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'middleware_create_preset',
+      description: 'Create a custom worker preset (template). Agents and humans can then use this preset when creating workers.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string', description: 'Preset name (e.g. "ml-training", "ui-design")' },
+          description: { type: 'string', description: 'When to use this preset' },
+          tools: { type: 'array', items: { type: 'string' }, description: 'Default tools' },
+          model: { type: 'string', description: 'Default model' },
+          vendor: { type: 'string', description: 'Default vendor: anthropic, openai, google, local' },
+          backend: { type: 'string', description: 'Default backend: sdk, acp, shell' },
+          timeout: { type: 'number', description: 'Default timeout (seconds)' },
+          maxTurns: { type: 'number', description: 'Default max turns' },
+        },
+        required: ['name', 'description'],
+      },
+    },
+    {
+      name: 'middleware_delete_preset',
+      description: 'Delete a custom preset (cannot delete built-in presets).',
+      inputSchema: {
+        type: 'object' as const,
+        properties: { name: { type: 'string', description: 'Preset name to delete' } },
+        required: ['name'],
+      },
+    },
+    {
       name: 'middleware_gateway',
       description: 'Get ACP gateway status — registered CLI backends, session pool stats, dispatch count.',
       inputSchema: {
@@ -237,15 +269,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'middleware_create_worker': {
         const a = args as Record<string, unknown>;
 
-        // Preset defaults
-        const PRESETS: Record<string, { tools: string[]; model: string; backend: string; timeout: number; maxTurns: number }> = {
-          research: { tools: ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'Bash'], model: 'sonnet', backend: 'sdk', timeout: 120, maxTurns: 10 },
-          code:     { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'], model: 'sonnet', backend: 'sdk', timeout: 180, maxTurns: 15 },
-          review:   { tools: ['Read', 'Grep', 'Glob'], model: 'haiku', backend: 'sdk', timeout: 60, maxTurns: 5 },
-          shell:    { tools: ['Bash', 'Read'], model: 'haiku', backend: 'shell', timeout: 30, maxTurns: 3 },
-        };
+        // Fetch preset from API (dynamic, not hardcoded)
+        let preset: Record<string, unknown> = {};
+        if (a.preset) {
+          try {
+            const presets = await mwFetch('/presets') as { presets: Array<Record<string, unknown>> };
+            const match = presets.presets?.find(p => p.name === a.preset);
+            if (match) preset = match;
+          } catch { /* fail-open: no preset applied */ }
+        }
 
-        const preset = PRESETS[(a.preset as string) ?? ''] ?? {};
         const result = await mwFetch('/workers', {
           method: 'POST',
           body: JSON.stringify({
@@ -266,6 +299,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'middleware_delete_worker': {
         const name = (args as Record<string, unknown>).name as string;
         const result = await mwFetch(`/workers/${name}`, { method: 'DELETE' });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'middleware_presets': {
+        const result = await mwFetch('/presets');
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'middleware_create_preset': {
+        const a = args as Record<string, unknown>;
+        const result = await mwFetch('/presets', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: a.name,
+            description: a.description,
+            tools: a.tools,
+            model: a.model,
+            vendor: a.vendor,
+            backend: a.backend,
+            timeout: a.timeout,
+            maxTurns: a.maxTurns,
+          }),
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'middleware_delete_preset': {
+        const name = (args as Record<string, unknown>).name as string;
+        const result = await mwFetch(`/presets/${name}`, { method: 'DELETE' });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
