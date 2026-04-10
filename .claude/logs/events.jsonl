@@ -54,3 +54,31 @@
   "status": "success",
   "related_event": "evt_20260410_135132_1bb553"
 }
+{
+  "id": "evt_20260410_135149_401e47",
+  "timestamp": "2026-04-10T05:51:49.000Z",
+  "session_id": "unknown",
+  "workflow_id": "general",
+  "event_type": "tool_call",
+  "phase": "pre",
+  "tool_name": "unknown",
+  "data": {},
+  "status": "pending"
+}
+{
+  "id": "evt_20260410_135149_d1f13c",
+  "timestamp": "2026-04-10T05:51:49.000Z",
+  "session_id": "unknown",
+  "workflow_id": "general",
+  "event_type": "tool_call",
+  "phase": "post",
+  "tool_name": "unknown",
+  "data": {
+    "output_length": 0,
+    "output_preview": null,
+    "exit_code": 0
+  },
+  "duration_ms": 0,
+  "status": "success",
+  "related_event": "evt_20260410_135149_401e47"
+}

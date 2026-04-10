@@ -35,12 +35,18 @@ export interface PlanStep {
 }
 
 export interface ActionPlan {
+  /** What this plan achieves (human-readable) */
   goal: string;
+  /** Acceptance criteria — how to verify the goal is achieved.
+   *  Brain uses this to plan the final verification step.
+   *  Example: "所有 unit tests 通過，無 lint error" */
+  acceptance?: string;
   steps: PlanStep[];
   /**
-   * Synthesis config — every plan auto-synthesizes results using the goal.
-   * Set to false to disable (rare — only for fire-and-forget plans).
-   * Override worker/prompt for custom synthesis behavior.
+   * Auto-synthesis: after all steps complete, run a final step that uses
+   * goal + acceptance + all results to produce the deliverable.
+   * Defaults to true. Set to false for fire-and-forget plans.
+   * The last DAG node's output becomes the plan's result.
    */
   synthesis?: false | {
     worker?: string;
@@ -228,12 +234,21 @@ export class PlanEngine {
             return label;
           }).join('\n\n');
 
-          // Goal-driven synthesis: the plan's goal is the convergence condition
+          // Goal-driven synthesis: goal + acceptance criteria = convergence condition
+          const acceptanceLine = plan.acceptance
+            ? `\n# 驗收條件\n${plan.acceptance}\n`
+            : '';
+
+          const defaultPrompt = plan.acceptance
+            ? `根據以上所有任務結果，達成目標「${plan.goal}」。\n驗收條件：${plan.acceptance}\n\n確認是否達成驗收條件。如果達成，產出最終交付物。如果未達成，明確說明哪些條件未滿足。`
+            : `根據以上所有任務結果，完整達成目標「${plan.goal}」。\n產出最終交付物：摘要、關鍵發現、具體建議（可操作的行動項目）。`;
+
           const synthPrompt = [
-            `# 目標\n${plan.goal}\n\n`,
-            `# 收集到的資料\n以下是為達成目標而執行的所有任務結果：\n\n${context}\n\n`,
+            `# 目標\n${plan.goal}\n`,
+            acceptanceLine,
+            `\n# 所有任務結果\n\n${context}\n\n`,
             `# 你的任務\n`,
-            synthConfig.prompt ?? `根據以上收集到的資料，完整達成目標「${plan.goal}」。\n產出一份結構化的報告：\n1. 摘要（一段話總結）\n2. 關鍵發現（列點）\n3. 具體建議（可操作的行動項目）\n\n用清楚、有邏輯的方式呈現，讓讀者看完就知道結論和下一步。`,
+            synthConfig.prompt ?? defaultPrompt,
           ].join('');
 
           this.onStepDispatch?.({ id: synthId, worker: synthWorker, task: synthPrompt, label: synthLabel, dependsOn: [] });
