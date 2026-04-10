@@ -1,9 +1,11 @@
 /**
  * OpenAI Provider — GPT-4o, o1, GPT-4o-mini via OpenAI API.
+ * Uses content-adapter for multimodal conversion.
  * Requires: OPENAI_API_KEY env var.
  */
 
-import type { LLMProvider, Prompt, ContentBlock } from './llm-provider.js';
+import type { LLMProvider, Prompt } from './llm-provider.js';
+import { toOpenAI, promptToText } from './content-adapter.js';
 
 export interface OpenAIProviderOptions {
   model?: string;
@@ -25,38 +27,17 @@ export function createOpenAIProvider(opts?: OpenAIProviderOptions): LLMProvider 
       if (!apiKey) throw new Error('OPENAI_API_KEY not set');
 
       const messages: Array<{ role: string; content: string | Array<Record<string, unknown>> }> = [];
+      if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
 
-      if (systemPrompt) {
-        messages.push({ role: 'system', content: systemPrompt });
-      }
-
-      // Handle multimodal
       if (typeof prompt === 'string') {
         messages.push({ role: 'user', content: prompt });
       } else {
-        const parts: Array<Record<string, unknown>> = [];
-        for (const block of prompt) {
-          if (block.type === 'text') {
-            parts.push({ type: 'text', text: block.text });
-          } else if (block.type === 'image') {
-            if (block.source.type === 'url') {
-              parts.push({ type: 'image_url', image_url: { url: block.source.data } });
-            } else {
-              parts.push({ type: 'image_url', image_url: { url: `data:${block.source.mediaType};base64,${block.source.data}` } });
-            }
-          } else if (block.type === 'file') {
-            parts.push({ type: 'text', text: `[File: ${block.path}]` });
-          }
-        }
-        messages.push({ role: 'user', content: parts });
+        messages.push({ role: 'user', content: toOpenAI(prompt) as unknown as Array<Record<string, unknown>> });
       }
 
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
       });
 

@@ -11,6 +11,7 @@
  */
 
 import type { LLMProvider, Prompt } from './llm-provider.js';
+import { toAnthropic, promptToText } from './content-adapter.js';
 
 export interface ManagedAgentProviderOptions {
   /** Model (default: claude-sonnet-4-6) */
@@ -102,28 +103,8 @@ export function createManagedAgentProvider(opts?: ManagedAgentProviderOptions): 
     async think(prompt: Prompt, systemPrompt: string): Promise<string> {
       if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set for Managed Agents');
 
-      // Build multimodal content blocks for Messages API
-      let userContent: unknown;
-      if (typeof prompt === 'string') {
-        userContent = prompt;
-      } else {
-        const blocks: Array<Record<string, unknown>> = [];
-        for (const block of prompt) {
-          if (block.type === 'text') {
-            blocks.push({ type: 'text', text: block.text });
-          } else if (block.type === 'image') {
-            blocks.push({
-              type: 'image',
-              source: block.source.type === 'url'
-                ? { type: 'url', url: block.source.data }
-                : { type: 'base64', media_type: block.source.mediaType, data: block.source.data },
-            });
-          } else if (block.type === 'file') {
-            blocks.push({ type: 'text', text: `[File: ${block.path}${block.mediaType ? ` (${block.mediaType})` : ''}]` });
-          }
-        }
-        userContent = blocks;
-      }
+      // Build multimodal content via adapter
+      const userContent = typeof prompt === 'string' ? prompt : toAnthropic(prompt);
 
       const body: Record<string, unknown> = {
         model,

@@ -127,8 +127,30 @@ export function createMiddleware(config?: MiddlewareConfig) {
       }
       case 'acp': {
         const acpCommand = def.acpCommand ?? 'claude';
-        const taskStr = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('\n');
+        const taskStr = typeof task === 'string' ? task : JSON.stringify(task);
         return acpGateway.dispatch(acpCommand, taskStr, timeoutMs);
+      }
+      case 'middleware': {
+        // Forward to upstream middleware — enables middleware chaining
+        const url = def.middlewareUrl;
+        if (!url) throw new Error(`Worker ${worker}: middlewareUrl not configured`);
+        const upstreamWorker = def.middlewareWorker ?? worker;
+        const res = await fetch(`${url}/dispatch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ worker: upstreamWorker, task, timeout: timeoutMs / 1000 }),
+        });
+        const { taskId } = await res.json() as { taskId: string };
+        // Poll for result
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const statusRes = await fetch(`${url}/status/${taskId}`);
+          const status = await statusRes.json() as { status: string; result?: unknown; error?: string };
+          if (status.status === 'completed') return typeof status.result === 'string' ? status.result : JSON.stringify(status.result);
+          if (status.status === 'failed') throw new Error(status.error ?? 'Upstream task failed');
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        throw new Error(`Upstream middleware timeout after ${timeoutMs}ms`);
       }
       default:
         throw new Error(`Unknown backend: ${def.backend}`);

@@ -5,13 +5,17 @@
 
 import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 
-export type WorkerBackend = 'sdk' | 'acp' | 'shell';
+export type WorkerBackend = 'sdk' | 'acp' | 'shell' | 'middleware';
 
 export interface WorkerDefinition {
   agent: AgentDefinition;
   backend: WorkerBackend;
   /** For ACP backend: CLI command (e.g. 'claude', 'kiro-cli', 'codex') */
   acpCommand?: string;
+  /** For middleware backend: URL of upstream middleware (e.g. 'http://10.0.0.2:3100') */
+  middlewareUrl?: string;
+  /** For middleware backend: worker name on the upstream middleware */
+  middlewareWorker?: string;
   /** LLM vendor: 'anthropic' (default), 'anthropic-managed', 'openai', 'google', 'local' */
   vendor?: 'anthropic' | 'anthropic-managed' | 'openai' | 'google' | 'local';
   defaultTimeoutSeconds: number;

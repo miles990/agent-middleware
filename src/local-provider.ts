@@ -1,9 +1,11 @@
 /**
  * Local LLM Provider — OpenAI-compatible API (Ollama, llama.cpp, vLLM, LM Studio, MLX).
- * Requires: local server running on baseUrl (default: http://localhost:11434/v1 for Ollama).
+ * Uses content-adapter for multimodal conversion (vision models like LLaVA/Qwen-VL).
+ * Requires: local server running on baseUrl.
  */
 
 import type { LLMProvider, Prompt } from './llm-provider.js';
+import { toOpenAI, promptToText } from './content-adapter.js';
 
 export interface LocalProviderOptions {
   model?: string;
@@ -20,30 +22,14 @@ export function createLocalProvider(opts?: LocalProviderOptions): LLMProvider {
 
   return {
     async think(prompt: Prompt, systemPrompt: string): Promise<string> {
-      const messages: Array<{ role: string; content: string }> = [];
-
+      const messages: Array<{ role: string; content: unknown }> = [];
       if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
 
-      // Local models: most support text only, some (LLaVA, Qwen-VL) support vision
-      // For vision models: pass images as base64 in OpenAI-compatible format
       if (typeof prompt === 'string') {
         messages.push({ role: 'user', content: prompt });
       } else {
-        const parts: Array<Record<string, unknown>> = [];
-        for (const block of prompt) {
-          if (block.type === 'text') {
-            parts.push({ type: 'text', text: block.text });
-          } else if (block.type === 'image') {
-            if (block.source.type === 'url') {
-              parts.push({ type: 'image_url', image_url: { url: block.source.data } });
-            } else {
-              parts.push({ type: 'image_url', image_url: { url: `data:${block.source.mediaType};base64,${block.source.data}` } });
-            }
-          } else if (block.type === 'file') {
-            parts.push({ type: 'text', text: `[File: ${block.path}${block.mediaType ? ` (${block.mediaType})` : ''}]` });
-          }
-        }
-        messages.push({ role: 'user', content: parts as unknown as string });
+        // Use OpenAI-compatible format (works with LLaVA, Qwen-VL on Ollama)
+        messages.push({ role: 'user', content: toOpenAI(prompt) });
       }
 
       const res = await fetch(`${baseUrl}/chat/completions`, {

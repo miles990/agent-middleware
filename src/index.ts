@@ -1,7 +1,9 @@
 // Agent Middleware — public API
 
 // Core types
-export type { LLMProvider, Prompt, ContentBlock, ImageSource, StructuredResponse } from './llm-provider.js';
+export type { LLMProvider, Prompt, ContentBlock, TextContent, MediaContent, StreamContent, RefContent, StructuredResponse, StreamChunk, ImageSource } from './llm-provider.js';
+export { toAnthropic, toOpenAI, toGemini, promptToText } from './content-adapter.js';
+export type { AnthropicBlock, OpenAIBlock, GeminiPart } from './content-adapter.js';
 export type { ActionPlan, PlanStep, PlanResult, StepResult, WorkerExecutor } from './plan-engine.js';
 export type { TaskRecord, TaskStatus, TaskEvent } from './result-buffer.js';
 export type { WorkerBackend, WorkerDefinition } from './workers.js';

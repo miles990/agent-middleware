@@ -1,9 +1,11 @@
 /**
  * Google Gemini Provider — Gemini 2.0 Pro/Flash via Google AI Studio API.
+ * Uses content-adapter for multimodal conversion.
  * Requires: GOOGLE_API_KEY env var.
  */
 
 import type { LLMProvider, Prompt } from './llm-provider.js';
+import { toGemini, promptToText } from './content-adapter.js';
 
 export interface GoogleProviderOptions {
   model?: string;
@@ -22,39 +24,16 @@ export function createGoogleProvider(opts?: GoogleProviderOptions): LLMProvider 
     async think(prompt: Prompt, systemPrompt: string): Promise<string> {
       if (!apiKey) throw new Error('GOOGLE_API_KEY not set');
 
-      const contents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
-
-      // Gemini uses system_instruction for system prompt
-      const promptStr = typeof prompt === 'string'
-        ? prompt
-        : prompt.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('\n\n');
-
-      contents.push({ role: 'user', parts: [{ text: promptStr }] });
-
-      // Handle multimodal content
-      if (typeof prompt !== 'string') {
-        for (const block of prompt) {
-          if (block.type === 'image') {
-            if (block.source.type === 'base64') {
-              contents[0].parts.push({
-                inline_data: { mime_type: block.source.mediaType, data: block.source.data },
-              });
-            } else {
-              // URL images — Gemini supports file_data for GCS URIs, fallback to text ref
-              contents[0].parts.push({ text: `[Image URL: ${block.source.data}]` });
-            }
-          } else if (block.type === 'file') {
-            contents[0].parts.push({ text: `[File: ${block.path}${block.mediaType ? ` (${block.mediaType})` : ''}]` });
-          }
-        }
-      }
+      const parts = typeof prompt === 'string'
+        ? [{ text: prompt }]
+        : toGemini(prompt);
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents,
+          contents: [{ role: 'user', parts }],
           systemInstruction: systemPrompt ? { parts: [{ text: systemPrompt }] } : undefined,
           generationConfig: { maxOutputTokens: maxTokens, temperature },
         }),

@@ -13,12 +13,11 @@ export interface TaskRecord {
   id: string;
   planId?: string;
   worker: string;
-  task: string;
+  /** Task input — pass-through, any format (text, multimodal, structured) */
+  task: unknown;
   status: TaskStatus;
-  result?: string;
-  /** Structured output: files created, images generated */
-  files?: Array<{ path: string; mediaType?: string }>;
-  images?: Array<{ mediaType: string; data: string }>;
+  /** Task output — pass-through, any format */
+  result?: unknown;
   metadata?: Record<string, unknown>;
   error?: string;
   submittedAt: Date;
@@ -49,8 +48,8 @@ export class ResultBuffer {
     return `task-${Date.now()}-${(this.counter++).toString(36)}`;
   }
 
-  /** Submit a new task */
-  submit(opts: { id?: string; planId?: string; worker: string; task: string; caller?: string }): string {
+  /** Submit a new task (task is pass-through — any format) */
+  submit(opts: { id?: string; planId?: string; worker: string; task: unknown; caller?: string }): string {
     const id = opts.id ?? this.nextId();
     const record: TaskRecord = {
       id,
@@ -75,8 +74,8 @@ export class ResultBuffer {
     this.emit({ type: 'task.started', task, timestamp: new Date() });
   }
 
-  /** Mark task as completed */
-  complete(id: string, result: string): void {
+  /** Mark task as completed (result is pass-through — any format) */
+  complete(id: string, result: unknown): void {
     const task = this.tasks.get(id);
     if (!task) return;
     task.status = 'completed';
