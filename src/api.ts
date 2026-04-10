@@ -79,8 +79,8 @@ export function createMiddleware(config?: MiddlewareConfig) {
     }
   }
 
-  // Worker executor — routes to correct backend (built-in + custom)
-  const executeWorker = async (worker: string, task: string, timeoutMs: number): Promise<string> => {
+  // Worker executor — routes to correct backend (built-in + custom), supports multimodal
+  const executeWorker = async (worker: string, task: string | import('./llm-provider.js').ContentBlock[], timeoutMs: number): Promise<string> => {
     const def = allWorkers()[worker];
     if (!def) throw new Error(`Unknown worker: ${worker}`);
 
@@ -97,7 +97,8 @@ export function createMiddleware(config?: MiddlewareConfig) {
       }
       case 'shell': {
         try {
-          const output = execSync(task, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+          const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
+          const output = execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
           return output;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -143,15 +144,26 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     tasks: mw.buffer.list({ limit: 0 }).length,
   }));
 
-  // POST /dispatch — single task
+  // POST /dispatch — single task (supports multimodal)
+  // Body: { worker, task, timeout?, caller? }
+  //   task: string (text only) OR ContentBlock[] (multimodal)
+  //   ContentBlock: { type: 'text', text } | { type: 'image', source: { type, mediaType, data } } | { type: 'file', path, mediaType? }
   app.post('/dispatch', async (c) => {
-    const body = await c.req.json<{ worker: string; task: string; timeout?: number; caller?: string }>();
+    const body = await c.req.json<{
+      worker: string;
+      task: string | import('./llm-provider.js').ContentBlock[];
+      timeout?: number;
+      caller?: string;
+    }>();
     if (!body.worker || !body.task) return c.json({ error: 'worker and task required' }, 400);
-    if (!WORKERS[body.worker]) return c.json({ error: `Unknown worker: ${body.worker}` }, 400);
 
-    const def = WORKERS[body.worker];
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    if (!allW[body.worker]) return c.json({ error: `Unknown worker: ${body.worker}` }, 400);
+
+    const def = allW[body.worker];
     const timeoutMs = (body.timeout ?? def.defaultTimeoutSeconds) * 1000;
-    const taskId = mw.buffer.submit({ worker: body.worker, task: body.task, caller: body.caller });
+    const taskDesc = typeof body.task === 'string' ? body.task : `[multimodal: ${body.task.length} blocks]`;
+    const taskId = mw.buffer.submit({ worker: body.worker, task: taskDesc, caller: body.caller });
     mw.buffer.start(taskId);
 
     // Fire and forget — caller polls /status/:id

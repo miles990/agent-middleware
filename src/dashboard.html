@@ -638,10 +638,16 @@ async function init() {
 // ─── Workers ───
 async function loadWorkers() {
   try {
-    const res = await fetch(`${API}/pool`);
+    const res = await fetch(`${API}/workers`);
     const data = await res.json();
     workers = {};
-    for (const w of data.workers) workers[w.name] = w;
+    for (const w of data.workers) workers[w.name] = { ...w, activeTasks: 0 };
+    // Count active tasks per worker
+    for (const t of tasks) {
+      if ((t.status === 'running' || t.status === 'pending') && workers[t.worker]) {
+        workers[t.worker].activeTasks = (workers[t.worker].activeTasks || 0) + 1;
+      }
+    }
     renderWorkers();
     renderWorkerSelect();
   } catch { setOffline(); }
@@ -654,17 +660,25 @@ function renderWorkers() {
     grid.innerHTML = '<div class="empty"><div class="empty-icon">⚙</div>No workers configured</div>';
     return;
   }
-  grid.innerHTML = entries.map(([name, w]) => `
-    <div class="worker-card" onclick="editWorker('${name}')">
+  grid.innerHTML = entries.map(([name, w]) => {
+    const active = w.activeTasks || 0;
+    const statusColor = active > 0 ? 'var(--info)' : 'var(--text-muted)';
+    const statusText = active > 0 ? `${active} running` : 'idle';
+    const builtinTag = w.builtin === false ? '<span style="font-size:9px;color:var(--warn);margin-left:4px;">custom</span>' : '';
+    return `
+    <div class="worker-card" onclick="editWorker('${name}')" style="border-left:3px solid ${statusColor};">
       <div class="worker-actions"><button class="btn-icon" title="Edit">✎</button></div>
-      <div class="name">${name}</div>
+      <div class="name">${name}${builtinTag}</div>
       <div class="meta">
         <span class="backend-tag ${w.backend}">${w.backend}</span>
         <span class="model">${w.model || '—'}</span>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${w.timeout}s timeout</div>
-    </div>
-  `).join('');
+      <div style="font-size:11px;margin-top:4px;">
+        <span style="color:${statusColor};">${statusText}</span>
+        <span style="color:var(--text-muted);margin-left:6px;">${w.timeout}s</span>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderWorkerSelect() {
@@ -750,7 +764,7 @@ function connectSSE() {
   for (const evt of ['task.submitted','task.started','task.completed','task.failed','task.cancelled']) {
     es.addEventListener(evt, (e) => {
       addEvent(evt, e.data);
-      loadTasks();
+      loadTasks().then(loadWorkers); // refresh worker active counts too
     });
   }
 
@@ -812,20 +826,42 @@ async function saveWorker() {
   };
   if (!data.name) return;
 
-  // TODO: POST /api/workers to persist (for now, just update local state)
-  workers[data.name] = data;
-  renderWorkers();
-  renderWorkerSelect();
-  closeModal();
+  try {
+    const isUpdate = editingWorker && editingWorker === data.name;
+    const url = isUpdate ? `${API}/workers/${data.name}` : `${API}/workers`;
+    const method = isUpdate ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method, headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (result.error) { alert(result.error); return; }
+    await loadWorkers();
+    closeModal();
+  } catch (e) {
+    // Fallback: update local state
+    workers[data.name] = data;
+    renderWorkers();
+    renderWorkerSelect();
+    closeModal();
+  }
 }
 
 async function deleteWorker() {
   if (!editingWorker) return;
   if (!confirm(`Delete worker "${editingWorker}"?`)) return;
-  delete workers[editingWorker];
-  renderWorkers();
-  renderWorkerSelect();
-  closeModal();
+  try {
+    const res = await fetch(`${API}/workers/${editingWorker}`, { method: 'DELETE' });
+    const result = await res.json();
+    if (result.error) { alert(result.error); return; }
+    await loadWorkers();
+    closeModal();
+  } catch {
+    delete workers[editingWorker];
+    renderWorkers();
+    renderWorkerSelect();
+    closeModal();
+  }
 }
 
 // ─── Status ───

@@ -44,7 +44,7 @@ export interface PlanResult {
   summary: { completed: number; failed: number; skipped: number };
 }
 
-export type WorkerExecutor = (worker: string, task: string, timeoutMs: number) => Promise<string>;
+export type WorkerExecutor = (worker: string, task: string | import('./llm-provider.js').ContentBlock[], timeoutMs: number) => Promise<string>;
 
 // =============================================================================
 // Plan Engine
