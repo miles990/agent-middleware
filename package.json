@@ -1,0 +1,24 @@
+{
+  "name": "agent-middleware",
+  "version": "0.1.0",
+  "description": "Agent-agnostic middleware: action plan engine, worker dispatch, session pool. Any agent/human/service can use it via HTTP API.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.98",
+    "hono": "^4.7.10",
+    "@hono/node-server": "^1.14.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "tsx": "^4.19.4",
+    "@types/node": "^22.15.3"
+  }
+}
