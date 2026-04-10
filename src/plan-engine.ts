@@ -119,21 +119,29 @@ function evaluateCondition(condition: PlanStep['condition'], results: Map<string
 
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
+export interface PlanEngineOptions {
+  onStepComplete?: (step: StepResult) => void;
+  onStepDispatch?: (step: PlanStep) => void;
+  /**
+   * Sibling cancellation policy:
+   * - 'none': siblings continue running (default — maximizes completed results)
+   * - 'cancel-dependents': only skip downstream steps (current fail-fast)
+   * - 'cancel-all': abort all running steps on any failure (fast exit)
+   */
+  failurePolicy?: 'none' | 'cancel-dependents' | 'cancel-all';
+}
+
 export class PlanEngine {
   private executor: WorkerExecutor;
   private onStepComplete?: (step: StepResult) => void;
   private onStepDispatch?: (step: PlanStep) => void;
+  private failurePolicy: 'none' | 'cancel-dependents' | 'cancel-all';
 
-  constructor(
-    executor: WorkerExecutor,
-    opts?: {
-      onStepComplete?: (step: StepResult) => void;
-      onStepDispatch?: (step: PlanStep) => void;
-    },
-  ) {
+  constructor(executor: WorkerExecutor, opts?: PlanEngineOptions) {
     this.executor = executor;
     this.onStepComplete = opts?.onStepComplete;
     this.onStepDispatch = opts?.onStepDispatch;
+    this.failurePolicy = opts?.failurePolicy ?? 'cancel-dependents';
   }
 
   validate(plan: ActionPlan, availableWorkers: Set<string>): string[] {
@@ -185,12 +193,15 @@ export class PlanEngine {
     const results = new Map<string, StepResult>();
     const running = new Set<string>();
     let dispatchOrder = 0;
+    let aborted = false; // cancel-all flag
 
     // Track per-worker concurrency
     const workerRunning = new Map<string, number>();
 
     return new Promise<PlanResult>((resolve) => {
       const tryDispatch = () => {
+        if (aborted) return; // cancel-all: stop dispatching
+
         // Find steps ready to dispatch
         for (const step of plan.steps) {
           if (results.has(step.id) || running.has(step.id)) continue;
@@ -266,11 +277,24 @@ export class PlanEngine {
               results.set(res.id, res);
               this.onStepComplete?.(res);
 
+              // Cancel-all policy: abort on any failure
+              if (res.status !== 'completed' && res.status !== 'condition_skipped' && this.failurePolicy === 'cancel-all') {
+                aborted = true;
+                // Mark all pending steps as skipped
+                for (const s of plan.steps) {
+                  if (!results.has(s.id) && !running.has(s.id)) {
+                    results.set(s.id, { id: s.id, worker: s.worker, status: 'skipped', output: 'Aborted: cancel-all policy', durationMs: 0, dispatchOrder: dispatchOrder++ });
+                  }
+                }
+                // Wait for running steps to finish naturally, then resolve
+                if (running.size === 0) resolve(buildResult(plan, results, start));
+                return;
+              }
+
               // Check if all done
-              if (results.size === plan.steps.length) {
+              if (results.size === plan.steps.length && running.size === 0) {
                 resolve(buildResult(plan, results, start));
               } else {
-                // Try dispatching more steps now that one completed
                 tryDispatch();
               }
             });

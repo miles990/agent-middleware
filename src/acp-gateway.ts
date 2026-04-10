@@ -279,11 +279,18 @@ export class ACPGateway extends EventEmitter {
     return [...this.registry.values()];
   }
 
-  /** Start periodic cleanup */
+  /** Start periodic cleanup + health check */
   start(cleanupIntervalMs: number = 60_000): void {
     this.cleanupTimer = setInterval(() => {
-      for (const pool of this.pools.values()) {
-        pool.cleanup();
+      for (const [name, pool] of this.pools) {
+        const cleaned = pool.cleanup();
+        if (cleaned > 0) this.emit('pool.cleanup', { backend: name, cleaned });
+        // Health check: mark backend unhealthy if all sessions dead
+        const stats = pool.stats();
+        const backend = this.registry.get(name);
+        if (backend) {
+          backend.healthy = stats.dead < stats.total || stats.total === 0;
+        }
       }
     }, cleanupIntervalMs);
   }

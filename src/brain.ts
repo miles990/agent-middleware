@@ -19,7 +19,12 @@ export interface BrainConfig {
   model?: string;
   cwd?: string;
   additionalTools?: string[];
+  /** Max replanning rounds before accepting imperfect results (default: 3) */
+  maxReplanRounds?: number;
 }
+
+/** Max replan attempts to prevent infinite loops */
+const DEFAULT_MAX_REPLAN = 3;
 
 const PLANNING_SYSTEM = `You are the planning brain of an AI agent system. Your ONLY job is to produce action plans.
 
@@ -85,13 +90,28 @@ export async function brainPlan(brain: LLMProvider, goal: string, context?: stri
  * Input: original goal + plan results.
  * Output: final response or new plan.
  */
-export async function brainDigest(brain: LLMProvider, goal: string, planResult: PlanResult, additionalContext?: string): Promise<string> {
+export async function brainDigest(
+  brain: LLMProvider,
+  goal: string,
+  planResult: PlanResult,
+  opts?: { additionalContext?: string; replanRound?: number; maxReplanRounds?: number },
+): Promise<string> {
+  const round = opts?.replanRound ?? 0;
+  const maxRounds = opts?.maxReplanRounds ?? DEFAULT_MAX_REPLAN;
+
+  const replanWarning = round >= maxRounds
+    ? `\n\n⚠ REPLAN LIMIT REACHED (${round}/${maxRounds}). You MUST produce a final response now — do NOT output another plan. Accept imperfect results and summarize what you have.`
+    : round > 0
+    ? `\n\nReplan round ${round}/${maxRounds}. You may produce another plan if needed, or finalize.`
+    : '';
+
   const prompt = [
     `Original goal: ${goal}\n`,
     `Plan: "${planResult.goal}" — ${planResult.summary.completed} completed, ${planResult.summary.failed} failed, ${planResult.summary.skipped} skipped\n`,
     `Duration: ${(planResult.totalDurationMs / 1000).toFixed(1)}s\n\n`,
     planResult.digestContext,
-    additionalContext ? `\n\nAdditional context:\n${additionalContext}` : '',
+    opts?.additionalContext ? `\n\nAdditional context:\n${opts.additionalContext}` : '',
+    replanWarning,
   ].join('');
   return brain.think(prompt, DIGEST_SYSTEM);
 }
