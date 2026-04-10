@@ -77,13 +77,47 @@ export interface StepResult {
 
 export interface PlanResult {
   goal: string;
+  acceptance?: string;
   steps: StepResult[];
   totalDurationMs: number;
   summary: { completed: number; failed: number; skipped: number; conditionSkipped: number };
   /** Steps with low confidence (< threshold) — brain should consider replanning */
-  lowConfidenceSteps: Array<{ id: string; confidence: number }>;
-  /** Pre-built digest for brain */
+  lowConfidenceSteps: Array<{ id: string; confidence: number; reason?: string }>;
+  /** Compressed digest for brain (summary only, artifacts by reference) */
   digestContext: string;
+  /** Structured digest input for programmatic access */
+  digestInput: DigestInput;
+  /** Whether the plan's acceptance criteria was met (null if no acceptance defined) */
+  accepted: boolean | null;
+}
+
+/** Compressed input for brain digest — avoids context window overflow */
+export interface DigestInput {
+  goal: string;
+  acceptance?: string;
+  completedSteps: Array<{
+    id: string;
+    worker: string;
+    summary: string;
+    confidence?: number;
+    /** Artifact references (paths/ids), not content — brain fetches on demand */
+    artifactRefs: string[];
+    findings: string[];
+  }>;
+  failedSteps: Array<{ id: string; worker: string; error: string }>;
+  criticalFindings: string[];
+  /** Steps that need surgical replan (low confidence or partial results) */
+  replanCandidates: Array<{ id: string; reason: string; confidence?: number }>;
+}
+
+/** Risk level for confirmation gate */
+export type StepRisk = 'safe' | 'moderate' | 'dangerous';
+
+/** Confirmation gate result */
+export interface ConfirmationResult {
+  approved: boolean;
+  modifiedSteps?: PlanStep[];
+  reason?: string;
 }
 
 export type WorkerExecutor = (worker: string, task: string | import('./llm-provider.js').ContentBlock[], timeoutMs: number) => Promise<string>;
@@ -147,6 +181,22 @@ export interface PlanEngineOptions {
    * - 'cancel-all': abort all running steps on any failure (fast exit)
    */
   failurePolicy?: 'none' | 'cancel-dependents' | 'cancel-all';
+  /**
+   * Confirmation gate: called before execution starts.
+   * Receives plan with risk assessment. Return approved=false to block.
+   * If not provided, auto-approves (all steps are trusted).
+   */
+  confirmationGate?: (plan: ActionPlan, risks: Array<{ step: PlanStep; risk: StepRisk }>) => Promise<ConfirmationResult>;
+}
+
+/** Classify step risk based on worker type and tools */
+function classifyStepRisk(step: PlanStep): StepRisk {
+  const dangerousWorkers = new Set(['coder', 'shell']);
+  const moderateWorkers = new Set(['analyst', 'researcher']);
+
+  if (dangerousWorkers.has(step.worker)) return 'dangerous';
+  if (moderateWorkers.has(step.worker)) return 'moderate';
+  return 'safe';
 }
 
 export class PlanEngine {
@@ -154,12 +204,41 @@ export class PlanEngine {
   private onStepComplete?: (step: StepResult) => void;
   private onStepDispatch?: (step: PlanStep) => void;
   private failurePolicy: 'none' | 'cancel-dependents' | 'cancel-all';
+  private confirmationGate?: PlanEngineOptions['confirmationGate'];
 
   constructor(executor: WorkerExecutor, opts?: PlanEngineOptions) {
     this.executor = executor;
     this.onStepComplete = opts?.onStepComplete;
     this.onStepDispatch = opts?.onStepDispatch;
     this.failurePolicy = opts?.failurePolicy ?? 'cancel-dependents';
+    this.confirmationGate = opts?.confirmationGate;
+  }
+
+  /** Surgical replan: re-execute only specific failed/low-confidence steps */
+  async replanSteps(plan: ActionPlan, stepIds: string[], previousResults: Map<string, StepResult>): Promise<PlanResult> {
+    // Create a sub-plan with only the specified steps
+    const stepsToRerun = plan.steps.filter(s => stepIds.includes(s.id));
+    const subPlan: ActionPlan = {
+      goal: plan.goal,
+      acceptance: plan.acceptance,
+      steps: stepsToRerun.map(s => ({
+        ...s,
+        // Clear dependencies on already-completed steps (they have results)
+        dependsOn: s.dependsOn.filter(d => stepIds.includes(d)),
+      })),
+      synthesis: false, // no synthesis on replan — let caller handle
+    };
+
+    // Inject previous results into context so replan steps can reference them
+    const result = await this.execute(subPlan);
+
+    // Merge: replan results override previous results
+    const merged = new Map(previousResults);
+    for (const step of result.steps) {
+      merged.set(step.id, step);
+    }
+
+    return buildResult(plan, merged, Date.now());
   }
 
   validate(plan: ActionPlan, availableWorkers: Set<string>): string[] {
@@ -207,13 +286,32 @@ export class PlanEngine {
    * (even if B from the same "wave" is still running).
    */
   async execute(plan: ActionPlan): Promise<PlanResult> {
+    // Confirmation gate: assess risk and get approval before executing
+    if (this.confirmationGate) {
+      const risks = plan.steps.map(step => ({ step, risk: classifyStepRisk(step) }));
+      const confirmation = await this.confirmationGate(plan, risks);
+      if (!confirmation.approved) {
+        return {
+          goal: plan.goal, acceptance: plan.acceptance,
+          steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, status: 'skipped' as const, output: `Blocked by confirmation gate: ${confirmation.reason ?? 'not approved'}`, durationMs: 0, dispatchOrder: 0 })),
+          totalDurationMs: 0,
+          summary: { completed: 0, failed: 0, skipped: plan.steps.length, conditionSkipped: 0 },
+          lowConfidenceSteps: [], digestContext: `Plan blocked: ${confirmation.reason}`, digestInput: { goal: plan.goal, completedSteps: [], failedSteps: [], criticalFindings: [], replanCandidates: [] },
+          accepted: false,
+        };
+      }
+      // Apply any step modifications from gate
+      if (confirmation.modifiedSteps) {
+        plan = { ...plan, steps: confirmation.modifiedSteps };
+      }
+    }
+
     const start = Date.now();
     const results = new Map<string, StepResult>();
     const running = new Set<string>();
     let dispatchOrder = 0;
-    let aborted = false; // cancel-all flag
+    let aborted = false;
 
-    // Track per-worker concurrency
     const workerRunning = new Map<string, number>();
 
     return new Promise<PlanResult>((resolve) => {
@@ -398,32 +496,87 @@ export class PlanEngine {
 }
 
 function buildResult(plan: ActionPlan, results: Map<string, StepResult>, start: number): PlanResult {
-  const steps = plan.steps.map(s => results.get(s.id)!);
+  // Get steps (including synthesis if present)
+  const allStepIds = [...new Set([...plan.steps.map(s => s.id), ...results.keys()])];
+  const steps = allStepIds.map(id => results.get(id)).filter((s): s is StepResult => s != null);
 
-  // Build digest
+  // Build compressed DigestInput
+  const completedSteps = steps.filter(s => s.status === 'completed' && s.id !== '__synthesis__');
+  const failedSteps = steps.filter(s => s.status === 'failed' || s.status === 'timeout');
+
+  // Collect critical findings across all steps
+  const criticalFindings: string[] = [];
+  for (const s of completedSteps) {
+    if (s.structured?.findings) criticalFindings.push(...s.structured.findings);
+  }
+
+  // Identify replan candidates (surgical replan targets)
+  const replanCandidates = steps
+    .filter(s => {
+      if (s.status === 'failed' || s.status === 'timeout') return true;
+      if (s.status === 'completed' && s.structured?.confidence !== undefined && s.structured.confidence < LOW_CONFIDENCE_THRESHOLD) return true;
+      return false;
+    })
+    .map(s => ({
+      id: s.id,
+      reason: s.status !== 'completed' ? s.status : `low confidence (${s.structured!.confidence})`,
+      confidence: s.structured?.confidence,
+    }));
+
+  const digestInput: DigestInput = {
+    goal: plan.goal,
+    acceptance: plan.acceptance,
+    completedSteps: completedSteps.map(s => ({
+      id: s.id,
+      worker: s.worker,
+      summary: s.structured?.summary ?? s.output?.slice(0, 500) ?? '',
+      confidence: s.structured?.confidence,
+      artifactRefs: s.structured?.artifacts?.map(a => a.path ?? a.type) ?? [],
+      findings: s.structured?.findings ?? [],
+    })),
+    failedSteps: failedSteps.map(s => ({ id: s.id, worker: s.worker, error: s.output })),
+    criticalFindings: [...new Set(criticalFindings)],
+    replanCandidates,
+  };
+
+  // Build text digest from compressed input
   const digestParts: string[] = [`# Plan Result: ${plan.goal}\n`];
+  if (plan.acceptance) digestParts.push(`Acceptance: ${plan.acceptance}\n`);
+
   for (const s of steps) {
+    if (s.id === '__synthesis__') continue;
     const summary = s.structured?.summary ?? s.output?.slice(0, 500);
     const icon = s.status === 'completed' ? '✅' : s.status === 'condition_skipped' ? '⏭' : '❌';
     digestParts.push(`## ${icon} ${s.id} [${s.worker}] (${(s.durationMs / 1000).toFixed(1)}s)`);
     digestParts.push(summary);
     if (s.structured?.findings?.length) digestParts.push(`Findings: ${s.structured.findings.join('; ')}`);
-    if (s.structured?.confidence !== undefined) digestParts.push(`Confidence: ${s.structured.confidence}`);
     digestParts.push('');
   }
 
-  // Flag low confidence
-  const lowConfidenceSteps = steps
-    .filter(s => s.status === 'completed' && s.structured?.confidence !== undefined && s.structured.confidence < LOW_CONFIDENCE_THRESHOLD)
-    .map(s => ({ id: s.id, confidence: s.structured!.confidence! }));
+  // Synthesis result
+  const synthStep = results.get('__synthesis__');
+  if (synthStep) {
+    digestParts.push(`\n## 📋 Synthesis [${synthStep.worker}] (${(synthStep.durationMs / 1000).toFixed(1)}s)`);
+    digestParts.push(synthStep.output?.slice(0, 2000) ?? '');
+  }
 
-  if (lowConfidenceSteps.length > 0) {
-    digestParts.push(`\n⚠ Low confidence steps (< ${LOW_CONFIDENCE_THRESHOLD}): ${lowConfidenceSteps.map(s => `${s.id}(${s.confidence})`).join(', ')}`);
-    digestParts.push('Consider replanning these steps with more specific instructions.');
+  if (replanCandidates.length > 0) {
+    digestParts.push(`\n⚠ Replan candidates: ${replanCandidates.map(s => `${s.id}(${s.reason})`).join(', ')}`);
+  }
+
+  // Check acceptance
+  let accepted: boolean | null = null;
+  if (plan.acceptance && synthStep?.status === 'completed') {
+    // Simple heuristic: if synthesis mentions "達成" or "通過" and no failures, consider accepted
+    const synthText = (synthStep.output ?? '').toLowerCase();
+    const hasPositive = /達成|通過|pass|success|完成|滿足/.test(synthText);
+    const hasNegative = /未達成|失敗|fail|未滿足|not met/.test(synthText);
+    accepted = hasPositive && !hasNegative;
   }
 
   return {
     goal: plan.goal,
+    acceptance: plan.acceptance,
     steps,
     totalDurationMs: Date.now() - start,
     summary: {
@@ -432,8 +585,10 @@ function buildResult(plan: ActionPlan, results: Map<string, StepResult>, start: 
       skipped: steps.filter(s => s.status === 'skipped').length,
       conditionSkipped: steps.filter(s => s.status === 'condition_skipped').length,
     },
-    lowConfidenceSteps,
+    lowConfidenceSteps: replanCandidates.filter(r => r.confidence !== undefined) as Array<{ id: string; confidence: number; reason?: string }>,
     digestContext: digestParts.join('\n'),
+    digestInput,
+    accepted,
   };
 }
 
