@@ -113,17 +113,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'middleware_create_worker',
-      description: 'Create a new custom worker. Use when no existing worker fits your task — design one on the fly. The worker is immediately available for dispatch. Persisted across restarts.',
+      description: `Create a new custom worker. Two modes:
+
+SIMPLE MODE — just name + description + prompt, everything else auto-configured:
+  middleware_create_worker(name="translator", description="Translate text to any language", prompt="You are a translator...")
+
+FULL MODE — customize everything:
+  middleware_create_worker(name="translator", description="...", prompt="...", tools=["Read","Write","WebFetch"], model="haiku", backend="sdk", timeout=60, maxTurns=5)
+
+Presets by type:
+- research-type: tools=[Read,Grep,Glob,WebFetch,WebSearch,Bash], model=sonnet, timeout=120
+- code-type: tools=[Read,Write,Edit,Bash,Grep,Glob], model=sonnet, timeout=180
+- review-type: tools=[Read,Grep,Glob], model=haiku, timeout=60
+- shell-type: backend=shell, timeout=30
+
+Worker is immediately available for dispatch. Persisted across restarts.`,
       inputSchema: {
         type: 'object' as const,
         properties: {
-          name: { type: 'string', description: 'Worker name (lowercase, no spaces). e.g. translator, diagram-maker, data-cleaner' },
-          description: { type: 'string', description: 'When to use this worker — other agents see this to decide when to dispatch' },
-          prompt: { type: 'string', description: 'Worker identity/instructions. e.g. "You are a Japanese translator. Translate accurately, preserve tone."' },
-          tools: { type: 'array', items: { type: 'string' }, description: 'Tools the worker can use. e.g. ["Read", "Write", "Bash", "WebFetch"]' },
-          model: { type: 'string', description: 'Model: "sonnet" (balanced), "opus" (deep), "haiku" (fast+cheap). Default: sonnet' },
-          backend: { type: 'string', description: 'Backend: "sdk" (default), "acp" (cross-CLI), "shell" (direct bash)' },
-          timeout: { type: 'number', description: 'Default timeout in seconds. Default: 120' },
+          name: { type: 'string', description: 'Worker name (lowercase-with-dashes). e.g. translator, diagram-maker' },
+          description: { type: 'string', description: 'When to use this worker — others see this to decide when to dispatch' },
+          prompt: { type: 'string', description: 'Worker identity/instructions. e.g. "You are a Japanese translator."' },
+          preset: { type: 'string', description: 'Optional preset: "research", "code", "review", "shell". Auto-fills tools/model/backend/timeout. Your explicit values override preset.' },
+          tools: { type: 'array', items: { type: 'string' }, description: 'Tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch, Agent. Default: preset or [Read,Grep,Glob,Bash]' },
+          model: { type: 'string', description: '"sonnet" (default), "opus" (deep), "haiku" (fast+cheap)' },
+          backend: { type: 'string', description: '"sdk" (default), "acp" (cross-CLI), "shell" (direct bash)' },
+          timeout: { type: 'number', description: 'Timeout in seconds. Default: preset or 120' },
+          maxTurns: { type: 'number', description: 'Max tool-use turns. Default: preset or 10' },
         },
         required: ['name', 'description', 'prompt'],
       },
@@ -219,16 +235,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'middleware_create_worker': {
         const a = args as Record<string, unknown>;
+
+        // Preset defaults
+        const PRESETS: Record<string, { tools: string[]; model: string; backend: string; timeout: number; maxTurns: number }> = {
+          research: { tools: ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'Bash'], model: 'sonnet', backend: 'sdk', timeout: 120, maxTurns: 10 },
+          code:     { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'], model: 'sonnet', backend: 'sdk', timeout: 180, maxTurns: 15 },
+          review:   { tools: ['Read', 'Grep', 'Glob'], model: 'haiku', backend: 'sdk', timeout: 60, maxTurns: 5 },
+          shell:    { tools: ['Bash', 'Read'], model: 'haiku', backend: 'shell', timeout: 30, maxTurns: 3 },
+        };
+
+        const preset = PRESETS[(a.preset as string) ?? ''] ?? {};
         const result = await mwFetch('/workers', {
           method: 'POST',
           body: JSON.stringify({
             name: a.name,
             description: a.description,
             prompt: a.prompt,
-            tools: a.tools ?? ['Read', 'Grep', 'Glob', 'Bash'],
-            model: a.model ?? 'sonnet',
-            backend: a.backend ?? 'sdk',
-            timeout: a.timeout ?? 120,
+            tools: a.tools ?? preset.tools ?? ['Read', 'Grep', 'Glob', 'Bash'],
+            model: a.model ?? preset.model ?? 'sonnet',
+            backend: a.backend ?? preset.backend ?? 'sdk',
+            timeout: a.timeout ?? preset.timeout ?? 120,
+            maxTurns: a.maxTurns ?? preset.maxTurns ?? 10,
           }),
         });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
