@@ -121,6 +121,112 @@ Event types (discriminated union):
 
 7. **Acceptance check** — `plan.acceptance` → the last step should return `{ "accepted": true/false }` in structured JSON. If no structured output, acceptance is inferred (no failures + no low-confidence = accepted).
 
+## End-to-End Example: Real Plan with Failure + Retry + Result
+
+Here's a complete walkthrough — a 5-step plan where one step fails, retries, and the whole plan succeeds.
+
+### 1. Submit the plan
+
+```
+POST /plan
+{
+  "goal": "Audit mini-agent memory and produce optimization report",
+  "acceptance": "Report identifies top 3 bloat sources and gives actionable fixes",
+  "steps": [
+    { "id": "scan", "worker": "shell", "label": "掃描記憶體檔案", "task": "find /project/memory -type f | wc -l", "dependsOn": [] },
+    { "id": "sizes", "worker": "shell", "label": "找大檔案", "task": "find /project/memory -name '*.md' -size +5k | head -10", "dependsOn": [] },
+    { "id": "fetch-best-practices", "worker": "researcher", "label": "查詢最佳實踐",
+      "task": "Search for AI agent memory architecture best practices",
+      "dependsOn": [], "retry": { "maxRetries": 2, "backoffMs": 2000, "onExhausted": "skip" } },
+    { "id": "analyze", "worker": "analyst", "label": "分析並比較",
+      "task": "Compare our memory stats ({{scan.result}}, {{sizes.result}}) against best practices ({{fetch-best-practices.summary}}). Identify top 3 bloat sources.",
+      "dependsOn": ["scan", "sizes", "fetch-best-practices"] },
+    { "id": "report", "worker": "analyst", "label": "產出最終報告",
+      "task": "Write the optimization report. Goal: {{goal}}. Acceptance: {{acceptance}}. Analysis: {{analyze.summary}}. Return JSON: { \"accepted\": true/false, \"summary\": \"...\", \"findings\": [...], \"recommendations\": [...], \"deliverable\": \"full report text\" }",
+      "dependsOn": ["analyze"] }
+  ]
+}
+→ { "planId": "plan-789", "status": "executing", "steps": 5 }
+```
+
+### 2. SSE events during execution
+
+```
+event: task.submitted    data: { "id": "scan", "worker": "shell", "status": "pending" }
+event: task.submitted    data: { "id": "sizes", "worker": "shell", "status": "pending" }
+event: task.submitted    data: { "id": "fetch-best-practices", "worker": "researcher", "status": "pending" }
+event: step.dispatched   data: { "step": { "id": "scan", ... } }           ← Layer 0: 3 parallel
+event: step.dispatched   data: { "step": { "id": "sizes", ... } }
+event: step.dispatched   data: { "step": { "id": "fetch-best-practices", ... } }
+event: step.completed    data: { "id": "scan", "status": "completed", "output": "731" }
+event: step.completed    data: { "id": "sizes", "status": "completed", "output": "/project/memory/HEARTBEAT.md\n..." }
+event: step.retrying     data: { "step": { "id": "fetch-best-practices" }, "attempt": 1, "error": "timeout" }  ← retry!
+event: step.completed    data: { "id": "fetch-best-practices", "status": "completed", "retryCount": 1 }       ← succeeded on retry
+event: step.dispatched   data: { "step": { "id": "analyze", ... } }        ← Layer 1: deps satisfied
+event: step.completed    data: { "id": "analyze", "status": "completed" }
+event: step.dispatched   data: { "step": { "id": "report", ... } }         ← Layer 2: final step
+event: step.completed    data: { "id": "report", "status": "completed" }
+event: plan.completed    data: { "goal": "Audit mini-agent memory...", "accepted": true, ... }
+```
+
+### 3. Get the result
+
+```
+GET /status/report
+{
+  "id": "report",
+  "worker": "analyst",
+  "status": "completed",
+  "result": "{ \"accepted\": true, \"summary\": \"Memory has 731 files...\", \"findings\": [\"HEARTBEAT.md is 8.5K (27% of context)\", ...], \"recommendations\": [\"Strip HTML comments from HEARTBEAT\", ...], \"deliverable\": \"# Memory Optimization Report\\n...\" }"
+}
+```
+
+### 4. Plan result
+
+```
+GET /plan/plan-789
+{
+  "planId": "plan-789",
+  "goal": "Audit mini-agent memory and produce optimization report",
+  "totalSteps": 5,
+  "completed": 5,
+  "failed": 0,
+  "accepted": true,
+  "steps": [
+    { "id": "scan", "status": "completed", "label": "掃描記憶體檔案" },
+    { "id": "sizes", "status": "completed", "label": "找大檔案" },
+    { "id": "fetch-best-practices", "status": "completed", "label": "查詢最佳實踐", "retryCount": 1 },
+    { "id": "analyze", "status": "completed", "label": "分析並比較" },
+    { "id": "report", "status": "completed", "label": "產出最終報告" }
+  ]
+}
+```
+
+### DAG visualization (what the dashboard shows)
+
+```
+Layer 0 (parallel):
+  ┌──────────────┐  ┌──────────┐  ┌─────────────────┐
+  │ ✓ 掃描記憶體   │  │ ✓ 找大檔案 │  │ ✓ 查詢最佳實踐   │
+  │   shell 0.0s  │  │  shell    │  │  researcher      │
+  │   parallel    │  │  parallel │  │  1 retry         │
+  └──────┬───────┘  └────┬─────┘  └───────┬──────────┘
+         └───────────────┼────────────────┘
+                         ↓
+Layer 1:
+  ┌─────────────────────────┐
+  │ ✓ 分析並比較              │
+  │   analyst · ← 3 deps    │
+  └────────────┬────────────┘
+               ↓
+Layer 2:
+  ┌─────────────────────────┐
+  │ ✓ 產出最終報告            │
+  │   analyst · ← 1 dep     │
+  │   accepted: true         │
+  └─────────────────────────┘
+```
+
 ## MCP Tools (Agent-Friendly)
 
 If connected via MCP, you have these tools:
