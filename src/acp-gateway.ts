@@ -200,14 +200,61 @@ class SessionPool {
 // ACP Gateway
 // =============================================================================
 
+/** Circuit breaker state per backend */
+interface CircuitState {
+  failures: number;
+  lastFailure: Date | null;
+  state: 'closed' | 'open' | 'half-open';
+  openedAt: Date | null;
+}
+
+const CIRCUIT_FAILURE_THRESHOLD = 3;
+const CIRCUIT_RESET_MS = 60_000; // 1 min cooldown
+
 export class ACPGateway extends EventEmitter {
   private registry = new Map<string, CLIBackend>();
   private pools = new Map<string, SessionPool>();
+  private circuits = new Map<string, CircuitState>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private totalDispatched = 0;
 
   constructor() {
     super();
+  }
+
+  private getCircuit(name: string): CircuitState {
+    if (!this.circuits.has(name)) {
+      this.circuits.set(name, { failures: 0, lastFailure: null, state: 'closed', openedAt: null });
+    }
+    return this.circuits.get(name)!;
+  }
+
+  private recordSuccess(name: string): void {
+    const c = this.getCircuit(name);
+    c.failures = 0;
+    c.state = 'closed';
+  }
+
+  private recordFailure(name: string): void {
+    const c = this.getCircuit(name);
+    c.failures++;
+    c.lastFailure = new Date();
+    if (c.failures >= CIRCUIT_FAILURE_THRESHOLD) {
+      c.state = 'open';
+      c.openedAt = new Date();
+      this.emit('circuit.open', name);
+    }
+  }
+
+  private isCircuitOpen(name: string): boolean {
+    const c = this.getCircuit(name);
+    if (c.state !== 'open') return false;
+    // Check if cooldown expired → half-open (allow one attempt)
+    if (c.openedAt && Date.now() - c.openedAt.getTime() > CIRCUIT_RESET_MS) {
+      c.state = 'half-open';
+      return false;
+    }
+    return true;
   }
 
   /** Register a CLI backend */
@@ -254,6 +301,11 @@ export class ACPGateway extends EventEmitter {
    * Acquires session → sends prompt via stdin → collects stdout → releases.
    */
   async dispatch(backendName: string, task: string, timeoutMs: number = 120_000): Promise<string> {
+    // Circuit breaker check
+    if (this.isCircuitOpen(backendName)) {
+      throw new Error(`Circuit breaker OPEN for ${backendName} — ${CIRCUIT_FAILURE_THRESHOLD} consecutive failures. Retry after ${CIRCUIT_RESET_MS / 1000}s cooldown.`);
+    }
+
     const pool = this.pools.get(backendName);
     if (!pool) throw new Error(`Unknown ACP backend: ${backendName}`);
 
@@ -263,6 +315,7 @@ export class ACPGateway extends EventEmitter {
     try {
       session = await pool.acquire();
     } catch (err) {
+      this.recordFailure(backendName);
       throw new Error(`Failed to acquire ${backendName} session: ${err instanceof Error ? err.message : err}`);
     }
 
@@ -273,11 +326,12 @@ export class ACPGateway extends EventEmitter {
     try {
       const result = await this.sendTask(session, task, timeoutMs);
       pool.release(session.id);
+      this.recordSuccess(backendName);
       this.emit('task.completed', { backend: backendName, sessionId: session.id });
       return result;
     } catch (err) {
-      // Session might be corrupted — mark dead, don't reuse
       pool.markDead(session.id);
+      this.recordFailure(backendName);
       this.emit('task.failed', { backend: backendName, sessionId: session.id, error: err });
       throw err;
     }
@@ -364,14 +418,18 @@ export class ACPGateway extends EventEmitter {
     });
   }
 
-  /** Get gateway stats */
+  /** Get gateway stats including circuit breaker state */
   getStats(): GatewayStats {
-    const backends = [...this.registry.entries()].map(([name, backend]) => ({
-      name,
-      command: backend.command,
-      healthy: backend.healthy ?? false,
-      sessions: this.pools.get(name)?.stats() ?? { total: 0, idle: 0, busy: 0, dead: 0 },
-    }));
+    const backends = [...this.registry.entries()].map(([name, backend]) => {
+      const circuit = this.getCircuit(name);
+      return {
+        name,
+        command: backend.command,
+        healthy: backend.healthy ?? false,
+        sessions: this.pools.get(name)?.stats() ?? { total: 0, idle: 0, busy: 0, dead: 0 },
+        circuit: { state: circuit.state, failures: circuit.failures },
+      };
+    });
     return { backends, totalDispatched: this.totalDispatched };
   }
 }

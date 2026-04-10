@@ -159,8 +159,12 @@ export function createMiddleware(config?: MiddlewareConfig) {
 
   // Plan engine with event callbacks
   const planEngine = new PlanEngine(executeWorker, {
-    onStepComplete: (step, wave) => {
-      buffer.complete(step.id, step.output);
+    onStepComplete: (step) => {
+      if (step.status === 'completed') buffer.complete(step.id, step.output);
+      else if (step.status !== 'condition_skipped') buffer.fail(step.id, step.output);
+    },
+    onStepDispatch: (step) => {
+      buffer.start(step.id);
     },
   });
 

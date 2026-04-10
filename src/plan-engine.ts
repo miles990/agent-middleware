@@ -1,15 +1,14 @@
 /**
  * Action Plan Engine — DAG-based parallel execution of worker tasks.
  *
- * Brain produces plan → engine validates → dispatches in dependency waves → results flow back.
- *
  * Features:
- * - Wave-based parallel execution (independent steps run concurrently)
+ * - Streaming DAG: steps dispatch immediately when dependencies satisfy (not wave-batched)
  * - Step context injection: {{stepId.result}} templates resolved before dispatch
- * - Per-worker concurrency limits (readers=many, writers=few)
+ * - Per-worker concurrency limits
  * - Structured output: { summary, artifacts, findings, confidence }
  * - Dynamic branching: conditional steps via `condition` field
  * - Fail-fast: failed step → downstream skipped
+ * - Low confidence detection → flagged for brain replanning
  */
 
 // =============================================================================
@@ -19,42 +18,31 @@
 export interface PlanStep {
   id: string;
   worker: string;
-  /** Task description — can reference previous step results via {{stepId.result}} or {{stepId.summary}} */
+  /** Task — can reference previous results via {{stepId.result}}, {{stepId.summary}}, {{stepId.findings}} */
   task: string;
   dependsOn: string[];
   backend?: 'sdk' | 'acp' | 'shell' | 'middleware';
   timeoutSeconds?: number;
-  /** Dynamic branching: only run this step if condition is met */
+  /** Dynamic branching: only run if condition met */
   condition?: {
-    /** Step ID to check */
     stepId: string;
-    /** Check type: 'completed' (ran ok), 'contains' (output contains text), 'not_contains' */
     check: 'completed' | 'failed' | 'contains' | 'not_contains';
-    /** For contains/not_contains: text to search in step output */
     value?: string;
   };
-  /** Max concurrency for this step's worker type (overrides worker default) */
   maxConcurrency?: number;
 }
 
 export interface ActionPlan {
   goal: string;
   steps: PlanStep[];
-  /** Brain mode after execution: 'digest' (synthesize results) or 'continue' (plan next wave) */
   afterExecution?: 'digest' | 'continue';
 }
 
-/** Structured step output — workers should return this format when possible */
 export interface StructuredOutput {
-  /** Brief summary for brain consumption */
   summary: string;
-  /** Artifacts produced (files, diffs, data) */
   artifacts?: Array<{ type: string; path?: string; content?: string }>;
-  /** Key findings (signals for brain) */
   findings?: string[];
-  /** Worker's confidence in output (0-1) */
   confidence?: number;
-  /** Raw output text */
   raw?: string;
 }
 
@@ -63,10 +51,10 @@ export interface StepResult {
   worker: string;
   status: 'completed' | 'failed' | 'timeout' | 'skipped' | 'condition_skipped';
   output: string;
-  /** Parsed structured output (if worker returned JSON) */
   structured?: StructuredOutput;
   durationMs: number;
-  wave: number;
+  /** Which wave this step dispatched in (for observability) */
+  dispatchOrder: number;
 }
 
 export interface PlanResult {
@@ -74,106 +62,80 @@ export interface PlanResult {
   steps: StepResult[];
   totalDurationMs: number;
   summary: { completed: number; failed: number; skipped: number; conditionSkipped: number };
-  /** Aggregated context for brain digest mode */
+  /** Steps with low confidence (< threshold) — brain should consider replanning */
+  lowConfidenceSteps: Array<{ id: string; confidence: number }>;
+  /** Pre-built digest for brain */
   digestContext: string;
 }
 
 export type WorkerExecutor = (worker: string, task: string | import('./llm-provider.js').ContentBlock[], timeoutMs: number) => Promise<string>;
 
 // =============================================================================
-// Step Context Resolution
+// Helpers
 // =============================================================================
 
-/**
- * Resolve {{stepId.result}}, {{stepId.summary}}, {{stepId.output}} templates in task text.
- * Injects previous step results so downstream steps have context.
- */
 function resolveStepContext(task: string, results: Map<string, StepResult>): string {
   return task.replace(/\{\{(\w[\w-]*)\.(\w+)\}\}/g, (match, stepId, field) => {
     const result = results.get(stepId);
-    if (!result) return match; // leave unresolved if step not found
-
+    if (!result) return match;
     switch (field) {
-      case 'result':
-      case 'output':
-        return result.output?.slice(0, 4000) ?? '';
-      case 'summary':
-        return result.structured?.summary ?? result.output?.slice(0, 500) ?? '';
-      case 'status':
-        return result.status;
-      case 'findings':
-        return result.structured?.findings?.join('\n') ?? '';
-      case 'confidence':
-        return String(result.structured?.confidence ?? '');
-      default:
-        return match;
+      case 'result': case 'output': return result.output?.slice(0, 4000) ?? '';
+      case 'summary': return result.structured?.summary ?? result.output?.slice(0, 500) ?? '';
+      case 'status': return result.status;
+      case 'findings': return result.structured?.findings?.join('\n') ?? '';
+      case 'confidence': return String(result.structured?.confidence ?? '');
+      default: return match;
     }
   });
 }
 
-/**
- * Try to parse structured output from worker response.
- * Workers can return JSON with { summary, artifacts, findings, confidence }.
- */
 function parseStructuredOutput(output: string): StructuredOutput | undefined {
-  // Try JSON parse
   try {
     const jsonMatch = output.match(/```json\s*([\s\S]*?)```/) ?? output.match(/(\{[\s\S]*"summary"[\s\S]*\})/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[1]);
       if (parsed.summary) return parsed as StructuredOutput;
     }
-  } catch { /* not structured JSON */ }
-
-  // Not structured — return undefined, use raw output
+  } catch { /* not structured */ }
   return undefined;
 }
 
-/**
- * Check if a conditional step should run based on dependency results.
- */
 function evaluateCondition(condition: PlanStep['condition'], results: Map<string, StepResult>): boolean {
   if (!condition) return true;
-
-  const depResult = results.get(condition.stepId);
-  if (!depResult) return false;
-
+  const dep = results.get(condition.stepId);
+  if (!dep) return false;
   switch (condition.check) {
-    case 'completed':
-      return depResult.status === 'completed';
-    case 'failed':
-      return depResult.status === 'failed' || depResult.status === 'timeout';
-    case 'contains':
-      return condition.value ? depResult.output.includes(condition.value) : false;
-    case 'not_contains':
-      return condition.value ? !depResult.output.includes(condition.value) : true;
-    default:
-      return true;
+    case 'completed': return dep.status === 'completed';
+    case 'failed': return dep.status === 'failed' || dep.status === 'timeout';
+    case 'contains': return condition.value ? dep.output.includes(condition.value) : false;
+    case 'not_contains': return condition.value ? !dep.output.includes(condition.value) : true;
+    default: return true;
   }
 }
 
 // =============================================================================
-// Plan Engine
+// Plan Engine — Streaming DAG
 // =============================================================================
+
+const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
 export class PlanEngine {
   private executor: WorkerExecutor;
-  private onStepComplete?: (step: StepResult, wave: number) => void;
-  private onWaveStart?: (wave: number, steps: PlanStep[]) => void;
+  private onStepComplete?: (step: StepResult) => void;
+  private onStepDispatch?: (step: PlanStep) => void;
 
   constructor(
     executor: WorkerExecutor,
     opts?: {
-      onStepComplete?: (step: StepResult, wave: number) => void;
-      onWaveStart?: (wave: number, steps: PlanStep[]) => void;
+      onStepComplete?: (step: StepResult) => void;
+      onStepDispatch?: (step: PlanStep) => void;
     },
   ) {
     this.executor = executor;
     this.onStepComplete = opts?.onStepComplete;
-    this.onWaveStart = opts?.onWaveStart;
+    this.onStepDispatch = opts?.onStepDispatch;
   }
 
-  /** Validate plan: no cycles, valid workers, valid dependencies, valid conditions */
   validate(plan: ActionPlan, availableWorkers: Set<string>): string[] {
     const errors: string[] = [];
     const ids = new Set(plan.steps.map(s => s.id));
@@ -183,171 +145,197 @@ export class PlanEngine {
         errors.push(`Step ${step.id}: unknown worker '${step.worker}'`);
       }
       for (const dep of step.dependsOn) {
-        if (!ids.has(dep)) {
-          errors.push(`Step ${step.id}: depends on unknown step '${dep}'`);
-        }
-        if (dep === step.id) {
-          errors.push(`Step ${step.id}: self-dependency`);
-        }
+        if (!ids.has(dep)) errors.push(`Step ${step.id}: depends on unknown step '${dep}'`);
+        if (dep === step.id) errors.push(`Step ${step.id}: self-dependency`);
       }
-      // Validate condition references
       if (step.condition && !ids.has(step.condition.stepId)) {
         errors.push(`Step ${step.id}: condition references unknown step '${step.condition.stepId}'`);
       }
     }
 
-    // Cycle detection (topological sort)
+    // Cycle detection
     const visited = new Set<string>();
     const visiting = new Set<string>();
     const stepMap = new Map(plan.steps.map(s => [s.id, s]));
-
     const hasCycle = (id: string): boolean => {
       if (visiting.has(id)) return true;
       if (visited.has(id)) return false;
       visiting.add(id);
-      const step = stepMap.get(id);
-      if (step) {
-        for (const dep of step.dependsOn) {
-          if (hasCycle(dep)) return true;
-        }
+      for (const dep of stepMap.get(id)?.dependsOn ?? []) {
+        if (hasCycle(dep)) return true;
       }
       visiting.delete(id);
       visited.add(id);
       return false;
     };
-
     for (const step of plan.steps) {
-      if (hasCycle(step.id)) {
-        errors.push(`Cycle detected involving step '${step.id}'`);
-        break;
-      }
+      if (hasCycle(step.id)) { errors.push(`Cycle detected involving step '${step.id}'`); break; }
     }
 
     return errors;
   }
 
-  /** Execute plan in dependency waves with context injection */
+  /**
+   * Streaming DAG execution — steps dispatch immediately when dependencies satisfy.
+   * No wave batching: if step C depends only on A, it starts as soon as A completes
+   * (even if B from the same "wave" is still running).
+   */
   async execute(plan: ActionPlan): Promise<PlanResult> {
     const start = Date.now();
     const results = new Map<string, StepResult>();
-    let wave = 0;
+    const running = new Set<string>();
+    let dispatchOrder = 0;
 
-    while (results.size < plan.steps.length) {
-      // Ready: all deps completed successfully + condition met
-      const ready = plan.steps.filter(s => {
-        if (results.has(s.id)) return false;
-        if (!s.dependsOn.every(d => results.get(d)?.status === 'completed')) return false;
-        // Check dynamic condition
-        if (s.condition) {
-          const condDep = results.get(s.condition.stepId);
-          if (!condDep) return false; // condition dependency not yet resolved
-          if (!evaluateCondition(s.condition, results)) {
-            // Condition not met — mark as condition_skipped
-            const res: StepResult = {
-              id: s.id, worker: s.worker, status: 'condition_skipped',
-              output: `Condition not met: ${s.condition.stepId}.${s.condition.check}`, durationMs: 0, wave,
-            };
-            results.set(s.id, res);
-            this.onStepComplete?.(res, wave);
-            return false;
+    // Track per-worker concurrency
+    const workerRunning = new Map<string, number>();
+
+    return new Promise<PlanResult>((resolve) => {
+      const tryDispatch = () => {
+        // Find steps ready to dispatch
+        for (const step of plan.steps) {
+          if (results.has(step.id) || running.has(step.id)) continue;
+
+          // Check dependencies satisfied
+          const depsOk = step.dependsOn.every(d => {
+            const r = results.get(d);
+            return r && (r.status === 'completed' || r.status === 'condition_skipped');
+          });
+          if (!depsOk) {
+            // Check if any dep failed → skip this step
+            const depFailed = step.dependsOn.some(d => {
+              const r = results.get(d);
+              return r && r.status !== 'completed' && r.status !== 'condition_skipped';
+            });
+            if (depFailed && !running.has(step.id)) {
+              const res: StepResult = {
+                id: step.id, worker: step.worker, status: 'skipped',
+                output: 'Dependency failed', durationMs: 0, dispatchOrder: dispatchOrder++,
+              };
+              results.set(step.id, res);
+              this.onStepComplete?.(res);
+              // Cascade: this skip may unblock other steps
+              setTimeout(tryDispatch, 0);
+            }
+            continue;
           }
-        }
-        return true;
-      });
 
-      // Skipped: any dep failed/timeout/skipped
-      const skipped = plan.steps.filter(s =>
-        !results.has(s.id) &&
-        !ready.includes(s) &&
-        s.dependsOn.some(d => {
-          const r = results.get(d);
-          return r && r.status !== 'completed' && r.status !== 'condition_skipped';
-        }),
-      );
+          // Check condition
+          if (step.condition) {
+            const condDep = results.get(step.condition.stepId);
+            if (!condDep) continue; // condition dep not resolved yet
+            if (!evaluateCondition(step.condition, results)) {
+              const res: StepResult = {
+                id: step.id, worker: step.worker, status: 'condition_skipped',
+                output: `Condition not met: ${step.condition.stepId}.${step.condition.check}`,
+                durationMs: 0, dispatchOrder: dispatchOrder++,
+              };
+              results.set(step.id, res);
+              this.onStepComplete?.(res);
+              setTimeout(tryDispatch, 0);
+              continue;
+            }
+          }
 
-      for (const s of skipped) {
-        const res: StepResult = {
-          id: s.id, worker: s.worker, status: 'skipped',
-          output: 'Dependency failed', durationMs: 0, wave,
-        };
-        results.set(s.id, res);
-        this.onStepComplete?.(res, wave);
-      }
+          // Check worker concurrency limit
+          const maxConc = step.maxConcurrency ?? 4;
+          const currentConc = workerRunning.get(step.worker) ?? 0;
+          if (currentConc >= maxConc) continue; // wait for a slot
 
-      if (ready.length === 0 && skipped.length === 0) break; // deadlock guard
-      if (ready.length === 0) continue;
+          // DISPATCH
+          running.add(step.id);
+          workerRunning.set(step.worker, currentConc + 1);
+          this.onStepDispatch?.(step);
 
-      this.onWaveStart?.(wave, ready);
-
-      // Group by concurrency limits and execute
-      const waveResults = await Promise.allSettled(
-        ready.map(async (step): Promise<StepResult> => {
-          const stepStart = Date.now();
-          const timeoutMs = (step.timeoutSeconds ?? 120) * 1000;
-
-          // Resolve {{stepId.result}} templates in task
           const resolvedTask = resolveStepContext(step.task, results);
+          const timeoutMs = (step.timeoutSeconds ?? 120) * 1000;
+          const stepStart = Date.now();
+          const order = dispatchOrder++;
 
-          try {
-            const output = await this.executor(step.worker, resolvedTask, timeoutMs);
-            const structured = parseStructuredOutput(output);
-            return {
-              id: step.id, worker: step.worker, status: 'completed',
-              output, structured, durationMs: Date.now() - stepStart, wave,
-            };
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            return {
-              id: step.id, worker: step.worker,
-              status: msg.includes('timeout') ? 'timeout' : 'failed',
-              output: msg, durationMs: Date.now() - stepStart, wave,
-            };
+          this.executor(step.worker, resolvedTask, timeoutMs)
+            .then(output => {
+              const structured = parseStructuredOutput(output);
+              return { id: step.id, worker: step.worker, status: 'completed' as const, output, structured, durationMs: Date.now() - stepStart, dispatchOrder: order };
+            })
+            .catch(err => {
+              const msg = err instanceof Error ? err.message : String(err);
+              return { id: step.id, worker: step.worker, status: (msg.includes('timeout') ? 'timeout' : 'failed') as 'timeout' | 'failed', output: msg, durationMs: Date.now() - stepStart, dispatchOrder: order };
+            })
+            .then(res => {
+              running.delete(step.id);
+              workerRunning.set(step.worker, (workerRunning.get(step.worker) ?? 1) - 1);
+              results.set(res.id, res);
+              this.onStepComplete?.(res);
+
+              // Check if all done
+              if (results.size === plan.steps.length) {
+                resolve(buildResult(plan, results, start));
+              } else {
+                // Try dispatching more steps now that one completed
+                tryDispatch();
+              }
+            });
+        }
+
+        // If nothing is running and not all complete → deadlock
+        if (running.size === 0 && results.size < plan.steps.length) {
+          // Mark remaining as skipped
+          for (const step of plan.steps) {
+            if (!results.has(step.id)) {
+              results.set(step.id, {
+                id: step.id, worker: step.worker, status: 'skipped',
+                output: 'Deadlock — unresolvable dependencies', durationMs: 0, dispatchOrder: dispatchOrder++,
+              });
+            }
           }
-        }),
-      );
+          resolve(buildResult(plan, results, start));
+        }
+      };
 
-      for (const r of waveResults) {
-        const res = r.status === 'fulfilled'
-          ? r.value
-          : { id: '?', worker: '?', status: 'failed' as const, output: String(r.reason), durationMs: 0, wave };
-        results.set(res.id, res);
-        this.onStepComplete?.(res, wave);
-      }
-
-      wave++;
-    }
-
-    const steps = plan.steps.map(s => results.get(s.id)!);
-
-    // Build digest context for brain
-    const digestParts: string[] = [`# Plan Result: ${plan.goal}\n`];
-    for (const s of steps) {
-      const summary = s.structured?.summary ?? s.output?.slice(0, 500);
-      const status = s.status === 'completed' ? '✅' : s.status === 'condition_skipped' ? '⏭' : '❌';
-      digestParts.push(`## ${status} ${s.id} [${s.worker}] (${(s.durationMs / 1000).toFixed(1)}s)`);
-      digestParts.push(summary);
-      if (s.structured?.findings?.length) {
-        digestParts.push(`Findings: ${s.structured.findings.join('; ')}`);
-      }
-      digestParts.push('');
-    }
-
-    return {
-      goal: plan.goal,
-      steps,
-      totalDurationMs: Date.now() - start,
-      summary: {
-        completed: steps.filter(s => s.status === 'completed').length,
-        failed: steps.filter(s => s.status === 'failed' || s.status === 'timeout').length,
-        skipped: steps.filter(s => s.status === 'skipped').length,
-        conditionSkipped: steps.filter(s => s.status === 'condition_skipped').length,
-      },
-      digestContext: digestParts.join('\n'),
-    };
+      tryDispatch();
+    });
   }
 }
 
-/** Parse ActionPlan JSON from brain response */
+function buildResult(plan: ActionPlan, results: Map<string, StepResult>, start: number): PlanResult {
+  const steps = plan.steps.map(s => results.get(s.id)!);
+
+  // Build digest
+  const digestParts: string[] = [`# Plan Result: ${plan.goal}\n`];
+  for (const s of steps) {
+    const summary = s.structured?.summary ?? s.output?.slice(0, 500);
+    const icon = s.status === 'completed' ? '✅' : s.status === 'condition_skipped' ? '⏭' : '❌';
+    digestParts.push(`## ${icon} ${s.id} [${s.worker}] (${(s.durationMs / 1000).toFixed(1)}s)`);
+    digestParts.push(summary);
+    if (s.structured?.findings?.length) digestParts.push(`Findings: ${s.structured.findings.join('; ')}`);
+    if (s.structured?.confidence !== undefined) digestParts.push(`Confidence: ${s.structured.confidence}`);
+    digestParts.push('');
+  }
+
+  // Flag low confidence
+  const lowConfidenceSteps = steps
+    .filter(s => s.status === 'completed' && s.structured?.confidence !== undefined && s.structured.confidence < LOW_CONFIDENCE_THRESHOLD)
+    .map(s => ({ id: s.id, confidence: s.structured!.confidence! }));
+
+  if (lowConfidenceSteps.length > 0) {
+    digestParts.push(`\n⚠ Low confidence steps (< ${LOW_CONFIDENCE_THRESHOLD}): ${lowConfidenceSteps.map(s => `${s.id}(${s.confidence})`).join(', ')}`);
+    digestParts.push('Consider replanning these steps with more specific instructions.');
+  }
+
+  return {
+    goal: plan.goal,
+    steps,
+    totalDurationMs: Date.now() - start,
+    summary: {
+      completed: steps.filter(s => s.status === 'completed').length,
+      failed: steps.filter(s => s.status === 'failed' || s.status === 'timeout').length,
+      skipped: steps.filter(s => s.status === 'skipped').length,
+      conditionSkipped: steps.filter(s => s.status === 'condition_skipped').length,
+    },
+    lowConfidenceSteps,
+    digestContext: digestParts.join('\n'),
+  };
+}
+
 export function parsePlan(response: string): ActionPlan | null {
   const match = response.match(/```json\s*([\s\S]*?)```/)
     ?? response.match(/(\{[\s\S]*"steps"[\s\S]*\})/);
@@ -355,9 +343,7 @@ export function parsePlan(response: string): ActionPlan | null {
   try {
     const plan = JSON.parse(match[1]) as ActionPlan;
     if (!plan.goal || !Array.isArray(plan.steps)) return null;
-    for (const s of plan.steps) {
-      s.dependsOn ??= [];
-    }
+    for (const s of plan.steps) s.dependsOn ??= [];
     return plan;
   } catch { return null; }
 }
