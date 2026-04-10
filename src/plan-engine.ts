@@ -278,7 +278,7 @@ export class PlanEngine {
               this.onStepComplete?.(res);
 
               // Cancel-all policy: abort on any failure
-              if (res.status !== 'completed' && res.status !== 'condition_skipped' && this.failurePolicy === 'cancel-all') {
+              if ((res.status === 'failed' || res.status === 'timeout') && this.failurePolicy === 'cancel-all') {
                 aborted = true;
                 // Mark all pending steps as skipped
                 for (const s of plan.steps) {
