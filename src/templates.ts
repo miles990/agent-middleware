@@ -95,4 +95,31 @@ export const PLAN_TEMPLATES: PlanTemplate[] = [
       ],
     },
   },
+  {
+    name: 'code-review',
+    description: 'Review source files in parallel — each file gets its own reviewer, then synthesis produces final report. Avoids O(n²) context bloat.',
+    params: [
+      { name: 'path', description: 'Directory to review (e.g. /path/to/src)', required: true },
+      { name: 'focus', description: 'Review focus (e.g. "security, architecture, correctness")', required: false },
+      { name: 'pattern', description: 'File pattern to review (default: *.ts)', required: false },
+    ],
+    plan: {
+      goal: 'Review source files in {{path}} and produce quality report',
+      acceptance: 'Each file reviewed independently, findings synthesized into actionable report with scores',
+      steps: [
+        { id: 'scan', worker: 'shell', label: '掃描檔案',
+          task: 'find {{path}} -maxdepth 1 -name "{{pattern}}" -type f | head -10 | while read f; do echo "--- $f ---"; wc -l "$f" | awk \'{print $1 " lines"}\'; done',
+          dependsOn: [] },
+        { id: 'review-batch-1', worker: 'reviewer', label: 'Review 前半',
+          task: 'Review these source files. Focus: {{focus}}. File listing:\n{{scan.result}}\n\nRead the first 3-5 files listed above. For each file: identify issues (security, correctness, design). Return JSON: { "summary": "...", "findings": ["file:issue", ...], "confidence": 0.8 }',
+          dependsOn: ['scan'] },
+        { id: 'review-batch-2', worker: 'reviewer', label: 'Review 後半',
+          task: 'Review these source files. Focus: {{focus}}. File listing:\n{{scan.result}}\n\nRead the LAST 3-5 files listed above (skip files already covered). For each file: identify issues (security, correctness, design). Return JSON: { "summary": "...", "findings": ["file:issue", ...], "confidence": 0.8 }',
+          dependsOn: ['scan'] },
+        { id: 'synthesis', worker: 'analyst', label: '綜合報告',
+          task: 'Synthesize code review findings into a final report.\n\nBatch 1 findings: {{review-batch-1.result}}\nBatch 2 findings: {{review-batch-2.result}}\n\nProduce: Executive Summary, Score (1-10), Top Issues (P0/P1/P2), Strengths, Recommendations. Be specific — cite file names and line numbers.',
+          dependsOn: ['review-batch-1', 'review-batch-2'] },
+      ],
+    },
+  },
 ];
