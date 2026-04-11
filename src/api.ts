@@ -390,8 +390,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         '帶 MCP': { method: 'POST /workers', body: { name: 'db-worker', prompt: '...', mcpServers: { sqlite: { command: 'mcp-server-sqlite', args: ['--db', 'data.db'] } } }, note: '讓 worker 用外部工具' },
         '用 preset': { method: 'GET /presets', note: '預設模板快速建 worker' },
         'health check': { method: 'GET /workers/health', note: '規劃前先檢查，不健康的 worker 會附帶 fix 命令' },
-        '自動修復': { method: 'POST /workers/heal', body: { workers: ['web-browser'] }, note: '跑 healthFix 命令修復不健康的 worker，修完自動 re-check' },
-        '自訂 health': { method: 'POST /workers', body: { name: 'my-worker', healthCheck: 'pg_isready', healthFix: 'brew services restart postgresql' }, note: 'AI 定義檢查 + 修復命令' },
+        '自訂 health': { method: 'POST /workers', body: { name: 'my-worker', healthCheck: 'pg_isready', healthFix: 'brew services restart postgresql' }, note: 'AI 定義檢查命令 + 修復提示。中台只回報狀態，修復由 AI 自己決定' },
       },
       workerSelection: {
         description: '根據任務性質選 worker — 不是所有任務都需要 AI',
@@ -713,45 +712,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ total: Object.keys(results).length, healthy: healthyCount, workers: results });
   });
 
-  // POST /workers/heal — auto-fix unhealthy workers by running their healthFix commands
-  app.post('/workers/heal', async (c) => {
-    const body = await c.req.json<{ workers?: string[] }>().catch(() => ({ workers: undefined as string[] | undefined }));
-    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
-    const targetWorkers = body.workers ?? Object.keys(allW);
-    const results: Record<string, { action: string; success: boolean; output?: string }> = {};
-
-    for (const name of targetWorkers) {
-      const def = allW[name];
-      if (!def) { results[name] = { action: 'skipped', success: false, output: 'worker not found' }; continue; }
-      if (!def.healthCheck) { results[name] = { action: 'skipped', success: true, output: 'no health check — assumed healthy' }; continue; }
-
-      // Check health first
-      try {
-        execSync(def.healthCheck, { timeout: 10_000, stdio: 'ignore', cwd: config?.cwd ?? process.cwd() });
-        results[name] = { action: 'already-healthy', success: true };
-        continue;
-      } catch { /* unhealthy — try fix */ }
-
-      if (!def.healthFix) { results[name] = { action: 'no-fix-defined', success: false, output: `unhealthy but no healthFix command defined` }; continue; }
-
-      // Run fix
-      try {
-        const output = execSync(def.healthFix, { timeout: 30_000, encoding: 'utf-8', cwd: config?.cwd ?? process.cwd() });
-        // Re-check health after fix
-        try {
-          execSync(def.healthCheck, { timeout: 10_000, stdio: 'ignore', cwd: config?.cwd ?? process.cwd() });
-          results[name] = { action: 'fixed', success: true, output: output.trim().slice(0, 200) };
-        } catch {
-          results[name] = { action: 'fix-ran-but-still-unhealthy', success: false, output: output.trim().slice(0, 200) };
-        }
-      } catch (err) {
-        results[name] = { action: 'fix-failed', success: false, output: (err instanceof Error ? err.message : String(err)).slice(0, 200) };
-      }
-    }
-
-    const fixed = Object.values(results).filter(r => r.action === 'fixed').length;
-    return c.json({ fixed, results });
-  });
+  // healthFix is informational — AI reads it from GET /workers/health and decides what to do
 
   // POST /workers — add a custom worker
   app.post('/workers', async (c) => {
