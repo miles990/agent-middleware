@@ -3,633 +3,773 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agent Middleware · Control</title>
+<title>Agent Middleware · Mission Control</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #08080b;
-  --surface: #0e0e13;
-  --surface-2: #16161e;
-  --surface-3: #1e1e28;
-  --border: #252530;
-  --border-active: #35354a;
-  --text: #e0e0e8;
-  --text-dim: #6a6a78;
-  --text-muted: #45455a;
-  --accent: #00d4aa;
-  --accent-dim: #00d4aa22;
-  --warn: #f5a623;
-  --warn-dim: #f5a62322;
-  --error: #e74c5e;
-  --error-dim: #e74c5e22;
-  --success: #00d4aa;
-  --info: #5b8def;
-  --info-dim: #5b8def22;
+  --bg: #06060a;
+  --surface: #0c0c14;
+  --surface-2: #12121e;
+  --surface-3: #1a1a2a;
+  --border: #1e1e30;
+  --border-glow: #2a2a44;
+  --text: #d8d8e8;
+  --text-dim: #6868808;
+  --text-muted: #3a3a50;
+  --cyan: #00e5cc;
+  --cyan-dim: rgba(0,229,204,0.08);
+  --cyan-glow: rgba(0,229,204,0.25);
+  --blue: #4d8bff;
+  --blue-dim: rgba(77,139,255,0.08);
+  --amber: #ffb84d;
+  --amber-dim: rgba(255,184,77,0.08);
+  --red: #ff5068;
+  --red-dim: rgba(255,80,104,0.08);
   --purple: #a78bfa;
-  --purple-dim: #a78bfa22;
-  --mono: 'JetBrains Mono', monospace;
-  --sans: 'Instrument Sans', sans-serif;
-  --radius: 6px;
+  --green: #34d399;
+  --mono: 'Space Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
 }
 
-body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; }
-body::before { content: ''; position: fixed; inset: 0; background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E"); pointer-events: none; z-index: 9999; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
 
-/* Header */
-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.logo { display: flex; align-items: center; gap: 10px; }
-.logo-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 5px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 11px; color: var(--bg); }
-.logo h1 { font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.5px; }
-.logo h1 span { color: var(--text-dim); font-weight: 300; }
-.header-right { display: flex; align-items: center; gap: 14px; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2s ease infinite; }
-.status-dot.offline { background: var(--error); animation: none; }
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+/* Scanline overlay */
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+}
 
-/* Tabs */
-.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 20px; }
-.tab { font-family: var(--mono); font-size: 11px; padding: 10px 16px; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; letter-spacing: 0.5px; }
-.tab:hover { color: var(--text); }
-.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.tab-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: var(--accent-dim); color: var(--accent); margin-left: 6px; }
+/* ─── Header ─── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+}
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo-mark {
+  width: 32px; height: 32px; border-radius: 8px; position: relative;
+  background: linear-gradient(135deg, var(--cyan), var(--blue));
+  display: grid; place-items: center;
+  box-shadow: 0 0 20px var(--cyan-glow), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.logo-mark::after { content: 'MW'; font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--bg); letter-spacing: 1px; }
+.logo h1 { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+.logo h1 span { font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+.header-right { display: flex; align-items: center; gap: 16px; }
+.pulse-ring {
+  width: 10px; height: 10px; border-radius: 50%; position: relative;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan-glow);
+}
+.pulse-ring::before {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1px solid var(--cyan); opacity: 0;
+  animation: ring-pulse 2s ease-out infinite;
+}
+.pulse-ring.offline { background: var(--red); box-shadow: 0 0 8px var(--red-dim); }
+.pulse-ring.offline::before { border-color: var(--red); }
+@keyframes ring-pulse { 0% { opacity: 0.6; transform: scale(1); } 100% { opacity: 0; transform: scale(2); } }
+.header-label { font-family: var(--mono); font-size: 10px; color: var(--text-muted); letter-spacing: 1px; }
 
-/* Panels */
-.panel-area { display: none; padding: 16px 20px; min-height: calc(100vh - 90px); }
-.panel-area.active { display: block; }
+/* ─── Stats Strip ─── */
+.stats-strip {
+  display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.stat-cell {
+  flex: 1; padding: 10px 20px; border-right: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10px; color: var(--text-muted);
+  letter-spacing: 1px; text-transform: uppercase;
+}
+.stat-cell:last-child { border-right: none; }
+.stat-val { display: block; font-size: 20px; font-weight: 700; color: var(--text); margin-top: 2px; letter-spacing: 0; }
+.stat-val.cyan { color: var(--cyan); }
+.stat-val.blue { color: var(--blue); }
 
-/* Grid layouts */
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+/* ─── Navigation ─── */
+.nav {
+  display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  background: var(--surface); padding: 0 12px;
+}
+.nav-item {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; padding: 12px 18px;
+  color: var(--text-muted); cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.25s;
+}
+.nav-item:hover { color: var(--text); }
+.nav-item.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+.nav-badge {
+  font-size: 9px; padding: 1px 6px; border-radius: 10px;
+  background: var(--cyan-dim); color: var(--cyan);
+  margin-left: 6px; font-weight: 700;
+}
 
-/* Cards */
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.card-title { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); }
-.card-body { max-height: 500px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+/* ─── Panels ─── */
+.panel { display: none; padding: 20px 24px; min-height: calc(100vh - 140px); }
+.panel.active { display: block; }
 
-/* Worker cards */
-.worker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
-.worker-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; cursor: pointer; transition: all 0.15s; position: relative; }
-.worker-card:hover { border-color: var(--accent); transform: translateY(-1px); }
-.worker-card .name { font-family: var(--mono); font-size: 12px; font-weight: 500; margin-bottom: 3px; }
-.worker-card .meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.tag { font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 2px; letter-spacing: 0.3px; }
-.tag.sdk { background: var(--accent-dim); color: var(--accent); }
-.tag.shell { background: var(--warn-dim); color: var(--warn); }
-.tag.acp { background: var(--info-dim); color: var(--info); }
-.tag.middleware { background: var(--purple-dim); color: var(--purple); }
-.tag.custom { background: var(--warn-dim); color: var(--warn); font-size: 8px; }
-.worker-status { font-size: 10px; margin-top: 4px; }
+/* ─── Plan Card ─── */
+.plan-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.plan-card:hover { border-color: var(--border-glow); }
+.plan-card.has-running { border-color: var(--blue); box-shadow: 0 0 30px rgba(77,139,255,0.06); }
+.plan-card.all-done { border-color: var(--cyan); }
+.plan-card.has-failed { border-color: var(--red); }
 
-/* Task list */
-.task-item { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; cursor: pointer; transition: border-color 0.2s; overflow: hidden; }
-.task-item:hover { border-color: var(--border-active); }
-.task-item.expanded { border-color: var(--accent); }
-.task-header { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; }
-.task-dot { width: 8px; height: 8px; border-radius: 50%; }
-.task-dot.pending { background: var(--text-muted); }
-.task-dot.running { background: var(--info); animation: pulse 1s ease infinite; }
-.task-dot.completed { background: var(--success); }
-.task-dot.failed, .task-dot.timeout { background: var(--error); }
-.task-dot.skipped, .task-dot.condition_skipped, .task-dot.cancelled { background: var(--text-muted); opacity: 0.4; }
-.task-worker { font-family: var(--mono); font-size: 11px; color: var(--accent); }
-.task-desc { font-size: 12px; color: var(--text); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; }
-.task-meta { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-align: right; white-space: nowrap; }
-.task-detail { display: none; padding: 0 12px 12px; border-top: 1px solid var(--border); }
-.task-item.expanded .task-detail { display: block; }
-.task-detail pre { font-family: var(--mono); font-size: 11px; color: var(--text-dim); background: var(--surface-3); padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; margin-top: 8px; }
+.plan-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; cursor: pointer;
+}
+.plan-head:hover { background: var(--surface-2); }
+.plan-title { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+.plan-id { font-family: var(--mono); font-size: 9px; color: var(--text-muted); letter-spacing: 0.5px; }
+.plan-stats { font-family: var(--mono); font-size: 11px; color: var(--text-dim); display: flex; gap: 12px; align-items: center; }
+.plan-stats .done { color: var(--cyan); }
+.plan-stats .run { color: var(--blue); }
+.plan-stats .fail { color: var(--red); }
 
-/* Plan DAG visualization */
-.plan-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
-.plan-goal { font-size: 13px; font-weight: 500; margin-bottom: 10px; }
-.plan-summary { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 12px; }
-.dag-container { position: relative; padding: 12px 0; }
-.dag-layer { display: flex; align-items: center; margin-bottom: 0; }
-.dag-layer-label { font-family: var(--mono); font-size: 9px; color: var(--text-muted); min-width: 24px; text-align: center; padding-top: 2px; }
-.dag-layer-nodes { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; padding: 6px 0; }
-.dag-node { font-family: var(--mono); font-size: 10px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-3); position: relative; cursor: default; transition: all 0.2s; min-width: 120px; }
-.dag-node:hover { border-color: var(--accent); transform: translateY(-1px); }
-.dag-node.completed { border-color: var(--success); background: linear-gradient(135deg, var(--surface-3), #00d4aa08); }
-.dag-node.completed .node-label { color: var(--success); }
-.dag-node.running { border-color: var(--info); background: linear-gradient(135deg, var(--surface-3), #5b8def08); }
-.dag-node.running .node-label { color: var(--info); }
-.dag-node.running::after { content: ''; position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px; border-radius: 6px; border: 1px solid var(--info); animation: node-pulse 2s ease infinite; pointer-events: none; }
-@keyframes node-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-.dag-node.failed, .dag-node.timeout { border-color: var(--error); background: linear-gradient(135deg, var(--surface-3), #e74c5e08); }
-.dag-node.failed .node-label, .dag-node.timeout .node-label { color: var(--error); }
-.dag-node.pending { border-color: var(--text-muted); }
-.dag-node.pending .node-label { color: var(--text-dim); }
-.dag-node.skipped, .dag-node.condition_skipped { border-color: var(--text-muted); opacity: 0.35; }
-.node-label { font-size: 11px; font-weight: 500; margin-bottom: 2px; }
-.node-meta { font-size: 9px; color: var(--text-muted); display: flex; gap: 6px; }
-.node-status-icon { position: absolute; top: 4px; right: 6px; font-size: 10px; }
-.dag-arrows { display: flex; align-items: center; justify-content: center; padding: 0 24px; height: 20px; position: relative; }
-.dag-arrows svg { width: 100%; height: 20px; }
-.dag-arrow-line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 3; }
-.dag-arrow-head { fill: var(--text-muted); }
+/* Progress bar */
+.progress-track { height: 3px; background: var(--surface-3); border-radius: 2px; margin: 0 20px; }
+.progress-fill { height: 100%; border-radius: 2px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); position: relative; }
+.progress-fill.ok { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+.progress-fill.warn { background: linear-gradient(90deg, var(--amber), var(--red)); }
+.progress-fill::after {
+  content: ''; position: absolute; right: 0; top: -2px; width: 7px; height: 7px;
+  border-radius: 50%; background: inherit;
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* ─── DAG Visualization ─── */
+.dag-viewport {
+  padding: 20px; position: relative; overflow-x: auto;
+  background: radial-gradient(ellipse at center, var(--surface-2) 0%, var(--bg) 70%);
+  border-top: 1px solid var(--border);
+}
+
+.dag-svg {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 1;
+}
+.dag-edge {
+  fill: none; stroke: var(--border-glow); stroke-width: 1.5;
+  stroke-dasharray: 6 4; opacity: 0.5;
+}
+.dag-edge.active { stroke: var(--blue); opacity: 0.8; stroke-dasharray: none; }
+.dag-edge.completed { stroke: var(--cyan); opacity: 0.6; stroke-dasharray: none; }
+.dag-edge.failed { stroke: var(--red); opacity: 0.5; }
+.dag-arrowhead { fill: var(--text-muted); }
+.dag-arrowhead.active { fill: var(--blue); }
+.dag-arrowhead.completed { fill: var(--cyan); }
+
+.dag-layers { position: relative; z-index: 2; }
+.dag-wave {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 8px 0; margin-bottom: 4px;
+}
+.dag-wave-label {
+  font-family: var(--mono); font-size: 9px; color: var(--text-muted);
+  min-width: 48px; padding-top: 14px; text-align: right; opacity: 0.6;
+  letter-spacing: 1px;
+}
+.dag-wave-nodes { display: flex; gap: 10px; flex-wrap: wrap; flex: 1; }
+
+/* DAG Node */
+.dag-node {
+  min-width: 140px; max-width: 220px; padding: 12px 14px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-3); cursor: pointer;
+  transition: all 0.25s; position: relative;
+}
+.dag-node:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+
+.dag-node.pending { border-color: var(--text-muted); opacity: 0.5; }
+.dag-node.running {
+  border-color: var(--blue);
+  background: linear-gradient(135deg, var(--surface-3), rgba(77,139,255,0.05));
+  box-shadow: 0 0 20px rgba(77,139,255,0.1);
+}
+.dag-node.running::before {
+  content: ''; position: absolute; inset: -1px; border-radius: 8px;
+  border: 1px solid var(--blue); opacity: 0;
+  animation: node-breathe 2.5s ease-in-out infinite;
+}
+@keyframes node-breathe { 0%,100% { opacity: 0.8; } 50% { opacity: 0.2; } }
+
+.dag-node.completed {
+  border-color: var(--cyan);
+  background: linear-gradient(135deg, var(--surface-3), rgba(0,229,204,0.04));
+}
+.dag-node.failed, .dag-node.timeout {
+  border-color: var(--red);
+  background: linear-gradient(135deg, var(--surface-3), rgba(255,80,104,0.04));
+}
+.dag-node.skipped, .dag-node.condition_skipped, .dag-node.cancelled { opacity: 0.3; }
+
+.node-status {
+  position: absolute; top: 8px; right: 10px;
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.node-status.pending { background: var(--text-muted); }
+.node-status.running { background: var(--blue); animation: node-breathe 1.5s ease-in-out infinite; }
+.node-status.completed { background: var(--cyan); }
+.node-status.failed, .node-status.timeout { background: var(--red); }
+
+.node-label { font-size: 12px; font-weight: 500; margin-bottom: 4px; padding-right: 16px; }
+.node-worker { font-family: var(--mono); font-size: 9px; color: var(--text-muted); margin-bottom: 3px; }
+.node-meta { font-family: var(--mono); font-size: 9px; color: var(--text-muted); display: flex; gap: 8px; }
+.node-dur { color: var(--cyan); }
+
+/* ─── Task Detail Slide ─── */
+.detail-overlay { display: none; position: fixed; inset: 0; z-index: 100; }
+.detail-overlay.active { display: flex; }
+.detail-backdrop { flex: 1; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+.detail-panel {
+  width: 480px; background: var(--surface); border-left: 1px solid var(--border);
+  padding: 24px; overflow-y: auto;
+  animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.detail-close {
+  position: absolute; top: 16px; right: 16px; width: 28px; height: 28px;
+  border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-dim); cursor: pointer; display: grid; place-items: center;
+  font-size: 14px; transition: all 0.15s;
+}
+.detail-close:hover { border-color: var(--red); color: var(--red); }
+.detail-section { margin-bottom: 16px; }
+.detail-label { font-family: var(--mono); font-size: 9px; color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
+.detail-value { font-family: var(--mono); font-size: 13px; }
+.detail-pre {
+  font-family: var(--mono); font-size: 11px; line-height: 1.6;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; max-height: 300px; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-word; color: var(--text-dim);
+}
+
+/* ─── Worker Cards ─── */
+.worker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.w-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
+}
+.w-card::before {
+  content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%;
+  background: var(--text-muted); transition: background 0.3s;
+}
+.w-card:hover { border-color: var(--border-glow); transform: translateY(-1px); }
+.w-card.busy::before { background: var(--blue); }
+.w-card .w-name { font-family: var(--mono); font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.w-card .w-desc { font-size: 11px; color: var(--text-dim); margin-bottom: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.w-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.tag { font-family: var(--mono); font-size: 8px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px; text-transform: uppercase; }
+.tag.sdk { background: var(--cyan-dim); color: var(--cyan); }
+.tag.shell { background: var(--amber-dim); color: var(--amber); }
+.tag.acp { background: var(--blue-dim); color: var(--blue); }
+.tag.webhook { background: var(--red-dim); color: var(--red); }
+.tag.logic { background: rgba(167,139,250,0.1); color: var(--purple); }
+.tag.middleware { background: rgba(167,139,250,0.1); color: var(--purple); }
+
+/* ─── Dispatch Bar ─── */
+.dispatch-bar {
+  display: flex; gap: 8px; padding: 12px 16px; margin-top: 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.dispatch-bar select, .dispatch-bar input {
+  padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 11px; outline: none;
+}
+.dispatch-bar input { flex: 1; }
+.dispatch-bar input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px var(--cyan-dim); }
+.btn {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); cursor: pointer; transition: all 0.15s;
+}
+.btn:hover { border-color: var(--cyan); }
+.btn-primary { background: var(--cyan); color: var(--bg); border-color: var(--cyan); font-weight: 700; }
+.btn-primary:hover { opacity: 0.9; box-shadow: 0 0 16px var(--cyan-glow); }
+
+/* ─── Event Stream ─── */
+.event-line { font-family: var(--mono); font-size: 10px; line-height: 2; color: var(--text-muted); padding: 0 4px; border-bottom: 1px solid rgba(30,30,48,0.5); }
+.event-line:hover { background: var(--surface-2); }
+.event-line .ts { color: var(--text-muted); opacity: 0.6; }
+.event-line .ev-type { font-weight: 700; }
+.ev-submitted { color: var(--text-dim); }
+.ev-started { color: var(--amber); }
+.ev-completed { color: var(--cyan); }
+.ev-failed { color: var(--red); }
+
+/* ─── Empty State ─── */
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 0; color: var(--text-muted); }
+.empty-glyph { font-size: 32px; opacity: 0.15; margin-bottom: 12px; }
+.empty-text { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; }
+
+/* ─── Modal ─── */
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); z-index: 200; place-items: center; }
+.modal-bg.active { display: grid; }
+.modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px; width: 480px; max-height: 80vh; overflow-y: auto; }
+.modal-box h2 { font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: 1px; margin-bottom: 16px; }
+.fg { margin-bottom: 10px; }
+.fg label { display: block; font-family: var(--mono); font-size: 9px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+.fg input, .fg select, .fg textarea { width: 100%; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 12px; outline: none; }
+.fg input:focus, .fg select:focus, .fg textarea:focus { border-color: var(--cyan); }
+.fg textarea { resize: vertical; min-height: 60px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
 /* Gateway */
-.backend-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
-.backend-info { display: flex; align-items: center; gap: 8px; }
-.backend-name { font-family: var(--mono); font-size: 12px; font-weight: 500; }
-.backend-cmd { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
-.session-pill { font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 3px; }
-.session-pill.idle { background: var(--accent-dim); color: var(--accent); }
-.session-pill.busy { background: var(--info-dim); color: var(--info); }
-.session-pill.dead { background: var(--error-dim); color: var(--error); }
-.circuit-badge { font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 3px; }
-.circuit-badge.closed { background: var(--accent-dim); color: var(--accent); }
-.circuit-badge.open { background: var(--error-dim); color: var(--error); }
-.circuit-badge.half-open { background: var(--warn-dim); color: var(--warn); }
+.gw-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+.gw-name { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.gw-cmd { font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-left: 8px; }
+.pill { font-family: var(--mono); font-size: 8px; padding: 2px 6px; border-radius: 10px; }
+.pill.idle { background: var(--cyan-dim); color: var(--cyan); }
+.pill.busy { background: var(--blue-dim); color: var(--blue); }
+.pill.dead { background: var(--red-dim); color: var(--red); }
+.pill.closed { background: var(--cyan-dim); color: var(--cyan); }
+.pill.open { background: var(--red-dim); color: var(--red); }
 
-/* Event stream */
-.event-line { font-family: var(--mono); font-size: 10px; line-height: 1.7; color: var(--text-dim); padding: 1px 0; }
-.event-line .ts { color: var(--text-muted); }
-.event-line .type { font-weight: 500; }
-.event-line .type.submitted { color: var(--info); }
-.event-line .type.started { color: var(--warn); }
-.event-line .type.completed { color: var(--success); }
-.event-line .type.failed { color: var(--error); }
+/* Achieved */
+.ach-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 6px; opacity: 0.7; cursor: pointer; transition: opacity 0.2s; }
+.ach-item:hover { opacity: 1; }
+.ach-row { display: flex; align-items: center; justify-content: space-between; }
+.ach-detail { display: none; margin-top: 10px; }
+.ach-item.open .ach-detail { display: block; }
 
-/* Dispatch bar */
-.dispatch-bar { display: flex; gap: 6px; margin-top: 12px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-.dispatch-bar select, .dispatch-bar input { padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 11px; outline: none; }
-.dispatch-bar input { flex: 1; }
-.dispatch-bar input:focus { border-color: var(--accent); }
-
-/* Buttons */
-.btn { font-family: var(--mono); font-size: 11px; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; transition: all 0.15s; }
-.btn:hover { border-color: var(--accent); }
-.btn-sm { font-size: 10px; padding: 4px 8px; }
-.btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-.btn-primary:hover { opacity: 0.9; }
-.btn-icon { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-dim); cursor: pointer; display: grid; place-items: center; font-size: 11px; }
-.btn-icon:hover { border-color: var(--accent); color: var(--accent); }
-
-/* Modal */
-.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; place-items: center; backdrop-filter: blur(4px); }
-.modal-overlay.active { display: grid; }
-.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 460px; max-height: 80vh; overflow-y: auto; }
-.modal h2 { font-family: var(--mono); font-size: 13px; font-weight: 500; margin-bottom: 14px; }
-.form-group { margin-bottom: 10px; }
-.form-group label { display: block; font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
-.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 12px; outline: none; }
-.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
-.form-group textarea { resize: vertical; min-height: 50px; }
-.form-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
-
-/* Empty */
-.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100px; color: var(--text-muted); font-size: 12px; }
-.empty-icon { font-size: 20px; margin-bottom: 6px; opacity: 0.4; }
-
-/* Stats bar */
-.stats-bar { display: flex; gap: 20px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
-.stat-item .stat-val { color: var(--text); font-weight: 500; }
-
-@keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
-.task-item { animation: fadeIn 0.2s ease; }
-
-@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } .worker-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) { .stats-strip { flex-wrap: wrap; } .worker-grid { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo">
-    <div class="logo-icon">MW</div>
-    <h1>AGENT MIDDLEWARE <span>· CONTROL</span></h1>
+    <div class="logo-mark"></div>
+    <h1>MISSION CONTROL<span>v0.3</span></h1>
   </div>
   <div class="header-right">
-    <div class="status-dot" id="status-dot"></div>
-    <span id="status-text">connecting...</span>
+    <div class="pulse-ring" id="hPulse"></div>
+    <span class="header-label" id="hStatus">CONNECTING</span>
   </div>
 </header>
 
-<div class="stats-bar">
-  <div class="stat-item">Tasks: <span class="stat-val" id="stat-tasks">0</span></div>
-  <div class="stat-item">Running: <span class="stat-val" id="stat-running">0</span></div>
-  <div class="stat-item">Workers: <span class="stat-val" id="stat-workers">0</span></div>
-  <div class="stat-item">Backends: <span class="stat-val" id="stat-backends">0</span></div>
+<div class="stats-strip">
+  <div class="stat-cell">Active Plans<span class="stat-val cyan" id="sPlans">0</span></div>
+  <div class="stat-cell">Tasks<span class="stat-val" id="sTasks">0</span></div>
+  <div class="stat-cell">Running<span class="stat-val blue" id="sRunning">0</span></div>
+  <div class="stat-cell">Workers<span class="stat-val" id="sWorkers">0</span></div>
+  <div class="stat-cell">Backends<span class="stat-val" id="sBackends">0</span></div>
 </div>
 
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('plans')">PLANS<span class="tab-badge" id="tab-tasks-badge">0</span></div>
-  <div class="tab" onclick="switchTab('workers')">WORKERS</div>
-  <div class="tab" onclick="switchTab('gateway')">GATEWAY</div>
-  <div class="tab" onclick="switchTab('achieved')">ACHIEVED</div>
-  <div class="tab" onclick="switchTab('events')">EVENTS</div>
+<div class="nav">
+  <div class="nav-item active" onclick="nav('plans')">Plans<span class="nav-badge" id="nPlans">0</span></div>
+  <div class="nav-item" onclick="nav('workers')">Workers</div>
+  <div class="nav-item" onclick="nav('gateway')">Gateway</div>
+  <div class="nav-item" onclick="nav('achieved')">Achieved</div>
+  <div class="nav-item" onclick="nav('events')">Events</div>
 </div>
 
-<!-- Plans (default tab) -->
-<div class="panel-area active" id="panel-plans">
-  <div id="plan-list"><div class="empty"><div class="empty-icon">◇</div>No plans submitted</div></div>
+<!-- Plans Panel -->
+<div class="panel active" id="pPlans">
+  <div id="planList"><div class="empty"><div class="empty-glyph">&#x25C7;</div><div class="empty-text">NO ACTIVE PLANS</div></div></div>
   <div class="dispatch-bar">
-    <select id="dispatch-worker"></select>
-    <input id="dispatch-task" placeholder="Task description..." onkeydown="if(event.key==='Enter')dispatch()">
-    <button class="btn btn-primary" onclick="dispatch()">Dispatch</button>
+    <select id="dWorker"></select>
+    <input id="dTask" placeholder="Task description..." onkeydown="if(event.key==='Enter')doDispatch()">
+    <button class="btn btn-primary" onclick="doDispatch()">DISPATCH</button>
   </div>
 </div>
 
-<!-- Task Detail Modal (shown on DAG node click) -->
-<div class="modal-overlay" id="task-detail-modal">
-  <div class="modal" style="width:600px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <h2 id="td-title">Task Detail</h2>
-      <button class="btn-icon" onclick="closeModal('task-detail-modal')">✕</button>
+<!-- Workers Panel -->
+<div class="panel" id="pWorkers">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+    <button class="btn" onclick="openAddWorker()">+ ADD WORKER</button>
+  </div>
+  <div class="worker-grid" id="wGrid"></div>
+</div>
+
+<!-- Gateway Panel -->
+<div class="panel" id="pGateway">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div id="gwStats" style="font-family:var(--mono);font-size:11px;color:var(--text-muted);"></div>
+    <button class="btn" onclick="openAddBackend()">+ ADD BACKEND</button>
+  </div>
+  <div id="gwList"></div>
+</div>
+
+<!-- Achieved Panel -->
+<div class="panel" id="pAchieved">
+  <div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-bottom:12px;letter-spacing:1px;">AUTO-ARCHIVED AFTER 1H. REMOVED AFTER 7D.</div>
+  <div id="achList"><div class="empty"><div class="empty-glyph">&#x2713;</div><div class="empty-text">NO ARCHIVED TASKS</div></div></div>
+</div>
+
+<!-- Events Panel -->
+<div class="panel" id="pEvents">
+  <div id="evStream" style="max-height:calc(100vh - 180px);overflow-y:auto;"></div>
+</div>
+
+<!-- Task Detail Slide -->
+<div class="detail-overlay" id="detailOverlay">
+  <div class="detail-backdrop" onclick="closeDetail()"></div>
+  <div class="detail-panel" style="position:relative;">
+    <button class="detail-close" onclick="closeDetail()">&#x2715;</button>
+    <div class="detail-section"><div class="detail-label">Task</div><div class="detail-value" id="dtTitle" style="font-size:16px;font-weight:500;"></div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="detail-section"><div class="detail-label">ID</div><div class="detail-value" id="dtId"></div></div>
+      <div class="detail-section"><div class="detail-label">Status</div><div class="detail-value" id="dtStatus"></div></div>
+      <div class="detail-section"><div class="detail-label">Worker</div><div class="detail-value" id="dtWorker" style="color:var(--cyan)"></div></div>
+      <div class="detail-section"><div class="detail-label">Duration</div><div class="detail-value" id="dtDur"></div></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">ID</span><br><span id="td-id" style="font-family:var(--mono);font-size:12px;"></span></div>
-      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">STATUS</span><br><span id="td-status" style="font-family:var(--mono);font-size:12px;font-weight:500;"></span></div>
-      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">WORKER</span><br><span id="td-worker" style="font-family:var(--mono);font-size:12px;color:var(--accent);"></span></div>
-      <div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">DURATION</span><br><span id="td-duration" style="font-family:var(--mono);font-size:12px;"></span></div>
-      <div style="grid-column:span 2"><span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">DEPENDS ON</span><br><span id="td-deps" style="font-family:var(--mono);font-size:12px;"></span></div>
-    </div>
-    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:4px;">TASK</div>
-    <pre id="td-task" style="font-family:var(--mono);font-size:11px;color:var(--text);background:var(--surface-2);padding:10px;border-radius:4px;white-space:pre-wrap;max-height:100px;overflow-y:auto;margin-bottom:10px;"></pre>
-    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:4px;">RESULT</div>
-    <pre id="td-result" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);background:var(--surface-3);padding:10px;border-radius:4px;white-space:pre-wrap;max-height:250px;overflow-y:auto;"></pre>
+    <div class="detail-section"><div class="detail-label">Dependencies</div><div class="detail-value" id="dtDeps"></div></div>
+    <div class="detail-section"><div class="detail-label">Task Prompt</div><pre class="detail-pre" id="dtTask"></pre></div>
+    <div class="detail-section"><div class="detail-label">Result</div><pre class="detail-pre" id="dtResult" style="max-height:400px;"></pre></div>
   </div>
-</div>
-
-<!-- Workers -->
-<div class="panel-area" id="panel-workers">
-  <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-    <button class="btn btn-sm" onclick="openAddWorker()">+ Add Worker</button>
-  </div>
-  <div class="worker-grid" id="worker-grid"></div>
-</div>
-
-<!-- Gateway -->
-<div class="panel-area" id="panel-gateway">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-    <div id="gateway-stats" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);"></div>
-    <button class="btn btn-sm" onclick="openAddBackend()">+ Add Backend</button>
-  </div>
-  <div id="gateway-backends"></div>
-</div>
-
-<!-- Achieved -->
-<div class="panel-area" id="panel-achieved">
-  <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:10px;">Completed tasks auto-move here after 1 hour. Removed after 7 days.</div>
-  <div id="achieved-list"><div class="empty"><div class="empty-icon">✓</div>No archived tasks yet</div></div>
-</div>
-
-<!-- Events -->
-<div class="panel-area" id="panel-events">
-  <div class="card-body" id="event-stream" style="font-size:10px;max-height:calc(100vh - 160px);"></div>
 </div>
 
 <!-- Worker Modal -->
-<div class="modal-overlay" id="worker-modal">
-  <div class="modal">
-    <h2 id="modal-title">Add Worker</h2>
-    <div class="form-group"><label>Name</label><input id="wm-name" placeholder="e.g. translator"></div>
-    <div class="form-group"><label>Backend</label>
-      <select id="wm-backend"><option value="sdk">SDK</option><option value="acp">ACP</option><option value="shell">Shell</option><option value="middleware">Middleware</option></select>
-    </div>
-    <div class="form-group"><label>Vendor</label>
-      <select id="wm-vendor"><option value="anthropic">Anthropic</option><option value="anthropic-managed">Anthropic Managed</option><option value="openai">OpenAI</option><option value="google">Google</option><option value="local">Local</option></select>
-    </div>
-    <div class="form-group"><label>Model</label>
-      <select id="wm-model"><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></select>
-    </div>
-    <div class="form-group"><label>Description</label><textarea id="wm-desc" placeholder="When to use..."></textarea></div>
-    <div class="form-group"><label>Prompt</label><textarea id="wm-prompt" placeholder="You are a..."></textarea></div>
-    <div class="form-group"><label>Tools</label><input id="wm-tools" placeholder="Read, Grep, Glob, Bash"></div>
-    <div class="form-group"><label>Timeout (s)</label><input id="wm-timeout" type="number" value="120"></div>
-    <div class="form-actions">
-      <button class="btn" id="wm-delete" onclick="deleteWorker()" style="display:none;color:var(--error);border-color:var(--error);">Delete</button>
+<div class="modal-bg" id="mWorker">
+  <div class="modal-box">
+    <h2 id="mwTitle">ADD WORKER</h2>
+    <div class="fg"><label>Name</label><input id="mwName" placeholder="e.g. translator"></div>
+    <div class="fg"><label>Backend</label><select id="mwBackend"><option value="sdk">SDK</option><option value="acp">ACP</option><option value="shell">Shell</option><option value="webhook">Webhook</option><option value="logic">Logic</option><option value="middleware">Middleware</option></select></div>
+    <div class="fg"><label>Vendor</label><select id="mwVendor"><option value="anthropic">Anthropic</option><option value="anthropic-managed">Managed</option><option value="openai">OpenAI</option><option value="google">Google</option><option value="local">Local</option></select></div>
+    <div class="fg"><label>Model</label><select id="mwModel"><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></select></div>
+    <div class="fg"><label>Description</label><textarea id="mwDesc" placeholder="When to use..."></textarea></div>
+    <div class="fg"><label>Prompt</label><textarea id="mwPrompt" placeholder="You are a..."></textarea></div>
+    <div class="fg"><label>Tools</label><input id="mwTools" placeholder="Read, Grep, Glob, Bash"></div>
+    <div class="fg"><label>Timeout (s)</label><input id="mwTimeout" type="number" value="120"></div>
+    <div class="modal-actions">
+      <button class="btn" id="mwDel" onclick="delWorker()" style="display:none;color:var(--red);border-color:var(--red);">DELETE</button>
       <div style="flex:1"></div>
-      <button class="btn" onclick="closeModal('worker-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveWorker()">Save</button>
+      <button class="btn" onclick="closeM('mWorker')">CANCEL</button>
+      <button class="btn btn-primary" onclick="saveWorker()">SAVE</button>
     </div>
   </div>
 </div>
 
 <!-- Backend Modal -->
-<div class="modal-overlay" id="backend-modal">
-  <div class="modal">
-    <h2>Register CLI Backend</h2>
-    <div class="form-group"><label>Name</label><input id="bm-name" placeholder="e.g. gemini"></div>
-    <div class="form-group"><label>Command</label><input id="bm-command" placeholder="e.g. gemini"></div>
-    <div class="form-group"><label>Args</label><input id="bm-args" placeholder="--acp, --trust-all-tools"></div>
-    <div class="form-group"><label>Max Sessions</label><input id="bm-max" type="number" value="2"></div>
-    <div class="form-actions">
-      <button class="btn" onclick="closeModal('backend-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveBackend()">Register</button>
+<div class="modal-bg" id="mBackend">
+  <div class="modal-box">
+    <h2>REGISTER BACKEND</h2>
+    <div class="fg"><label>Name</label><input id="mbName" placeholder="e.g. gemini"></div>
+    <div class="fg"><label>Command</label><input id="mbCmd" placeholder="e.g. gemini"></div>
+    <div class="fg"><label>Args</label><input id="mbArgs" placeholder="--acp, --trust-all-tools"></div>
+    <div class="fg"><label>Max Sessions</label><input id="mbMax" type="number" value="2"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeM('mBackend')">CANCEL</button>
+      <button class="btn btn-primary" onclick="saveBackend()">REGISTER</button>
     </div>
   </div>
 </div>
 
 <script>
-const API = window.location.origin;
-let workers = {}, tasks = [], gatewayData = null, editingWorker = null;
+const API = location.origin;
+let workers={}, tasks=[], plans=[], gw=null, editW=null;
 
-// ─── Init ───
 async function init() {
-  await Promise.all([loadWorkers(), loadTasks(), loadGateway(), loadPlans()]);
+  await Promise.all([loadWorkers(), loadTasks(), loadGW(), loadPlans()]);
   connectSSE();
-  setInterval(() => { loadTasks(); loadGateway(); loadPlans(); }, 8000);
-  setInterval(loadWorkers, 15000);
+  setInterval(()=>{ loadTasks(); loadGW(); loadPlans(); }, 6000);
+  setInterval(loadWorkers, 12000);
 }
 
-// ─── Tabs ───
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.panel-area').forEach(p => p.classList.remove('active'));
-  document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
-  document.getElementById(`panel-${name}`).classList.add('active');
-  if (name === 'achieved') loadAchieved();
-  if (name === 'plans') loadPlans();
+// ─── Nav ───
+function nav(n) {
+  document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(e=>e.classList.remove('active'));
+  document.querySelector(`.nav-item[onclick*="${n}"]`).classList.add('active');
+  document.getElementById('p'+n.charAt(0).toUpperCase()+n.slice(1)).classList.add('active');
+  if(n==='achieved') loadAch();
 }
 
 // ─── Workers ───
 async function loadWorkers() {
   try {
-    const res = await fetch(`${API}/workers`);
-    const data = await res.json();
-    workers = {};
-    for (const w of data.workers) {
-      workers[w.name] = { ...w, activeTasks: 0 };
-    }
-    for (const t of tasks) {
-      if ((t.status === 'running' || t.status === 'pending') && workers[t.worker]) {
-        workers[t.worker].activeTasks = (workers[t.worker].activeTasks || 0) + 1;
-      }
-    }
-    renderWorkers();
-    renderWorkerSelect();
-    document.getElementById('stat-workers').textContent = Object.keys(workers).length;
-  } catch { setOffline(); }
+    const r=await(await fetch(`${API}/workers`)).json();
+    workers={}; for(const w of r.workers) workers[w.name]={...w,active:0};
+    for(const t of tasks) if((t.status==='running'||t.status==='pending')&&workers[t.worker]) workers[t.worker].active++;
+    renderW(); renderSel();
+    $('sWorkers').textContent=Object.keys(workers).length;
+  } catch{ offline(); }
 }
 
-function renderWorkers() {
-  const grid = document.getElementById('worker-grid');
-  const entries = Object.entries(workers);
-  if (!entries.length) { grid.innerHTML = '<div class="empty"><div class="empty-icon">⚙</div>No workers</div>'; return; }
-  grid.innerHTML = entries.map(([name, w]) => {
-    const active = w.activeTasks || 0;
-    const color = active > 0 ? 'var(--info)' : 'var(--text-muted)';
-    const statusText = active > 0 ? `${active} running` : 'idle';
-    const customTag = w.builtin === false ? '<span class="tag custom">custom</span>' : '';
-    return `<div class="worker-card" onclick="editWorker('${name}')" style="border-left:3px solid ${color}">
-      <div class="name">${name}</div>
-      <div class="meta">
+function renderW() {
+  const g=$('wGrid'), e=Object.entries(workers);
+  if(!e.length){ g.innerHTML='<div class="empty"><div class="empty-glyph">&#x2699;</div><div class="empty-text">NO WORKERS</div></div>'; return; }
+  g.innerHTML=e.map(([n,w])=>{
+    const busy=w.active>0;
+    return `<div class="w-card${busy?' busy':''}" onclick="editWorkerM('${esc(n)}')">
+      <div class="w-name">${esc(n)}</div>
+      <div class="w-desc">${esc(w.description||'')}</div>
+      <div class="w-tags">
         <span class="tag ${w.backend}">${w.backend}</span>
-        <span style="font-family:var(--mono);font-size:9px;color:var(--text-muted)">${w.model||'—'}</span>
-        ${customTag}
+        <span class="tag" style="background:var(--surface-3);color:var(--text-dim)">${w.model||'?'}</span>
+        ${w.builtin===false?'<span class="tag" style="background:var(--amber-dim);color:var(--amber)">custom</span>':''}
+        ${busy?`<span class="tag" style="background:var(--blue-dim);color:var(--blue)">${w.active} running</span>`:''}
       </div>
-      <div class="worker-status" style="color:${color}">${statusText}</div>
     </div>`;
   }).join('');
 }
 
-function renderWorkerSelect() {
-  document.getElementById('dispatch-worker').innerHTML = Object.keys(workers).map(n => `<option value="${n}">${n}</option>`).join('');
-}
+function renderSel(){ $('dWorker').innerHTML=Object.keys(workers).map(n=>`<option value="${n}">${n}</option>`).join(''); }
 
 // ─── Tasks ───
 async function loadTasks() {
   try {
-    const res = await fetch(`${API}/tasks?limit=100`);
-    const data = await res.json();
-    tasks = data.tasks;
-    const active = tasks.filter(t => t.status === 'running' || t.status === 'pending');
-    document.getElementById('stat-tasks').textContent = tasks.length;
-    document.getElementById('stat-running').textContent = active.length;
-    document.getElementById('tab-tasks-badge').textContent = active.length;
-    setOnline();
-  } catch { setOffline(); }
+    const r=await(await fetch(`${API}/tasks?limit=200`)).json();
+    tasks=r.tasks||[];
+    const act=tasks.filter(t=>t.status==='running'||t.status==='pending');
+    $('sTasks').textContent=tasks.length;
+    $('sRunning').textContent=act.length;
+    $('nPlans').textContent=act.length;
+    online();
+  } catch{ offline(); }
 }
 
-// Show task detail modal when clicking a DAG node
-async function showTaskDetail(taskId, planId) {
-  // Find task in local cache or fetch from API
-  let task = tasks.find(t => t.id === taskId);
-  if (!task) {
-    try {
-      const res = await fetch(`${API}/status/${taskId}`);
-      task = await res.json();
-    } catch { return; }
-  }
-  if (!task) return;
-
-  // Find plan step for dependency info
-  const plan = plansData.find(p => p.planId === planId);
-  const step = plan?.steps?.find(s => s.id === taskId);
-
-  const statusColors = { completed: 'var(--success)', running: 'var(--info)', failed: 'var(--error)', timeout: 'var(--warn)', pending: 'var(--text-muted)', skipped: 'var(--text-muted)' };
-  document.getElementById('td-title').textContent = task.label || step?.label || taskId;
-  document.getElementById('td-id').textContent = taskId;
-  document.getElementById('td-status').textContent = task.status;
-  document.getElementById('td-status').style.color = statusColors[task.status] || 'var(--text)';
-  document.getElementById('td-worker').textContent = task.worker;
-  document.getElementById('td-duration').textContent = task.durationMs ? `${(task.durationMs/1000).toFixed(1)}s` : 'pending';
-  document.getElementById('td-deps').textContent = step?.dependsOn?.length ? step.dependsOn.join(', ') : 'none (parallel)';
-  document.getElementById('td-task').textContent = typeof task.task === 'string' ? task.task : JSON.stringify(task.task, null, 2);
-  const resultText = task.result ? (typeof task.result === 'string' ? task.result : JSON.stringify(task.result, null, 2)) : task.error || 'Pending...';
-  document.getElementById('td-result').textContent = resultText;
-  document.getElementById('task-detail-modal').classList.add('active');
-}
-
-// ─── Plans (DAG visualization) ───
-let plansData = [];
-
+// ─── Plans ───
 async function loadPlans() {
   try {
-    const res = await fetch(`${API}/plans`);
-    const data = await res.json();
-    plansData = data.plans || [];
+    const r=await(await fetch(`${API}/plans`)).json();
+    plans=r.plans||[];
+    $('sPlans').textContent=plans.length;
     renderPlans();
-  } catch {}
+  } catch{}
 }
 
 function renderPlans() {
-  const container = document.getElementById('plan-list');
-  if (!plansData.length) { container.innerHTML = '<div class="empty"><div class="empty-icon">◇</div>No plans submitted</div>'; return; }
+  const c=$('planList');
+  if(!plans.length){ c.innerHTML='<div class="empty"><div class="empty-glyph">&#x25C7;</div><div class="empty-text">NO ACTIVE PLANS</div></div>'; return; }
+  c.innerHTML=plans.map(p=>{
+    const {planId,goal,steps,completed:done,failed:fail,running:run,totalSteps:total}=p;
+    const allDone=done+fail>=total;
+    const pct=total>0?Math.round(done/total*100):0;
+    const cls=run>0?'has-running':allDone?(fail>0?'has-failed':'all-done'):'';
 
-  container.innerHTML = plansData.map(plan => {
-    const { planId, goal, steps, completed, failed, running, totalSteps: total } = plan;
-    const allDone = completed + failed === total;
-    const statusIcon = allDone ? (failed > 0 ? '⚠' : '✅') : running > 0 ? '⏳' : '◻';
-    const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+    // DAG depth
+    const dm=new Map();
+    const dep=s=>{if(dm.has(s.id))return dm.get(s.id);const ds=steps.filter(d=>(s.dependsOn||[]).includes(d.id));const d=ds.length?Math.max(...ds.map(dep))+1:0;dm.set(s.id,d);return d;};
+    steps.forEach(dep);
+    const maxD=Math.max(0,...dm.values());
 
-    // Group steps by dependency depth for DAG layers
-    const depthMap = new Map();
-    const getDepth = (s) => {
-      if (depthMap.has(s.id)) return depthMap.get(s.id);
-      const deps = steps.filter(d => (s.dependsOn||[]).includes(d.id));
-      const depth = deps.length === 0 ? 0 : Math.max(...deps.map(getDepth)) + 1;
-      depthMap.set(s.id, depth);
-      return depth;
-    };
-    steps.forEach(getDepth);
-    const maxDepth = Math.max(0, ...depthMap.values());
-
-    // Build DAG layers with flow arrows
-    let dagHtml = '';
-    for (let d = 0; d <= maxDepth; d++) {
-      const layerSteps = steps.filter(s => depthMap.get(s.id) === d);
-      const nodesHtml = layerSteps.map(s => {
-        const label = s.label || s.id || s.worker;
-        const taskStr = typeof s.task === 'string' ? s.task : '';
-        const dur = s.durationMs ? `${(s.durationMs/1000).toFixed(1)}s` : '';
-        const statusIcon = s.status === 'completed' ? '✓' : s.status === 'running' ? '●' : s.status === 'failed' || s.status === 'timeout' ? '✗' : s.status === 'pending' ? '○' : '—';
-        const deps = (s.dependsOn||[]).length;
-        return `<div class="dag-node ${s.status}" onclick="showTaskDetail('${escHtml(s.id)}','${escHtml(planId)}')" style="cursor:pointer;">
-          <div class="node-status-icon">${statusIcon}</div>
-          <div class="node-label">${escHtml(label)}</div>
+    // Node positions for SVG edges
+    const nodePos={};
+    let dagHtml='';
+    for(let d=0;d<=maxD;d++){
+      const ls=steps.filter(s=>dm.get(s.id)===d);
+      const nodesHtml=ls.map((s,i)=>{
+        const nid=`n_${planId}_${s.id}`;
+        nodePos[s.id]={wave:d,idx:i,total:ls.length};
+        const dur=s.durationMs?`${(s.durationMs/1000).toFixed(1)}s`:'';
+        return `<div class="dag-node ${s.status}" id="${nid}" onclick="showDetail('${esc(s.id)}','${esc(planId)}')">
+          <div class="node-status ${s.status}"></div>
+          <div class="node-label">${esc(s.label||s.id)}</div>
+          <div class="node-worker">${s.worker}</div>
           <div class="node-meta">
-            <span>${s.worker}</span>
-            ${dur ? `<span>${dur}</span>` : ''}
-            ${deps ? `<span>← ${deps} dep${deps>1?'s':''}</span>` : '<span>parallel</span>'}
+            ${dur?`<span class="node-dur">${dur}</span>`:''}
+            <span>${(s.dependsOn||[]).length?'&#x2190; '+(s.dependsOn||[]).length+' dep':'parallel'}</span>
           </div>
         </div>`;
       }).join('');
-
-      dagHtml += `<div class="dag-layer">
-        <div class="dag-layer-label">${d}</div>
-        <div class="dag-layer-nodes">${nodesHtml}</div>
-      </div>`;
-
-      if (d < maxDepth) {
-        dagHtml += `<div class="dag-arrows"><svg viewBox="0 0 200 20" preserveAspectRatio="none">
-          <defs><marker id="ah" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><path d="M0,0 L6,2 L0,4" class="dag-arrow-head"/></marker></defs>
-          <line x1="100" y1="2" x2="100" y2="16" class="dag-arrow-line" marker-end="url(#ah)"/>
-        </svg></div>`;
-      }
+      const waveLabel=d===0?'START':d===maxD?'END':`W${d}`;
+      dagHtml+=`<div class="dag-wave"><div class="dag-wave-label">${waveLabel}</div><div class="dag-wave-nodes">${nodesHtml}</div></div>`;
     }
 
-    return `<div class="plan-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div class="plan-goal">${statusIcon} ${escHtml(goal || planId)}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">${pct}%</div>
+    return `<div class="plan-card ${cls}">
+      <div class="plan-head">
+        <div>
+          <div class="plan-title">${esc(goal||planId)}</div>
+          <div class="plan-id">${planId}</div>
+        </div>
+        <div class="plan-stats">
+          <span class="done">${done} done</span>
+          <span class="run">${run} running</span>
+          ${fail?`<span class="fail">${fail} failed</span>`:''}
+          <span>${pct}%</span>
+        </div>
       </div>
-      <div style="font-family:var(--mono);font-size:9px;color:var(--text-muted);margin-bottom:4px;">${planId}</div>
-      <div class="plan-summary">${completed} done · ${running} running · ${failed} failed · ${total} total</div>
-      <div style="height:3px;background:var(--surface-3);border-radius:2px;margin:8px 0;">
-        <div style="height:100%;width:${pct}%;background:${failed>0?'var(--warn)':'var(--accent)'};border-radius:2px;transition:width 0.3s;"></div>
+      <div class="progress-track"><div class="progress-fill ${fail>0?'warn':'ok'}" style="width:${pct}%"></div></div>
+      <div class="dag-viewport">
+        <div class="dag-layers">${dagHtml}</div>
       </div>
-      <div class="dag-container">${dagHtml}</div>
     </div>`;
   }).join('');
+
+  // Draw SVG edges after DOM renders
+  requestAnimationFrame(drawEdges);
 }
 
+function drawEdges() {
+  for(const p of plans){
+    const vp=document.querySelector(`#planList .dag-viewport`);
+    if(!vp) continue;
+    // Remove old SVGs
+    vp.querySelectorAll('.dag-svg').forEach(s=>s.remove());
+
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.classList.add('dag-svg');
+    svg.style.width=vp.scrollWidth+'px';
+    svg.style.height=vp.scrollHeight+'px';
+    svg.setAttribute('viewBox',`0 0 ${vp.scrollWidth} ${vp.scrollHeight}`);
+
+    // Arrow marker
+    const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+    ['','active','completed','failed'].forEach(cls=>{
+      const m=document.createElementNS('http://www.w3.org/2000/svg','marker');
+      m.setAttribute('id',`ah${cls?'-'+cls:''}`);
+      m.setAttribute('markerWidth','8');m.setAttribute('markerHeight','6');
+      m.setAttribute('refX','8');m.setAttribute('refY','3');m.setAttribute('orient','auto');
+      const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d','M0,0 L8,3 L0,6');
+      path.classList.add('dag-arrowhead');
+      if(cls) path.classList.add(cls);
+      m.appendChild(path); defs.appendChild(m);
+    });
+    svg.appendChild(defs);
+
+    for(const s of p.steps){
+      for(const depId of (s.dependsOn||[])){
+        const from=document.getElementById(`n_${p.planId}_${depId}`);
+        const to=document.getElementById(`n_${p.planId}_${s.id}`);
+        if(!from||!to) continue;
+
+        const fr=from.getBoundingClientRect();
+        const tr=to.getBoundingClientRect();
+        const vr=vp.getBoundingClientRect();
+
+        const x1=fr.left+fr.width/2-vr.left;
+        const y1=fr.bottom-vr.top;
+        const x2=tr.left+tr.width/2-vr.left;
+        const y2=tr.top-vr.top;
+
+        const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+        const cp=(y2-y1)*0.5;
+        path.setAttribute('d',`M${x1},${y1} C${x1},${y1+cp} ${x2},${y2-cp} ${x2},${y2}`);
+        const depTask=p.steps.find(st=>st.id===depId);
+        const edgeCls=s.status==='running'?'active':s.status==='completed'?'completed':s.status==='failed'?'failed':'';
+        path.classList.add('dag-edge');
+        if(edgeCls) path.classList.add(edgeCls);
+        path.setAttribute('marker-end',`url(#ah${edgeCls?'-'+edgeCls:''})`);
+        svg.appendChild(path);
+      }
+    }
+    vp.prepend(svg);
+  }
+}
+
+// ─── Task Detail ───
+function showDetail(tid,pid) {
+  const task=tasks.find(t=>t.id===tid);
+  const plan=plans.find(p=>p.planId===pid);
+  const step=plan?.steps?.find(s=>s.id===tid);
+  if(!task&&!step) return;
+  const t=task||step;
+  const sc={completed:'var(--cyan)',running:'var(--blue)',failed:'var(--red)',timeout:'var(--amber)',pending:'var(--text-muted)'};
+  $('dtTitle').textContent=t.label||step?.label||tid;
+  $('dtId').textContent=tid;
+  $('dtStatus').textContent=t.status; $('dtStatus').style.color=sc[t.status]||'';
+  $('dtWorker').textContent=t.worker;
+  $('dtDur').textContent=t.durationMs?`${(t.durationMs/1000).toFixed(1)}s`:'pending';
+  $('dtDeps').textContent=(step?.dependsOn||[]).join(', ')||'none (parallel)';
+  $('dtTask').textContent=typeof t.task==='string'?t.task:JSON.stringify(t.task,null,2);
+  $('dtResult').textContent=t.result?(typeof t.result==='string'?t.result:JSON.stringify(t.result,null,2)):t.error||'Pending...';
+  $('detailOverlay').classList.add('active');
+}
+function closeDetail(){ $('detailOverlay').classList.remove('active'); }
+
 // ─── Dispatch ───
-async function dispatch() {
-  const worker = document.getElementById('dispatch-worker').value;
-  const task = document.getElementById('dispatch-task').value.trim();
-  if (!task) return;
-  await fetch(`${API}/dispatch`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({worker, task, caller:'dashboard'}) });
-  document.getElementById('dispatch-task').value = '';
-  setTimeout(loadTasks, 500);
+async function doDispatch() {
+  const w=$('dWorker').value, t=$('dTask').value.trim();
+  if(!t) return;
+  await fetch(`${API}/dispatch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({worker:w,task:t,caller:'dashboard'})});
+  $('dTask').value='';
+  setTimeout(loadTasks,500);
 }
 
 // ─── Gateway ───
-async function loadGateway() {
-  try {
-    const res = await fetch(`${API}/gateway`);
-    gatewayData = await res.json();
-    renderGateway();
-    document.getElementById('stat-backends').textContent = gatewayData.backends.length;
-  } catch {}
+async function loadGW() {
+  try{ gw=await(await fetch(`${API}/gateway`)).json(); renderGW(); $('sBackends').textContent=gw.backends.length; }catch{}
 }
-
-function renderGateway() {
-  if (!gatewayData) return;
-  document.getElementById('gateway-stats').innerHTML = `Dispatched: <span style="color:var(--text)">${gatewayData.totalDispatched}</span>`;
-  const c = document.getElementById('gateway-backends');
-  if (!gatewayData.backends.length) { c.innerHTML = '<div class="empty"><div class="empty-icon">⬡</div>No CLI backends</div>'; return; }
-  c.innerHTML = gatewayData.backends.map(b => {
-    const s = b.sessions;
-    const pills = [];
-    if (s.idle>0) pills.push(`<span class="session-pill idle">${s.idle} idle</span>`);
-    if (s.busy>0) pills.push(`<span class="session-pill busy">${s.busy} busy</span>`);
-    if (s.dead>0) pills.push(`<span class="session-pill dead">${s.dead} dead</span>`);
-    const circuit = b.circuit ? `<span class="circuit-badge ${b.circuit.state}">${b.circuit.state}${b.circuit.failures ? ` (${b.circuit.failures})` : ''}</span>` : '';
-    const healthDot = b.healthy ? '●' : '<span style="color:var(--error)">●</span>';
-    return `<div class="backend-card">
-      <div class="backend-info">${healthDot} <span class="backend-name">${b.name}</span> <span class="backend-cmd">${b.command}</span> ${circuit}</div>
-      <div style="display:flex;gap:4px;align-items:center">${pills.join('')} <button class="btn-icon" onclick="removeBackend('${b.name}')" title="Remove">✕</button></div>
-    </div>`;
+function renderGW() {
+  if(!gw) return;
+  $('gwStats').innerHTML=`DISPATCHED: <span style="color:var(--text)">${gw.totalDispatched}</span>`;
+  const c=$('gwList');
+  if(!gw.backends.length){ c.innerHTML='<div class="empty"><div class="empty-glyph">&#x2B21;</div><div class="empty-text">NO CLI BACKENDS</div></div>'; return; }
+  c.innerHTML=gw.backends.map(b=>{
+    const pills=[];
+    if(b.sessions.idle)pills.push(`<span class="pill idle">${b.sessions.idle} idle</span>`);
+    if(b.sessions.busy)pills.push(`<span class="pill busy">${b.sessions.busy} busy</span>`);
+    if(b.sessions.dead)pills.push(`<span class="pill dead">${b.sessions.dead} dead</span>`);
+    const cir=b.circuit?`<span class="pill ${b.circuit.state}">${b.circuit.state}</span>`:'';
+    return `<div class="gw-card"><div><span class="gw-name">${b.name}</span><span class="gw-cmd">${b.command}</span> ${cir}</div><div style="display:flex;gap:4px">${pills.join('')}</div></div>`;
   }).join('');
 }
 
 // ─── SSE ───
 function connectSSE() {
-  const es = new EventSource(`${API}/events`);
-  const stream = document.getElementById('event-stream');
-  const addEvent = (type, data) => {
-    const ts = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    const shortType = type.replace('task.','');
-    let info = '';
-    try { const d = JSON.parse(data); info = `${d.worker||''} ${(typeof d.task==='string'?d.task:'').slice(0,50)}`; } catch { info = data.slice(0,50); }
-    const line = document.createElement('div');
-    line.className = 'event-line';
-    line.innerHTML = `<span class="ts">${ts}</span> <span class="type ${shortType}">${shortType}</span> ${escHtml(info)}`;
-    stream.prepend(line);
-    if (stream.children.length > 300) stream.lastChild.remove();
-  };
-  ['task.submitted','task.started','task.completed','task.failed','task.cancelled'].forEach(evt => {
-    es.addEventListener(evt, e => { addEvent(evt, e.data); loadTasks().then(() => { loadWorkers(); loadPlans(); }); });
+  const es=new EventSource(`${API}/events`);
+  ['task.submitted','task.started','task.completed','task.failed','task.cancelled'].forEach(ev=>{
+    es.addEventListener(ev,e=>{
+      addEvent(ev,e.data);
+      loadTasks().then(()=>{loadWorkers();loadPlans();});
+    });
   });
-  es.onerror = () => setOffline();
-  es.onopen = () => setOnline();
+  es.onerror=()=>offline();
+  es.onopen=()=>online();
 }
-
-// ─── Worker Modal ───
-function openAddWorker() { editingWorker=null; document.getElementById('modal-title').textContent='Add Worker'; ['wm-name','wm-desc','wm-prompt'].forEach(id=>document.getElementById(id).value=''); document.getElementById('wm-name').disabled=false; document.getElementById('wm-tools').value='Read, Grep, Glob, Bash'; document.getElementById('wm-timeout').value='120'; document.getElementById('wm-delete').style.display='none'; document.getElementById('worker-modal').classList.add('active'); }
-function editWorker(name) { editingWorker=name; const w=workers[name]; document.getElementById('modal-title').textContent=`Edit: ${name}`; document.getElementById('wm-name').value=name; document.getElementById('wm-name').disabled=true; document.getElementById('wm-backend').value=w.backend||'sdk'; document.getElementById('wm-vendor').value=w.vendor||'anthropic'; document.getElementById('wm-model').value=w.model||'sonnet'; document.getElementById('wm-desc').value=w.description||''; document.getElementById('wm-prompt').value=w.prompt||''; document.getElementById('wm-tools').value=(w.tools||[]).join(', '); document.getElementById('wm-timeout').value=w.timeout||120; document.getElementById('wm-delete').style.display=w.builtin===false?'block':'none'; document.getElementById('worker-modal').classList.add('active'); }
-function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-async function saveWorker() { const d={name:document.getElementById('wm-name').value.trim(),backend:document.getElementById('wm-backend').value,vendor:document.getElementById('wm-vendor').value,model:document.getElementById('wm-model').value,description:document.getElementById('wm-desc').value,prompt:document.getElementById('wm-prompt').value,tools:document.getElementById('wm-tools').value.split(',').map(s=>s.trim()).filter(Boolean),timeout:parseInt(document.getElementById('wm-timeout').value)||120}; if(!d.name)return; try{const url=editingWorker?`${API}/workers/${d.name}`:`${API}/workers`;const r=await fetch(url,{method:editingWorker?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});const res=await r.json();if(res.error){alert(res.error);return;}await loadWorkers();closeModal('worker-modal');}catch(e){alert(e);}}
-async function deleteWorker() { if(!editingWorker||!confirm(`Delete "${editingWorker}"?`))return; await fetch(`${API}/workers/${editingWorker}`,{method:'DELETE'}); await loadWorkers(); closeModal('worker-modal'); }
-
-// ─── Backend Modal ───
-function openAddBackend() { ['bm-name','bm-command','bm-args'].forEach(id=>document.getElementById(id).value=''); document.getElementById('bm-max').value='2'; document.getElementById('backend-modal').classList.add('active'); }
-async function saveBackend() { const d={name:document.getElementById('bm-name').value.trim(),command:document.getElementById('bm-command').value.trim(),args:document.getElementById('bm-args').value.split(',').map(s=>s.trim()).filter(Boolean),maxSessions:parseInt(document.getElementById('bm-max').value)||2}; if(!d.name||!d.command)return; await fetch(`${API}/gateway/backends`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); await loadGateway(); closeModal('backend-modal'); }
-async function removeBackend(name) { if(!confirm(`Remove "${name}"?`))return; await fetch(`${API}/gateway/backends/${name}`,{method:'DELETE'}); await loadGateway(); }
+function addEvent(type,data) {
+  const ts=new Date().toLocaleTimeString('en',{hour12:false});
+  const short=type.replace('task.','');
+  let info=''; try{const d=JSON.parse(data);info=`${d.worker||''} ${(typeof d.task==='string'?d.task:'').slice(0,60)}`;}catch{info=data.slice(0,60);}
+  const el=document.createElement('div'); el.className='event-line';
+  el.innerHTML=`<span class="ts">${ts}</span> <span class="ev-type ev-${short}">${short}</span> ${esc(info)}`;
+  $('evStream').prepend(el);
+  if($('evStream').children.length>300) $('evStream').lastChild.remove();
+}
 
 // ─── Achieved ───
-async function loadAchieved() {
-  try {
-    const res = await fetch(`${API}/archived?limit=50`);
-    const data = await res.json();
-    renderAchieved(data.tasks);
-  } catch {}
+async function loadAch() {
+  try{const r=await(await fetch(`${API}/archived?limit=50`)).json();renderAch(r.tasks);}catch{}
 }
-
-function renderAchieved(achieved) {
-  const list = document.getElementById('achieved-list');
-  if (!achieved?.length) { list.innerHTML = '<div class="empty"><div class="empty-icon">✓</div>No archived tasks yet</div>'; return; }
-  list.innerHTML = achieved.map(t => {
-    const dur = t.durationMs ? `${(t.durationMs/1000).toFixed(1)}s` : '';
-    const date = t.completedAt ? new Date(t.completedAt).toLocaleString('zh-TW', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-    const label = t.label || (typeof t.task === 'string' ? t.task?.slice(0,80) : t.id);
-    const statusIcon = t.status === 'completed' ? '✅' : t.status === 'failed' ? '❌' : '⏭';
-    return `<div class="task-item" onclick="this.classList.toggle('expanded')" style="opacity:0.8;">
-      <div class="task-header">
-        <div style="font-size:12px">${statusIcon}</div>
-        <div>
-          <div class="task-worker">${t.worker} <span style="color:var(--text-muted);font-weight:300">${t.status}</span></div>
-          <div class="task-desc">${escHtml(label)}</div>
-        </div>
-        <div class="task-meta">${dur}<br>${date}</div>
+function renderAch(items) {
+  const c=$('achList');
+  if(!items?.length){ c.innerHTML='<div class="empty"><div class="empty-glyph">&#x2713;</div><div class="empty-text">NO ARCHIVED TASKS</div></div>'; return; }
+  c.innerHTML=items.map(t=>{
+    const dur=t.durationMs?`${(t.durationMs/1000).toFixed(1)}s`:'';
+    const date=t.completedAt?new Date(t.completedAt).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+    const ico=t.status==='completed'?'&#x2713;':'&#x2717;';
+    return `<div class="ach-item" onclick="this.classList.toggle('open')">
+      <div class="ach-row">
+        <div><span style="font-family:var(--mono);font-size:12px;color:${t.status==='completed'?'var(--cyan)':'var(--red)'}">${ico}</span> <span style="font-family:var(--mono);font-size:11px;color:var(--cyan)">${t.worker}</span> <span style="font-size:12px">${esc((t.label||typeof t.task==='string'?t.task:t.id).slice(0,80))}</span></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-muted)">${dur} ${date}</div>
       </div>
-      <div class="task-detail">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;">ID: ${t.id}${t.planId ? ` · Plan: ${t.planId}` : ''}</div>
-        <pre>${escHtml((typeof t.result === 'string' ? t.result : JSON.stringify(t.result,null,2))?.slice(0,2000) || '')}</pre>
-      </div>
+      <div class="ach-detail"><pre class="detail-pre">${esc((typeof t.result==='string'?t.result:JSON.stringify(t.result,null,2)||'').slice(0,2000))}</pre></div>
     </div>`;
   }).join('');
 }
 
+// ─── Worker Modal ───
+function openAddWorker(){editW=null;$('mwTitle').textContent='ADD WORKER';['mwName','mwDesc','mwPrompt'].forEach(id=>$(id).value='');$('mwName').disabled=false;$('mwTools').value='Read, Grep, Glob, Bash';$('mwTimeout').value='120';$('mwDel').style.display='none';$('mWorker').classList.add('active');}
+function editWorkerM(n){editW=n;const w=workers[n];$('mwTitle').textContent='EDIT: '+n;$('mwName').value=n;$('mwName').disabled=true;$('mwBackend').value=w.backend||'sdk';$('mwVendor').value=w.vendor||'anthropic';$('mwModel').value=w.model||'sonnet';$('mwDesc').value=w.description||'';$('mwPrompt').value=w.prompt||'';$('mwTools').value=(w.tools||[]).join(', ');$('mwTimeout').value=w.timeout||120;$('mwDel').style.display=w.builtin===false?'block':'none';$('mWorker').classList.add('active');}
+function closeM(id){$(id).classList.remove('active');}
+async function saveWorker(){const d={name:$('mwName').value.trim(),backend:$('mwBackend').value,vendor:$('mwVendor').value,model:$('mwModel').value,description:$('mwDesc').value,prompt:$('mwPrompt').value,tools:$('mwTools').value.split(',').map(s=>s.trim()).filter(Boolean),timeout:parseInt($('mwTimeout').value)||120};if(!d.name)return;const url=editW?`${API}/workers/${d.name}`:`${API}/workers`;const r=await(await fetch(url,{method:editW?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})).json();if(r.error){alert(r.error);return;}await loadWorkers();closeM('mWorker');}
+async function delWorker(){if(!editW||!confirm('Delete "'+editW+'"?'))return;await fetch(`${API}/workers/${editW}`,{method:'DELETE'});await loadWorkers();closeM('mWorker');}
+
+// ─── Backend Modal ───
+function openAddBackend(){['mbName','mbCmd','mbArgs'].forEach(id=>$(id).value='');$('mbMax').value='2';$('mBackend').classList.add('active');}
+async function saveBackend(){const d={name:$('mbName').value.trim(),command:$('mbCmd').value.trim(),args:$('mbArgs').value.split(',').map(s=>s.trim()).filter(Boolean),maxSessions:parseInt($('mbMax').value)||2};if(!d.name||!d.command)return;await fetch(`${API}/gateway/backends`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});await loadGW();closeM('mBackend');}
+
 // ─── Utils ───
-function setOnline() { document.getElementById('status-dot').className='status-dot'; document.getElementById('status-text').textContent='connected'; }
-function setOffline() { document.getElementById('status-dot').className='status-dot offline'; document.getElementById('status-text').textContent='disconnected'; }
-function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function $(id){return document.getElementById(id);}
+function online(){$('hPulse').className='pulse-ring';$('hStatus').textContent='ONLINE';}
+function offline(){$('hPulse').className='pulse-ring offline';$('hStatus').textContent='OFFLINE';}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
 init();
 </script>
