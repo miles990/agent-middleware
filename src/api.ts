@@ -291,6 +291,23 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   // Helper: all workers (built-in + custom)
   const mergedWorkerNames = () => [...getWorkerNames(), ...Array.from(mw.customWorkers.keys())];
 
+  // Webhook callback — fire-and-forget POST to caller's endpoint on events
+  const sendCallback = (url: string, from: string, event: { type: string; id: string; status: string; result?: unknown; error?: string }) => {
+    const text = event.type === 'task.completed'
+      ? `Task ${event.id} completed: ${typeof event.result === 'string' ? event.result.slice(0, 2000) : JSON.stringify(event.result).slice(0, 2000)}`
+      : event.type === 'task.failed'
+        ? `Task ${event.id} failed: ${event.error ?? 'unknown error'}`
+        : event.type === 'plan.completed'
+          ? `Plan ${event.id} completed. Status: ${event.status}`
+          : `Event: ${event.type} on ${event.id}`;
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, text }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => { /* fire-and-forget */ });
+  };
+
   // Health
   app.get('/health', (c) => c.json({
     status: 'ok',
@@ -309,6 +326,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       task: string | import('./llm-provider.js').ContentBlock[];
       timeout?: number;
       caller?: string;
+      callback?: string;       // webhook URL — POST event on completion/failure
+      callbackFrom?: string;   // "from" field in callback payload (default: "middleware")
     }>();
     if (!body.worker || !body.task) return c.json({ error: 'worker and task required' }, 400);
 
@@ -321,17 +340,25 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const taskId = mw.buffer.submit({ worker: body.worker, task: taskDesc, caller: body.caller });
     mw.buffer.start(taskId);
 
-    // Fire and forget — caller polls /status/:id
+    const cb = body.callback;
+    const cbFrom = body.callbackFrom ?? 'middleware';
     mw.executeWorker(body.worker, body.task, timeoutMs)
-      .then(result => mw.buffer.complete(taskId, result))
-      .catch(err => mw.buffer.fail(taskId, err instanceof Error ? err.message : String(err)));
+      .then(result => {
+        mw.buffer.complete(taskId, result);
+        if (cb) sendCallback(cb, cbFrom, { type: 'task.completed', id: taskId, status: 'completed', result });
+      })
+      .catch(err => {
+        const msg = err instanceof Error ? err.message : String(err);
+        mw.buffer.fail(taskId, msg);
+        if (cb) sendCallback(cb, cbFrom, { type: 'task.failed', id: taskId, status: 'failed', error: msg });
+      });
 
     return c.json({ taskId, status: 'running' });
   });
 
   // POST /plan — submit action plan
   app.post('/plan', async (c) => {
-    const body = await c.req.json<ActionPlan & { caller?: string }>();
+    const body = await c.req.json<ActionPlan & { caller?: string; callback?: string; callbackFrom?: string }>();
     const plan: ActionPlan = { goal: body.goal, steps: body.steps, acceptance: body.acceptance, convergence: body.convergence };
 
     // Validate
@@ -350,18 +377,26 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     mw.plans.set(planId, { plan, resultPromise });
     mw.evictOldPlans();
 
-    // Cleanup after completion + evict plan after 1h
+    // Cleanup after completion + evict plan after 1h + webhook callback
+    const planCb = body.callback;
+    const planCbFrom = body.callbackFrom ?? 'middleware';
     resultPromise.then(result => {
       for (const step of result.steps) {
         if (step.status !== 'completed') {
           mw.buffer.fail(step.id, step.output);
         }
       }
-      // Store result for GET /plan/:id, evict after 1h
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
+      // Webhook callback on plan completion
+      if (planCb) {
+        const completed = result.steps.filter(s => s.status === 'completed').length;
+        const summary = result.steps.map(s => `${s.id}: ${s.status}`).join(', ');
+        sendCallback(planCb, planCbFrom, { type: 'plan.completed', id: planId, status: `${completed}/${result.steps.length} completed`, result: summary });
+      }
     }).catch(() => {
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
+      if (planCb) sendCallback(planCb, planCbFrom, { type: 'plan.failed', id: planId, status: 'failed', error: 'Plan execution error' });
     });
 
     return c.json({ planId, status: 'executing', steps: plan.steps.length });
