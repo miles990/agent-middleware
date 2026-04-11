@@ -417,6 +417,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           '用 SDK worker 做 shell 能做的事 — 浪費 30 秒等 AI 回答 echo hello',
           '一個 step 做所有事 — context 爆炸，拆開並行更快',
           '串行做可以並行的事 — dependsOn=[] 就能並行',
+          '大資料直接塞進 AI prompt — 先用 shell+jq 提取需要的部分。例如：step1(curl API 83K) → step2(jq 提取 2K) → step3(analyst 分析 2K)',
         ],
       },
       planPatterns: {
@@ -588,6 +589,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         const completed = result.steps.filter(s => s.status === 'completed').length;
         const summary = result.steps.map(s => `${s.id}: ${s.status}`).join(', ');
         sendCallback(planCb, planCbFrom, { type: 'plan.completed', id: planId, status: `${completed}/${result.steps.length} completed`, result: summary });
+        (mw.plans.get(planId) as Record<string, unknown>).callbackSentAt = new Date().toISOString();
       }
     }).catch(() => {
       mw.markPlanCompleted(planId);
@@ -896,6 +898,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn,
           status: steps.find(t => t.id === s.id)?.status ?? 'pending',
           durationMs: steps.find(t => t.id === s.id)?.durationMs,
+          resultSize: typeof steps.find(t => t.id === s.id)?.result === 'string' ? (steps.find(t => t.id === s.id)?.result as string).length : undefined,
         })),
       };
     });
