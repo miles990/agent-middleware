@@ -532,24 +532,35 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     const planId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
 
-    // Prefix step IDs with planId to avoid cross-plan collisions
-    const prefixedPlan = {
+    // Submit steps to buffer with unique IDs (planId_stepId) to avoid cross-plan collision
+    for (const step of plan.steps) {
+      const uid = `${planId}_${step.id}`;
+      mw.buffer.submit({ id: uid, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+    }
+
+    // Remap plan step IDs to match buffer UIDs — plan engine events will use these IDs
+    // Also remap {{stepId.xxx}} template references in task strings
+    const idMap = new Map(plan.steps.map(s => [s.id, `${planId}_${s.id}`]));
+    const remapTemplates = (task: string) => {
+      let t = task;
+      for (const [orig, prefixed] of idMap) {
+        t = t.replaceAll(`{{${orig}.`, `{{${prefixed}.`);
+      }
+      return t;
+    };
+    const execPlan = {
       ...plan,
       steps: plan.steps.map(s => ({
         ...s,
-        id: `${planId}:${s.id}`,
-        dependsOn: (s.dependsOn ?? []).map(d => `${planId}:${d}`),
+        id: idMap.get(s.id)!,
+        task: remapTemplates(s.task),
+        dependsOn: (s.dependsOn ?? []).map(d => idMap.get(d) ?? d),
       })),
     };
 
-    // Submit all steps to buffer
-    for (const step of prefixedPlan.steps) {
-      mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label ?? plan.steps.find(s => `${planId}:${s.id}` === step.id)?.label, caller: body.caller });
-    }
-
-    // Execute in background (plan engine uses prefixed IDs — matches buffer + onEvent)
-    const resultPromise = mw.planEngine.execute(prefixedPlan);
-    mw.plans.set(planId, { plan, resultPromise });
+    // Execute — plan engine events (dispatched/completed/failed) use remapped IDs → match buffer
+    const resultPromise = mw.planEngine.execute(execPlan);
+    mw.plans.set(planId, { plan: execPlan, resultPromise });
     mw.evictOldPlans();
 
     // Cleanup after completion + evict plan after 1h + webhook callback
@@ -914,20 +925,26 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     if (errors.length > 0) return c.json({ error: 'template_validation_failed', errors }, 400);
 
     const planId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
-    // Prefix step IDs to avoid cross-plan collisions
-    const prefixedPlan = {
+    for (const step of plan.steps) {
+      mw.buffer.submit({ id: `${planId}_${step.id}`, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+    }
+    const tplIdMap = new Map(plan.steps.map(s => [s.id, `${planId}_${s.id}`]));
+    const tplRemapTemplates = (task: string) => {
+      let t = task;
+      for (const [orig, prefixed] of tplIdMap) t = t.replaceAll(`{{${orig}.`, `{{${prefixed}.`);
+      return t;
+    };
+    const execPlan = {
       ...plan,
       steps: plan.steps.map(s => ({
         ...s,
-        id: `${planId}:${s.id}`,
-        dependsOn: (s.dependsOn ?? []).map((d: string) => `${planId}:${d}`),
+        id: tplIdMap.get(s.id)!,
+        task: tplRemapTemplates(s.task),
+        dependsOn: (s.dependsOn ?? []).map((d: string) => tplIdMap.get(d) ?? d),
       })),
     };
-    for (const step of prefixedPlan.steps) {
-      mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
-    }
-    const resultPromise = mw.planEngine.execute(prefixedPlan);
-    mw.plans.set(planId, { plan: prefixedPlan, resultPromise });
+    const resultPromise = mw.planEngine.execute(execPlan);
+    mw.plans.set(planId, { plan: execPlan, resultPromise });
     mw.evictOldPlans();
     resultPromise.then(result => {
       mw.markPlanCompleted(planId);
