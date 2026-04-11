@@ -31,6 +31,7 @@ import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.j
 import type { LLMProvider } from './llm-provider.js';
 import { PLAN_TEMPLATES } from './templates.js';
 import { execSync, execFileSync } from 'node:child_process';
+import { createBrain, brainPlan, brainDigest, type WorkerInfo } from './brain.js';
 
 // Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
 const API_KEY = process.env.MIDDLEWARE_API_KEY;
@@ -300,6 +301,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.use('/presets', authMiddleware as never);
   app.use('/presets/*', authMiddleware as never);
   app.use('/task/*', authMiddleware as never);
+  app.use('/goal', authMiddleware as never);
 
   // Helper: all workers (built-in + custom)
   const mergedWorkerNames = () => [...getWorkerNames(), ...Array.from(mw.customWorkers.keys())];
@@ -819,12 +821,128 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ taskId, status: 'running', backend: body.backend });
   });
 
-  // ─── Dashboard (cached) ───
+  // ─── Goal-Driven Execution — Brain plans, middleware executes ───
+  // POST /goal — agent just says what it wants, brain figures out how
+  app.post('/goal', async (c) => {
+    const body = await c.req.json<{
+      goal: string;
+      context?: string;
+      callback?: string;
+      callbackFrom?: string;
+      caller?: string;
+      maxReplanRounds?: number;
+    }>();
+    if (!body.goal?.trim()) return c.json({ error: 'goal required' }, 400);
+
+    const goalId = `goal-${Date.now()}-${(mw.planCounter++).toString(36)}`;
+    const cwd = config?.cwd ?? process.cwd();
+    const brain = createBrain({ cwd });
+
+    // Gather worker capabilities for brain
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const workerInfo: WorkerInfo[] = Object.entries(allW).map(([name, def]) => ({
+      name, description: def.agent.description ?? '', backend: def.backend,
+      model: def.agent.model, maxConcurrency: def.maxConcurrency,
+    }));
+
+    // Start goal execution in background
+    const goalPromise = (async () => {
+      const maxReplan = body.maxReplanRounds ?? 3;
+      let finalResult = '';
+
+      // Phase 1: Brain plans
+      const planText = await brainPlan(brain, body.goal, {
+        context: body.context,
+        availableWorkers: workerInfo,
+      });
+
+      // Extract JSON plan from brain output
+      const jsonMatch = planText.match(/```json\s*([\s\S]*?)```/);
+      if (!jsonMatch) return { goalId, status: 'failed', error: 'Brain failed to produce a plan', raw: planText.slice(0, 1000) };
+
+      let plan: ActionPlan;
+      try { plan = JSON.parse(jsonMatch[1]) as ActionPlan; }
+      catch { return { goalId, status: 'failed', error: 'Brain produced invalid JSON', raw: jsonMatch[1].slice(0, 500) }; }
+
+      // Validate plan
+      const errors = mw.planEngine.validate(plan, new Set(mergedWorkerNames()));
+      if (errors.length > 0) return { goalId, status: 'failed', error: 'Plan validation failed', errors };
+
+      // Phase 2: Execute plan
+      for (const step of plan.steps) {
+        mw.buffer.submit({ id: `${goalId}_${step.id}`, planId: goalId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+      }
+      // Remap step IDs to include goalId prefix (avoid collisions)
+      const prefixedPlan = { ...plan, steps: plan.steps.map(s => ({ ...s, id: `${goalId}_${s.id}`, dependsOn: s.dependsOn.map(d => `${goalId}_${d}`) })) };
+
+      const planResult = await mw.planEngine.execute(prefixedPlan);
+
+      // Phase 3: Brain digests results — may replan
+      for (let round = 0; round <= maxReplan; round++) {
+        const digestText = await brainDigest(brain, body.goal, planResult, {
+          replanRound: round, maxReplanRounds: maxReplan,
+        });
+
+        // Check if brain wants to replan
+        const replanMatch = digestText.match(/```json\s*([\s\S]*?)```/);
+        if (!replanMatch || round >= maxReplan) {
+          finalResult = digestText;
+          break;
+        }
+
+        // Brain wants more work — execute replan
+        try {
+          const replan = JSON.parse(replanMatch[1]) as ActionPlan;
+          for (const step of replan.steps) {
+            mw.buffer.submit({ id: `${goalId}_r${round}_${step.id}`, planId: goalId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+          }
+          const prefixedReplan = { ...replan, steps: replan.steps.map(s => ({ ...s, id: `${goalId}_r${round}_${s.id}`, dependsOn: s.dependsOn.map(d => `${goalId}_r${round}_${d}`) })) };
+          const replanResult = await mw.planEngine.execute(prefixedReplan);
+          // Merge into planResult for next digest round
+          planResult.steps.push(...replanResult.steps);
+          planResult.digestContext += '\n\n--- Replan Round ' + (round + 1) + ' ---\n' + replanResult.digestContext;
+        } catch {
+          finalResult = digestText;
+          break;
+        }
+      }
+
+      return { goalId, status: 'completed', result: finalResult };
+    })();
+
+    // Track goal
+    mw.plans.set(goalId, { plan: { goal: body.goal, steps: [] }, resultPromise: goalPromise as never });
+    mw.evictOldPlans();
+
+    // Callback on completion
+    goalPromise.then(result => {
+      (mw.plans.get(goalId) as Record<string, unknown>).result = result;
+      setTimeout(() => mw.plans.delete(goalId), 3_600_000);
+      if (body.callback) {
+        sendCallback(body.callback, body.callbackFrom ?? 'middleware', {
+          type: 'goal.completed', id: goalId, status: 'completed',
+          result: typeof result === 'object' ? (result as Record<string,unknown>).result : result,
+        });
+      }
+    }).catch(err => {
+      setTimeout(() => mw.plans.delete(goalId), 3_600_000);
+      if (body.callback) {
+        sendCallback(body.callback, body.callbackFrom ?? 'middleware', {
+          type: 'goal.failed', id: goalId, status: 'failed', error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+
+    return c.json({ goalId, status: 'planning', goal: body.goal });
+  });
+
+  // ─── Dashboard (always fresh — no server cache, no browser cache) ───
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  let dashboardCache: string | null = null;
   app.get('/dashboard', (c) => {
-    if (!dashboardCache) dashboardCache = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf-8');
-    return c.html(dashboardCache);
+    const html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf-8');
+    c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+    c.header('Pragma', 'no-cache');
+    return c.html(html);
   });
   // Redirect root to dashboard
   app.get('/', (c) => c.redirect('/dashboard'));

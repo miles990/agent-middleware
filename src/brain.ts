@@ -49,7 +49,12 @@ CRITICAL RULES:
 - Use {{stepId.result}} or {{stepId.summary}} to pass data between steps
 - Keep steps at "independently verifiable work unit" granularity
 - Add retry for unreliable steps (web fetch, API calls): { "maxRetries": 2, "onExhausted": "skip" }
-- DO NOT execute tools yourself — only produce the plan`;
+- DO NOT execute tools yourself — only produce the plan
+
+WORKER-SPECIFIC TASK FORMAT:
+- shell: task MUST be a pure shell command, NO description. Example: "wc -l src/*.ts | sort -rn | head -3"
+- researcher/coder/reviewer/analyst/explorer: task is a natural language instruction
+- Use "label" field for human-readable description, "task" field for the actual work`;
 
 const DIGEST_SYSTEM = `You are the digest brain of an AI agent system. Workers have completed their tasks.
 
