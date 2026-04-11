@@ -30,7 +30,7 @@ import { PresetManager } from './presets.js';
 import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.js';
 import type { LLMProvider } from './llm-provider.js';
 import { PLAN_TEMPLATES } from './templates.js';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 
 // Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
 const API_KEY = process.env.MIDDLEWARE_API_KEY;
@@ -141,13 +141,18 @@ export function createMiddleware(config?: MiddlewareConfig) {
       case 'shell': {
         try {
           const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
-          // Shell allowlist: if configured, only allow commands starting with allowed prefixes
           if (def.shellAllowlist?.length) {
-            const cmdBase = shellCmd.trim().split(/\s+/)[0];
+            // Structural enforcement: execFileSync bypasses shell interpretation entirely.
+            // No pipes, semicolons, $() — the allowlist is enforced by the OS, not regex.
+            const parts = shellCmd.trim().split(/\s+/);
+            const cmdBase = parts[0];
             if (!def.shellAllowlist.some(a => cmdBase === a || cmdBase.endsWith(`/${a}`))) {
               throw new Error(`Shell command "${cmdBase}" not in allowlist: ${def.shellAllowlist.join(', ')}`);
             }
+            const output = execFileSync(cmdBase, parts.slice(1), { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+            return output;
           }
+          // No allowlist → trusted agent, full shell features (pipes, redirection, etc.)
           const output = execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
           return output;
         } catch (err) {
@@ -197,7 +202,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
           const vm = await import('node:vm');
           const sandbox = { input: taskStr, context: { cwd, worker }, result: undefined as unknown, JSON, Math, Date, Array, Object, String, Number, Boolean, RegExp, Map, Set, parseInt, parseFloat, isNaN, isFinite };
           const script = new vm.Script(`result = (function(input, context) { ${fn} })(input, context);`);
-          script.runInNewContext(sandbox, { timeout: 10_000 });
+          script.runInNewContext(sandbox, { timeout: timeoutMs });
           const resolved = sandbox.result;
           return typeof resolved === 'string' ? resolved : JSON.stringify(resolved);
         } catch (err) {
@@ -226,7 +231,9 @@ export function createMiddleware(config?: MiddlewareConfig) {
           await new Promise(r => setTimeout(r, pollInterval + jitter));
           pollInterval = Math.min(pollInterval * 1.5, 15000);
         }
-        throw new Error(`Upstream middleware timeout after ${timeoutMs}ms`);
+        // Cancel upstream task on timeout — prevent resource leak
+        fetch(`${url}/task/${taskId}`, { method: 'DELETE' }).catch(() => {});
+        throw new Error(`Upstream middleware timeout after ${timeoutMs}ms (cancel sent)`);
       }
       default:
         throw new Error(`Unknown backend: ${def.backend}`);
@@ -258,15 +265,21 @@ export function createMiddleware(config?: MiddlewareConfig) {
   let planCounter = 0;
 
   // Evict oldest completed plans when capacity exceeded
+  const completedPlans = new Set<string>();
+  const markPlanCompleted = (planId: string) => completedPlans.add(planId);
   const evictOldPlans = () => {
     if (plans.size <= MAX_PLANS) return;
+    // Only evict completed plans — never remove running ones
     for (const [id] of plans) {
       if (plans.size <= MAX_PLANS) break;
-      plans.delete(id); // FIFO — oldest first
+      if (completedPlans.has(id)) {
+        plans.delete(id);
+        completedPlans.delete(id);
+      }
     }
   };
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans };
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted };
 }
 
 // =============================================================================
@@ -386,6 +399,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           mw.buffer.fail(step.id, step.output);
         }
       }
+      mw.markPlanCompleted(planId);
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
       // Webhook callback on plan completion
@@ -395,11 +409,18 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         sendCallback(planCb, planCbFrom, { type: 'plan.completed', id: planId, status: `${completed}/${result.steps.length} completed`, result: summary });
       }
     }).catch(() => {
+      mw.markPlanCompleted(planId);
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
       if (planCb) sendCallback(planCb, planCbFrom, { type: 'plan.failed', id: planId, status: 'failed', error: 'Plan execution error' });
     });
 
-    return c.json({ planId, status: 'executing', steps: plan.steps.length });
+    return c.json({
+      planId,
+      status: 'executing',
+      steps: plan.steps.length,
+      // Self-documenting: callers learn template syntax from the response itself
+      templateSyntax: '{{stepId.result}}, {{stepId.summary}}, {{stepId.status}}, {{stepId.findings}}, {{stepId.confidence}}',
+    });
   });
 
   // GET /status/:id — task status
@@ -506,33 +527,30 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   // ─── Worker CRUD API ───
   // Custom workers are stored in runtime + persisted to workers.json
 
-  // GET /workers — list all workers (built-in + custom)
+  // GET /workers — complete representation of all workers (no hidden fields)
   app.get('/workers', (c) => {
-    const all = Object.entries(WORKERS).map(([name, def]) => ({
+    const serialize = (name: string, def: WorkerDefinition, builtin: boolean) => ({
       name,
       backend: def.backend,
+      vendor: def.vendor ?? 'anthropic',
       model: def.agent.model,
       description: def.agent.description,
       prompt: def.agent.prompt,
       tools: def.agent.tools,
       maxTurns: def.agent.maxTurns,
       timeout: def.defaultTimeoutSeconds,
-      builtin: true,
-    }));
-    // Add custom workers from runtime
-    for (const [name, def] of mw.customWorkers) {
-      all.push({
-        name,
-        backend: def.backend,
-        model: def.agent.model,
-        description: def.agent.description,
-        prompt: def.agent.prompt,
-        tools: def.agent.tools,
-        maxTurns: def.agent.maxTurns,
-        timeout: def.defaultTimeoutSeconds,
-        builtin: false,
-      });
-    }
+      maxConcurrency: def.maxConcurrency,
+      builtin,
+      ...(def.mcpServers ? { mcpServers: Object.keys(def.mcpServers) } : {}),
+      ...(def.skills?.length ? { skills: def.skills } : {}),
+      ...(def.shellAllowlist?.length ? { shellAllowlist: def.shellAllowlist } : {}),
+      ...(def.webhook ? { webhook: { url: def.webhook.url, method: def.webhook.method ?? 'GET' } } : {}),
+      ...(def.logicFn ? { hasLogicFn: true } : {}),
+    });
+    const all = [
+      ...Object.entries(WORKERS).map(([name, def]) => serialize(name, def, true)),
+      ...[...mw.customWorkers.entries()].map(([name, def]) => serialize(name, def, false)),
+    ];
     return c.json({ workers: all });
   });
 
@@ -702,9 +720,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     mw.plans.set(planId, { plan, resultPromise });
     mw.evictOldPlans();
     resultPromise.then(result => {
+      mw.markPlanCompleted(planId);
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
     }).catch(() => {
+      mw.markPlanCompleted(planId);
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
     });
 
