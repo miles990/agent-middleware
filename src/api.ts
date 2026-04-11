@@ -141,6 +141,13 @@ export function createMiddleware(config?: MiddlewareConfig) {
       case 'shell': {
         try {
           const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
+          // Shell allowlist: if configured, only allow commands starting with allowed prefixes
+          if (def.shellAllowlist?.length) {
+            const cmdBase = shellCmd.trim().split(/\s+/)[0];
+            if (!def.shellAllowlist.some(a => cmdBase === a || cmdBase.endsWith(`/${a}`))) {
+              throw new Error(`Shell command "${cmdBase}" not in allowlist: ${def.shellAllowlist.join(', ')}`);
+            }
+          }
           const output = execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
           return output;
         } catch (err) {
@@ -182,17 +189,16 @@ export function createMiddleware(config?: MiddlewareConfig) {
       }
       case 'logic': {
         // Pure JS function — deterministic, zero LLM
-        // Safety: logicFn runs in-process. Block dangerous patterns.
+        // Safety: vm.runInNewContext isolates from global scope (no require/process/import)
         const fn = def.logicFn;
         if (!fn) throw new Error(`Worker ${worker}: logicFn not configured`);
-        const blocked = ['require(', 'import(', 'process.exit', 'child_process', 'eval(', 'Function('];
-        const found = blocked.find(b => fn.includes(b));
-        if (found) throw new Error(`Logic worker rejected: contains "${found}"`);
         const taskStr = typeof task === 'string' ? task : JSON.stringify(task);
         try {
-          const execFn = new Function('input', 'context', fn) as (input: string, context: Record<string, unknown>) => unknown;
-          const result = execFn(taskStr, { cwd, worker });
-          const resolved = result instanceof Promise ? await Promise.race([result, new Promise((_, rej) => setTimeout(() => rej(new Error('Logic timeout 10s')), 10_000))]) : result;
+          const vm = await import('node:vm');
+          const sandbox = { input: taskStr, context: { cwd, worker }, result: undefined as unknown, JSON, Math, Date, Array, Object, String, Number, Boolean, RegExp, Map, Set, parseInt, parseFloat, isNaN, isFinite };
+          const script = new vm.Script(`result = (function(input, context) { ${fn} })(input, context);`);
+          script.runInNewContext(sandbox, { timeout: 10_000 });
+          const resolved = sandbox.result;
           return typeof resolved === 'string' ? resolved : JSON.stringify(resolved);
         } catch (err) {
           throw new Error(`Logic error: ${err instanceof Error ? err.message : String(err)}`);
@@ -246,11 +252,21 @@ export function createMiddleware(config?: MiddlewareConfig) {
     },
   });
 
-  // Track plans
+  // Track plans (max capacity to prevent OOM)
+  const MAX_PLANS = 100;
   const plans = new Map<string, { plan: ActionPlan; resultPromise: Promise<import('./plan-engine.js').PlanResult> }>();
   let planCounter = 0;
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter };
+  // Evict oldest completed plans when capacity exceeded
+  const evictOldPlans = () => {
+    if (plans.size <= MAX_PLANS) return;
+    for (const [id] of plans) {
+      if (plans.size <= MAX_PLANS) break;
+      plans.delete(id); // FIFO — oldest first
+    }
+  };
+
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans };
 }
 
 // =============================================================================
@@ -332,6 +348,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // Execute in background
     const resultPromise = mw.planEngine.execute(plan);
     mw.plans.set(planId, { plan, resultPromise });
+    mw.evictOldPlans();
 
     // Cleanup after completion + evict plan after 1h
     resultPromise.then(result => {
@@ -648,7 +665,13 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     }
     const resultPromise = mw.planEngine.execute(plan);
     mw.plans.set(planId, { plan, resultPromise });
-    resultPromise.catch(() => {});
+    mw.evictOldPlans();
+    resultPromise.then(result => {
+      (mw.plans.get(planId) as Record<string, unknown>).result = result;
+      setTimeout(() => mw.plans.delete(planId), 3_600_000);
+    }).catch(() => {
+      setTimeout(() => mw.plans.delete(planId), 3_600_000);
+    });
 
     return c.json({ planId, status: 'executing', steps: plan.steps.length, template: body.template });
   });

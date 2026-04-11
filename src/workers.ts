@@ -42,6 +42,8 @@ export interface WorkerDefinition {
   defaultTimeoutSeconds: number;
   /** Budget per task in USD (for SDK backend). Default: 5 */
   maxBudgetUsd?: number;
+  /** Shell backend: optional command allowlist. Empty = allow all (default). */
+  shellAllowlist?: string[];
   /** MCP servers available to this worker — gives access to external tools (DB, browser, APIs, cross-agent comms) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mcpServers?: Record<string, any>;

@@ -239,6 +239,7 @@ export class PlanEngine {
 
   validate(plan: ActionPlan, availableWorkers: Set<string>): string[] {
     const errors: string[] = [];
+    if (!plan.steps?.length) { errors.push('Plan has no steps'); return errors; }
     const ids = new Set(plan.steps.map(s => s.id));
     for (const step of plan.steps) {
       if (!availableWorkers.has(step.worker)) errors.push(`Step ${step.id}: unknown worker '${step.worker}'`);
