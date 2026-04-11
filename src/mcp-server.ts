@@ -256,21 +256,6 @@ server.tool(
   },
 );
 
-// ─── Goal-Driven Execution ───
-server.tool(
-  'middleware_goal',
-  'Smart execution: just describe what you want, the brain plans and workers execute. No need to design a DAG — the middleware figures it out.',
-  { goal: z.string().describe('What you want to achieve (natural language)'),
-    context: z.string().optional().describe('Additional context to help the brain plan'),
-    maxReplanRounds: z.number().optional().describe('Max replan attempts (default: 3)') },
-  async ({ goal, context, maxReplanRounds }) => {
-    const result = await mwFetch('/goal', {
-      method: 'POST', body: JSON.stringify({ goal, context, maxReplanRounds, caller: 'mcp' }),
-    });
-    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
-  },
-);
-
 // ─── Start ───
 async function main() {
   const transport = new StdioServerTransport();
