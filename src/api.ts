@@ -389,6 +389,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         '帶 skills': { method: 'POST /workers', body: { name: 'my-worker', prompt: '...', skills: ['# Skill Name\nSkill prompt content...'] }, note: 'skills 注入 worker prompt，worker-scoped' },
         '帶 MCP': { method: 'POST /workers', body: { name: 'db-worker', prompt: '...', mcpServers: { sqlite: { command: 'mcp-server-sqlite', args: ['--db', 'data.db'] } } }, note: '讓 worker 用外部工具' },
         '用 preset': { method: 'GET /presets', note: '預設模板快速建 worker' },
+        'health check': { method: 'GET /workers/health', note: '規劃前先檢查 — 避開不可用的 worker' },
+        '自訂 health check': { method: 'POST /workers', body: { name: 'my-worker', prompt: '...', healthCheck: 'curl -sf http://my-service/health' }, note: 'shell 命令，exit 0 = healthy' },
       },
       workerSelection: {
         description: '根據任務性質選 worker — 不是所有任務都需要 AI',
@@ -689,6 +691,27 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ workers: all });
   });
 
+  // GET /workers/health — check all workers' health (AI should check before planning)
+  app.get('/workers/health', async (c) => {
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const results: Record<string, { healthy: boolean; reason?: string; checkMs?: number }> = {};
+    await Promise.all(Object.entries(allW).map(async ([name, def]) => {
+      if (!def.healthCheck) {
+        results[name] = { healthy: true, reason: 'no health check defined — assumed healthy' };
+        return;
+      }
+      const start = Date.now();
+      try {
+        execSync(def.healthCheck, { timeout: 10_000, stdio: 'ignore', cwd: config?.cwd ?? process.cwd() });
+        results[name] = { healthy: true, checkMs: Date.now() - start };
+      } catch {
+        results[name] = { healthy: false, reason: `health check failed: ${def.healthCheck}`, checkMs: Date.now() - start };
+      }
+    }));
+    const healthyCount = Object.values(results).filter(r => r.healthy).length;
+    return c.json({ total: Object.keys(results).length, healthy: healthyCount, workers: results });
+  });
+
   // POST /workers — add a custom worker
   app.post('/workers', async (c) => {
     const body = await c.req.json<{
@@ -697,7 +720,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       maxTurns?: number; timeout?: number;
       webhook?: { url: string; method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers?: Record<string, string>; bodyTemplate?: string; resultPath?: string };
       logicFn?: string;
-      mcpServers?: Record<string, unknown>; skills?: string[];
+      mcpServers?: Record<string, unknown>; skills?: string[]; healthCheck?: string;
     }>();
     if (!body.name) return c.json({ error: 'name required' }, 400);
     if (WORKERS[body.name]) return c.json({ error: 'cannot override built-in worker' }, 400);
@@ -717,6 +740,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       ...(body.logicFn ? { logicFn: body.logicFn } : {}),
       ...(body.mcpServers ? { mcpServers: body.mcpServers } : {}),
       ...(body.skills ? { skills: body.skills } : {}),
+      ...(body.healthCheck ? { healthCheck: body.healthCheck } : {}),
     };
 
     mw.customWorkers.set(body.name, def);
@@ -744,7 +768,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const body = await c.req.json<{
       backend?: string; model?: string; description?: string;
       prompt?: string; tools?: string[]; maxTurns?: number; timeout?: number;
-      mcpServers?: Record<string, unknown>; skills?: string[];
+      mcpServers?: Record<string, unknown>; skills?: string[]; healthCheck?: string;
     }>();
 
     const existing = mw.customWorkers.get(name)!;
@@ -760,6 +784,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       defaultTimeoutSeconds: body.timeout ?? existing.defaultTimeoutSeconds,
       mcpServers: body.mcpServers ?? existing.mcpServers,
       skills: body.skills ?? existing.skills,
+      healthCheck: body.healthCheck ?? existing.healthCheck,
     };
 
     mw.customWorkers.set(name, updated);
