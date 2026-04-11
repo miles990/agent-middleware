@@ -140,6 +140,11 @@ export function createMiddleware(config?: MiddlewareConfig) {
         ]);
       }
       case 'shell': {
+        const SHELL_RESULT_CAP = 50_000;
+        const capOutput = (raw: string): string => {
+          if (raw.length <= SHELL_RESULT_CAP) return raw;
+          return raw.slice(0, SHELL_RESULT_CAP) + `\n[TRUNCATED: original ${raw.length} chars, showing first ${SHELL_RESULT_CAP}]`;
+        };
         try {
           const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
           if (def.shellAllowlist?.length) {
@@ -151,11 +156,11 @@ export function createMiddleware(config?: MiddlewareConfig) {
               throw new Error(`Shell command "${cmdBase}" not in allowlist: ${def.shellAllowlist.join(', ')}`);
             }
             const output = execFileSync(cmdBase, parts.slice(1), { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
-            return output;
+            return capOutput(output);
           }
           // No allowlist → trusted agent, full shell features (pipes, redirection, etc.)
           const output = execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
-          return output;
+          return capOutput(output);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           throw new Error(`Shell error: ${msg.slice(0, 500)}`);
@@ -327,7 +332,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, text }),
       signal: AbortSignal.timeout(10_000),
-    }).catch(() => { /* fire-and-forget */ });
+    }).catch((err) => { console.error(`[sendCallback] POST ${url} failed:`, err instanceof Error ? err.message : err); });
   };
 
   // Health
@@ -601,6 +606,9 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     if (waitMode) {
       try {
         const result = await resultPromise;
+        // Store result on plan entry immediately — resultPromise.then() may not have run yet
+        mw.markPlanCompleted(planId);
+        (mw.plans.get(planId) as Record<string, unknown>).result = result;
         const steps = mw.buffer.list({ planId });
         return c.json({
           planId, status: 'completed', steps: steps.map(s => ({
@@ -609,6 +617,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           })),
         });
       } catch (err) {
+        mw.markPlanCompleted(planId);
         return c.json({ planId, status: 'failed', error: err instanceof Error ? err.message : String(err) }, 500);
       }
     }
@@ -898,7 +907,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn,
           status: steps.find(t => t.id === s.id)?.status ?? 'pending',
           durationMs: steps.find(t => t.id === s.id)?.durationMs,
-          resultSize: typeof steps.find(t => t.id === s.id)?.result === 'string' ? (steps.find(t => t.id === s.id)?.result as string).length : undefined,
+          resultSize: (() => { const r = steps.find(t => t.id === s.id)?.result; if (typeof r === 'string') return r.length; if (r != null) return JSON.stringify(r).length; return undefined; })(),
         })),
       };
     });
