@@ -380,7 +380,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     });
   });
 
-  // DELETE /plan/:id — cancel all running steps in a plan
+  // DELETE /plan/:id — cancel all running steps (triggers AbortController in plan engine)
   app.delete('/plan/:id', (c) => {
     const planId = c.req.param('id');
     const entry = mw.plans.get(planId);
@@ -388,7 +388,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const steps = mw.buffer.list({ planId });
     let cancelled = 0;
     for (const step of steps) {
-      if (step.status === 'running' || step.status === 'pending') {
+      if (step.status === 'running') {
+        mw.planEngine.cancelStep(step.id); // abort the actual SDK/shell process
+        mw.buffer.cancel(step.id);
+        cancelled++;
+      } else if (step.status === 'pending') {
         mw.buffer.cancel(step.id);
         cancelled++;
       }
@@ -624,10 +628,13 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     if (missing.length > 0) return c.json({ error: 'missing_params', missing: missing.map(p => p.name) }, 400);
 
     // Instantiate template — replace all params (required + optional fallback to empty)
+    // Values are JSON-escaped to prevent injection (quotes, newlines, backslashes)
     let planJson = JSON.stringify(tpl.plan);
     for (const param of tpl.params) {
       const value = body.params[param.name] ?? '';
-      planJson = planJson.replaceAll(`{{${param.name}}}`, value);
+      // JSON.stringify adds surrounding quotes — slice them off to get escaped interior
+      const escaped = JSON.stringify(value).slice(1, -1);
+      planJson = planJson.replaceAll(`{{${param.name}}}`, escaped);
     }
     const plan = JSON.parse(planJson) as ActionPlan;
 

@@ -443,7 +443,15 @@ export class PlanEngine {
             });
         }
 
-        // Deadlock guard
+        // Completion check — covers cases where tryDispatch itself marks steps as skipped (depFailed)
+        if (running.size === 0 && results.size === plan.steps.length) {
+          const finalResult = buildResult(plan, results, start, convergenceIterations);
+          this.emit({ type: 'plan.completed', result: finalResult });
+          resolve(finalResult);
+          return;
+        }
+
+        // Deadlock guard — no running steps but some steps never dispatched
         if (running.size === 0 && results.size < plan.steps.length) {
           for (const s of plan.steps) {
             if (!results.has(s.id))
