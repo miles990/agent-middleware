@@ -637,12 +637,19 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const running = steps.filter(s => s.status === 'running').length;
 
     const planResult = (entry as Record<string, unknown>).result as Record<string, unknown> | undefined;
+    // Total duration: earliest submit to latest completion
+    const submittedTimes = steps.map(s => s.submittedAt ? new Date(s.submittedAt).getTime() : Infinity);
+    const completedTimes = steps.filter(s => s.completedAt).map(s => new Date(s.completedAt!).getTime());
+    const totalDurationMs = submittedTimes.length && completedTimes.length
+      ? Math.max(...completedTimes) - Math.min(...submittedTimes)
+      : undefined;
     return c.json({
       planId,
       goal: entry.plan.goal,
       totalSteps: entry.plan.steps.length,
       completed, failed, running,
       pending: entry.plan.steps.length - completed - failed - running,
+      ...(totalDurationMs !== undefined ? { totalDurationMs } : {}),
       steps,
       ...(planResult ? { result: { acceptance: planResult.acceptance, digestContext: planResult.digestContext } } : {}),
     });
