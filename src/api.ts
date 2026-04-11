@@ -248,7 +248,15 @@ export function createMiddleware(config?: MiddlewareConfig) {
     // Bridge ALL plan events to result buffer → SSE stream
     onEvent: (event) => {
       switch (event.type) {
-        case 'step.dispatched': buffer.start(event.step.id); break;
+        case 'step.dispatched': {
+          buffer.start(event.step.id);
+          // Update buffer task with resolved content (so dashboard shows actual prompt, not template)
+          if (event.resolvedTask) {
+            const entry = buffer.get(event.step.id);
+            if (entry) entry.task = event.resolvedTask;
+          }
+          break;
+        }
         case 'step.completed': buffer.complete(event.result.id, event.result.output); break;
         case 'step.failed': buffer.fail(event.result.id, event.result.output); break;
         default:

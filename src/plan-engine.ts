@@ -128,11 +128,11 @@ export type WorkerExecutor = (worker: string, task: string | import('./llm-provi
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
 function resolveStepContext(task: string, results: Map<string, StepResult>): string {
-  return task.replace(/\{\{(\w[\w-]*)\.(\w+)\}\}/g, (match, stepId, field) => {
+  return task.replace(/\{\{([\w][\w.:_-]*)\.(\w+)\}\}/g, (match, stepId, field) => {
     const result = results.get(stepId);
     if (!result) return match;
     switch (field) {
-      case 'result': case 'output': return result.output?.slice(0, 4000) ?? '';
+      case 'result': case 'output': return result.output?.trim().slice(0, 4000) ?? '';
       case 'summary': return result.structured?.summary ?? result.output?.slice(0, 500) ?? '';
       case 'status': return result.status;
       case 'findings': return result.structured?.findings?.join('\n') ?? '';
@@ -183,7 +183,7 @@ function sleep(ms: number): Promise<void> {
 // =============================================================================
 
 export type PlanEvent =
-  | { type: 'step.dispatched'; step: PlanStep }
+  | { type: 'step.dispatched'; step: PlanStep; resolvedTask?: string }
   | { type: 'step.completed'; result: StepResult }
   | { type: 'step.failed'; result: StepResult }
   | { type: 'step.retrying'; step: PlanStep; attempt: number; error: string }
@@ -380,9 +380,8 @@ export class PlanEngine {
           workerRunning.set(step.worker, currentConc + 1);
           const ac = new AbortController();
           this.abortControllers.set(step.id, ac);
-          this.emit({ type: 'step.dispatched', step });
-
           const resolvedTask = resolveStepContext(step.task, results);
+          this.emit({ type: 'step.dispatched', step, resolvedTask });
           const defaultTimeout = this.opts.getWorkerTimeoutSeconds?.(step.worker) ?? 120;
           const timeoutMs = (step.timeoutSeconds ?? defaultTimeout) * 1000;
           const order = dispatchOrder++;
