@@ -46,6 +46,8 @@ export interface WorkerDefinition {
   shellAllowlist?: string[];
   /** Health check: shell command that returns exit 0 = healthy. AI can define per-worker. */
   healthCheck?: string;
+  /** Health fix: shell command or instruction to restore unhealthy worker. AI can auto-dispatch to fix. */
+  healthFix?: string;
   /** MCP servers available to this worker — gives access to external tools (DB, browser, APIs, cross-agent comms) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mcpServers?: Record<string, any>;
@@ -155,6 +157,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     maxConcurrency: 8,
     defaultTimeoutSeconds: 30,
     healthCheck: 'curl -sf --max-time 5 https://httpbin.org/get > /dev/null',
+    healthFix: 'echo "Check network connection and DNS resolution"',
   },
 
   'web-browser': {
@@ -169,6 +172,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     maxConcurrency: 2,  // shared Chrome — limit concurrency
     defaultTimeoutSeconds: 120,
     healthCheck: 'curl -sf --max-time 3 http://localhost:9222/json/version > /dev/null',
+    healthFix: 'open -a "Google Chrome" --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check',
   },
 
   'web-verify': {
@@ -181,6 +185,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     maxConcurrency: 4,
     defaultTimeoutSeconds: 30,
     healthCheck: 'curl -sf --max-time 3 http://localhost:9222/json/version > /dev/null',
+    healthFix: 'open -a "Google Chrome" --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check',
   },
 };
 
