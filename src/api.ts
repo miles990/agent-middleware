@@ -330,6 +330,76 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     tasks: mw.buffer.list({ limit: 0 }).length,
   }));
 
+  // ─── Capabilities — self-describing entry point for AI agents ───
+  app.get('/capabilities', (c) => {
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const workerList = Object.entries(allW).map(([name, def]) => ({
+      name,
+      backend: def.backend,
+      model: def.agent.model ?? null,
+      when: def.agent.description ?? '',
+      tools: def.agent.tools ?? [],
+      maxTurns: def.agent.maxTurns ?? null,
+      hasMcp: !!def.mcpServers,
+      hasSkills: !!(def.skills?.length),
+      builtin: !!WORKERS[name],
+      example: def.backend === 'shell'
+        ? { worker: name, task: 'echo hello && ls -la' }
+        : { worker: name, task: `[describe what you want ${name} to do]` },
+    }));
+    const templateList = PLAN_TEMPLATES.map(t => ({
+      name: t.name,
+      when: t.description,
+      params: t.params.map(p => ({ name: p.name, description: p.description, required: p.required })),
+      steps: t.plan.steps.length,
+      example: { template: t.name, params: Object.fromEntries(t.params.map(p => [p.name, p.required ? `<${p.name}>` : ''])) },
+    }));
+    return c.json({
+      service: 'agent-middleware',
+      purpose: '幫你分解步驟、並行執行、結果回流。你規劃，我執行。',
+      quickstart: {
+        '單一任務': { method: 'POST /dispatch', body: { worker: 'shell', task: 'echo hello' }, note: '立即派給 worker 執行，回傳 taskId' },
+        '多步驟計劃': { method: 'POST /plan', body: { goal: '描述目標', steps: [{ id: 'step-id', worker: 'worker-name', task: '任務描述', dependsOn: [], label: '給人看的標籤' }] }, note: 'DAG 自動並行，dependsOn=[] 的步驟同時跑' },
+        '用模板': { method: 'POST /plan/from-template', body: { template: 'template-name', params: {} }, note: '一行建立完整 plan' },
+        '查狀態': { method: 'GET /status/:taskId 或 GET /plan/:planId' },
+        '即時事件': { method: 'GET /events', note: 'SSE stream — task.submitted/started/completed/failed' },
+      },
+      workers: workerList,
+      templates: templateList,
+      dataFlow: {
+        description: '步驟間用 {{stepId.result}} 傳遞資料',
+        fields: ['{{stepId.result}}', '{{stepId.summary}}', '{{stepId.findings}}', '{{stepId.status}}', '{{stepId.confidence}}'],
+        example: { id: 'analyze', worker: 'analyst', task: 'Analyze: {{scan.result}}', dependsOn: ['scan'] },
+      },
+      parallelism: {
+        description: 'dependsOn=[] 或相同依賴的步驟自動並行',
+        example: [
+          { id: 'a', worker: 'shell', task: 'task-a', dependsOn: [] },
+          { id: 'b', worker: 'shell', task: 'task-b', dependsOn: [] },
+          { id: 'c', worker: 'analyst', task: 'Combine: {{a.result}} + {{b.result}}', dependsOn: ['a', 'b'] },
+        ],
+        note: 'a 和 b 同時跑，c 等兩個都完成才開始',
+      },
+      callback: {
+        description: '完成後自動 POST 通知你，不用 poll',
+        usage: { worker: 'shell', task: '...', callback: 'http://your-agent:3002/chat', callbackFrom: 'middleware' },
+      },
+      extensibility: {
+        '自訂 worker': { method: 'POST /workers', body: { name: 'my-worker', description: '做什麼用', prompt: 'You are...', tools: ['Read', 'Grep'], backend: 'sdk' }, note: '建好就能在 plan 裡用' },
+        '帶 skills': { method: 'POST /workers', body: { name: 'my-worker', prompt: '...', skills: ['# Skill Name\nSkill prompt content...'] }, note: 'skills 注入 worker prompt，worker-scoped' },
+        '帶 MCP': { method: 'POST /workers', body: { name: 'db-worker', prompt: '...', mcpServers: { sqlite: { command: 'mcp-server-sqlite', args: ['--db', 'data.db'] } } }, note: '讓 worker 用外部工具' },
+        '用 preset': { method: 'GET /presets', note: '預設模板快速建 worker' },
+      },
+      tips: [
+        'shell worker 最快（毫秒級），適合檔案操作、命令、測試',
+        'SDK workers（researcher/coder/analyst）用 Claude API，較慢但能思考',
+        '大任務拆成多個小 steps 並行跑，比一個大 step 快且 context 小',
+        'retry 設在不穩定的步驟上：{ retry: { maxRetries: 2, onExhausted: "skip" } }',
+        'callback 比 polling 好 — 設了就不用自己查狀態',
+      ],
+    });
+  });
+
   // POST /dispatch — single task (supports multimodal)
   // Body: { worker, task, timeout?, caller? }
   //   task: string (text only) OR ContentBlock[] (multimodal)
