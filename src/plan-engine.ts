@@ -247,7 +247,7 @@ export class PlanEngine {
     const ids = new Set(plan.steps.map(s => s.id));
     for (const step of plan.steps) {
       if (!availableWorkers.has(step.worker)) errors.push(`Step ${step.id}: unknown worker '${step.worker}'`);
-      for (const dep of step.dependsOn) {
+      for (const dep of step.dependsOn ?? []) {
         if (!ids.has(dep)) errors.push(`Step ${step.id}: depends on unknown '${dep}'`);
         if (dep === step.id) errors.push(`Step ${step.id}: self-dependency`);
       }
@@ -344,14 +344,14 @@ export class PlanEngine {
           if (results.has(step.id) || running.has(step.id)) continue;
 
           // Check dependencies
-          const depsOk = step.dependsOn.every(d => {
+          const depsOk = (step.dependsOn ?? []).every(d => {
             const r = results.get(d);
             return r && (r.status === 'completed' || r.status === 'condition_skipped');
           });
 
           if (!depsOk) {
             // Dep failed → skip (unless retry pending)
-            const depFailed = step.dependsOn.some(d => {
+            const depFailed = (step.dependsOn ?? []).some(d => {
               const r = results.get(d);
               return r && r.status !== 'completed' && r.status !== 'condition_skipped';
             });
