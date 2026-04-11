@@ -478,7 +478,9 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       caller?: string;
       callback?: string;       // webhook URL — POST event on completion/failure
       callbackFrom?: string;   // "from" field in callback payload (default: "middleware")
+      wait?: boolean;          // block until task complete
     }>();
+    const waitMode = body.wait || c.req.query('wait') === 'true';
     if (!body.worker || !body.task) return c.json({ error: 'worker and task required' }, 400);
 
     const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
@@ -492,23 +494,36 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     const cb = body.callback;
     const cbFrom = body.callbackFrom ?? 'middleware';
-    mw.executeWorker(body.worker, body.task, timeoutMs)
+    const execPromise = mw.executeWorker(body.worker, body.task, timeoutMs)
       .then(result => {
         mw.buffer.complete(taskId, result);
         if (cb) sendCallback(cb, cbFrom, { type: 'task.completed', id: taskId, status: 'completed', result });
+        return result;
       })
       .catch(err => {
         const msg = err instanceof Error ? err.message : String(err);
         mw.buffer.fail(taskId, msg);
         if (cb) sendCallback(cb, cbFrom, { type: 'task.failed', id: taskId, status: 'failed', error: msg });
+        throw err;
       });
+
+    // Blocking mode: wait for completion, return result directly
+    if (waitMode) {
+      try {
+        const result = await execPromise;
+        return c.json({ taskId, status: 'completed', result });
+      } catch (err) {
+        return c.json({ taskId, status: 'failed', error: err instanceof Error ? err.message : String(err) }, 500);
+      }
+    }
 
     return c.json({ taskId, status: 'running' });
   });
 
-  // POST /plan — submit action plan
+  // POST /plan — submit action plan. ?wait=true blocks until all steps complete.
   app.post('/plan', async (c) => {
-    const body = await c.req.json<ActionPlan & { caller?: string; callback?: string; callbackFrom?: string }>();
+    const body = await c.req.json<ActionPlan & { caller?: string; callback?: string; callbackFrom?: string; wait?: boolean }>();
+    const waitMode = body.wait || c.req.query('wait') === 'true';
     const plan: ActionPlan = { goal: body.goal, steps: body.steps, acceptance: body.acceptance, convergence: body.convergence };
 
     // Validate
@@ -517,13 +532,23 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     const planId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
 
+    // Prefix step IDs with planId to avoid cross-plan collisions
+    const prefixedPlan = {
+      ...plan,
+      steps: plan.steps.map(s => ({
+        ...s,
+        id: `${planId}:${s.id}`,
+        dependsOn: (s.dependsOn ?? []).map(d => `${planId}:${d}`),
+      })),
+    };
+
     // Submit all steps to buffer
-    for (const step of plan.steps) {
-      mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+    for (const step of prefixedPlan.steps) {
+      mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label ?? plan.steps.find(s => `${planId}:${s.id}` === step.id)?.label, caller: body.caller });
     }
 
-    // Execute in background
-    const resultPromise = mw.planEngine.execute(plan);
+    // Execute in background (plan engine uses prefixed IDs — matches buffer + onEvent)
+    const resultPromise = mw.planEngine.execute(prefixedPlan);
     mw.plans.set(planId, { plan, resultPromise });
     mw.evictOldPlans();
 
@@ -551,12 +576,26 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       if (planCb) sendCallback(planCb, planCbFrom, { type: 'plan.failed', id: planId, status: 'failed', error: 'Plan execution error' });
     });
 
+    // Blocking mode: wait for all steps to complete, return full result
+    if (waitMode) {
+      try {
+        const result = await resultPromise;
+        const steps = mw.buffer.list({ planId });
+        return c.json({
+          planId, status: 'completed', steps: steps.map(s => ({
+            id: s.id, worker: s.worker, label: s.label, status: s.status,
+            result: s.result, error: s.error, durationMs: s.durationMs,
+          })),
+        });
+      } catch (err) {
+        return c.json({ planId, status: 'failed', error: err instanceof Error ? err.message : String(err) }, 500);
+      }
+    }
+
     return c.json({
       planId,
       status: 'executing',
       steps: plan.steps.length,
-      // Self-documenting: callers learn template syntax from the response itself
-      templateSyntax: '{{stepId.result}}, {{stepId.summary}}, {{stepId.status}}, {{stepId.findings}}, {{stepId.confidence}}',
     });
   });
 
@@ -875,11 +914,20 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     if (errors.length > 0) return c.json({ error: 'template_validation_failed', errors }, 400);
 
     const planId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
-    for (const step of plan.steps) {
+    // Prefix step IDs to avoid cross-plan collisions
+    const prefixedPlan = {
+      ...plan,
+      steps: plan.steps.map(s => ({
+        ...s,
+        id: `${planId}:${s.id}`,
+        dependsOn: (s.dependsOn ?? []).map((d: string) => `${planId}:${d}`),
+      })),
+    };
+    for (const step of prefixedPlan.steps) {
       mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
     }
-    const resultPromise = mw.planEngine.execute(plan);
-    mw.plans.set(planId, { plan, resultPromise });
+    const resultPromise = mw.planEngine.execute(prefixedPlan);
+    mw.plans.set(planId, { plan: prefixedPlan, resultPromise });
     mw.evictOldPlans();
     resultPromise.then(result => {
       mw.markPlanCompleted(planId);
