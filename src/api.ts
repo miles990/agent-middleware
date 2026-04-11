@@ -416,6 +416,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           '一個 step 做所有事 — context 爆炸，拆開並行更快',
           '串行做可以並行的事 — dependsOn=[] 就能並行',
           '大資料直接塞進 AI prompt — 先用 shell+jq 提取需要的部分，或用 GET /status/:stepId/result?offset=0&limit=5000 分頁取',
+          'shell worker 用 {{stepId.result}} 引用 JSON — 引號衝突會炸。shell 要取上游資料請用 curl localhost:3200/status/:stepId/result | jq。{{template}} 是給 AI workers 用的',
         ],
       },
       planPatterns: {
@@ -467,7 +468,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         'SDK workers 用 Claude API，較慢但能思考 — 只在需要判斷時用',
         '大任務拆成多個小 steps 並行跑，比一個大 step 快且 context 小',
         'retry 設在不穩定的步驟上：{ retry: { maxRetries: 2, onExhausted: "skip" } }',
-        'callback 比 polling 好 — 設了就不用自己查狀態',
+        'callback 比 polling 好 — 設了就不用自己查狀態。callbackFrom 要用目標 API 接受的身份（如 alex/kuro/claude-code）',
         'web-fetch 不能處理 JS 渲染的頁面 — 需要 JS 就用 web-browser',
       ],
     });
@@ -626,7 +627,13 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.get('/status/:id', (c) => {
     const task = mw.buffer.get(c.req.param('id'));
     if (!task) return c.json({ error: 'not found' }, 404);
-    return c.json(task);
+    const resultSize = (() => {
+      const r = task.result;
+      if (typeof r === 'string') return r.length;
+      if (r != null) return JSON.stringify(r).length;
+      return undefined;
+    })();
+    return c.json({ ...task, ...(resultSize !== undefined ? { resultSize } : {}) });
   });
 
   // GET /status/:id/result — paginated result access for large outputs
@@ -659,6 +666,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const totalDurationMs = submittedTimes.length && completedTimes.length
       ? Math.max(...completedTimes) - Math.min(...submittedTimes)
       : undefined;
+    const callbackSentAt = (entry as Record<string, unknown>).callbackSentAt as string | undefined;
     return c.json({
       planId,
       goal: entry.plan.goal,
@@ -666,6 +674,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       completed, failed, running,
       pending: entry.plan.steps.length - completed - failed - running,
       ...(totalDurationMs !== undefined ? { totalDurationMs } : {}),
+      ...(callbackSentAt ? { callbackSentAt } : {}),
       steps,
       ...(planResult ? { result: { acceptance: planResult.acceptance, digestContext: planResult.digestContext } } : {}),
     });

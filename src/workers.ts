@@ -113,7 +113,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
       tools: ['Read', 'Grep', 'Glob', 'WebFetch'],
       prompt: 'You are an analyst. Identify patterns, produce structured analysis. Return structured JSON: { "summary": "...", "findings": ["..."], "confidence": 0.0-1.0 }. Use tables. Be opinionated — recommend a clear path.',
       model: 'sonnet',
-      maxTurns: 8,
+      maxTurns: 12,
     },
     backend: 'sdk',
     maxConcurrency: 4,

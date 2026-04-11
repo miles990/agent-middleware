@@ -121,6 +121,10 @@ Event types (discriminated union):
 
 7. **Acceptance check** — `plan.acceptance` → the last step should return `{ "accepted": true/false }` in structured JSON. If no structured output, acceptance is inferred (no failures + no low-confidence = accepted).
 
+8. **Shell workers + `{{stepId.result}}` = broken quotes** — When a shell step's task contains `{{stepId.result}}` and that result is JSON, the substituted quotes/braces break the shell command (`echo "{"key":"value"}"` → parse error). **Fix: Don't use `{{stepId.result}}` in shell workers for structured data.** Instead, use `curl http://localhost:3100/status/:stepId/result | jq` to fetch the result at runtime. Templates are designed for AI workers (analyst/reviewer/researcher) that receive text, not for shell commands that need exact quoting.
+
+9. **`callbackFrom` must be a value accepted by the target** — If callback URL points to a chat room API (e.g., mini-agent `/api/room`), the `from` field must be one of the accepted values (e.g., `alex`, `kuro`, `claude-code`, `mushi`). Sending `callbackFrom: "middleware"` (the default) will get rejected with 400 by APIs that validate the sender. The error is logged server-side (`[sendCallback] POST ... failed`) but not surfaced to the caller. Set `callbackFrom` explicitly to a valid sender name when using callbacks.
+
 ## End-to-End Example: Real Plan with Failure + Retry + Result
 
 Here's a complete walkthrough — a 5-step plan where one step fails, retries, and the whole plan succeeds.
