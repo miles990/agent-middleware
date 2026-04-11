@@ -139,6 +139,43 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     maxConcurrency: 4,
     defaultTimeoutSeconds: 300,
   },
+
+  // ─── Web Workers (L0/L1/L2 per Kuro's CDP experience) ───
+
+  'web-fetch': {
+    agent: {
+      description: 'Fetch web pages/APIs (L0). Fast, no browser needed. For: GET/POST URLs, read HTML/JSON, check HTTP status. Does NOT render JavaScript.',
+      tools: [],
+      prompt: '',
+    },
+    backend: 'shell',
+    maxConcurrency: 8,
+    defaultTimeoutSeconds: 30,
+  },
+
+  'web-browser': {
+    agent: {
+      description: 'Browser automation via CDP (L1/L2). For: JS-rendered pages, screenshots, DOM inspection, click/type/interact, form submission. Use when web-fetch is not enough (JS rendering, login, interaction needed).',
+      tools: ['Read', 'Bash'],
+      prompt: 'You are a browser automation agent. Use CDP (Chrome DevTools Protocol) scripts to interact with web pages. Available commands via cdp-fetch.mjs: fetch (get page content), screenshot (capture page), inspect (a11y tree), click/type (interact), watch (monitor changes), network (intercept). Return JSON: { "summary": "...", "findings": ["..."], "confidence": 0.0-1.0 }.',
+      model: 'sonnet',
+      maxTurns: 8,
+    },
+    backend: 'sdk',
+    maxConcurrency: 2,  // shared Chrome — limit concurrency
+    defaultTimeoutSeconds: 120,
+  },
+
+  'web-verify': {
+    agent: {
+      description: 'Verify a web page visually — screenshot + check page loaded correctly. HTTP 200 ≠ page OK. Use after deploy or when checking if a page renders correctly.',
+      tools: [],
+      prompt: '',
+    },
+    backend: 'shell',
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 30,
+  },
 };
 
 // ─── Runtime Worker Registry ───

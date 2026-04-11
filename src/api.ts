@@ -390,12 +390,76 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         '帶 MCP': { method: 'POST /workers', body: { name: 'db-worker', prompt: '...', mcpServers: { sqlite: { command: 'mcp-server-sqlite', args: ['--db', 'data.db'] } } }, note: '讓 worker 用外部工具' },
         '用 preset': { method: 'GET /presets', note: '預設模板快速建 worker' },
       },
+      workerSelection: {
+        description: '根據任務性質選 worker — 不是所有任務都需要 AI',
+        rules: [
+          { condition: '確定性任務（有明確命令、不需判斷）', worker: 'shell', reason: '毫秒級，零 AI 成本' },
+          { condition: '抓網頁內容（不需 JS 渲染）', worker: 'web-fetch', reason: 'curl 快且輕' },
+          { condition: '需要 JS 渲染或瀏覽器互動', worker: 'web-browser', reason: 'CDP 完整瀏覽器能力' },
+          { condition: '部署後視覺驗證', worker: 'web-verify', reason: 'HTTP 200 ≠ 頁面正常' },
+          { condition: '搜尋/閱讀/收集資訊', worker: 'researcher', reason: '有 WebFetch + WebSearch' },
+          { condition: '寫/改/重構 code', worker: 'coder', reason: '有 Write + Edit + 測試' },
+          { condition: '評估品質/review', worker: 'reviewer', reason: '唯讀分析，Haiku 快且便宜' },
+          { condition: '分析/比較/產出報告', worker: 'analyst', reason: '結構化輸出，有主見' },
+          { condition: '探索 codebase 結構', worker: 'explorer', reason: 'Haiku + 檔案工具' },
+        ],
+        antipatterns: [
+          '用 SDK worker 做 shell 能做的事 — 浪費 30 秒等 AI 回答 echo hello',
+          '一個 step 做所有事 — context 爆炸，拆開並行更快',
+          '串行做可以並行的事 — dependsOn=[] 就能並行',
+        ],
+      },
+      planPatterns: {
+        description: '常見 DAG 組合模式',
+        patterns: [
+          {
+            name: '收集 → 分析 → 產出',
+            when: '需要先拿資料再做判斷',
+            shape: 'shell(收集) → analyst(分析) → analyst(報告)',
+            example: [
+              { id: 'scan', worker: 'shell', task: 'ls -la src/', dependsOn: [] },
+              { id: 'analyze', worker: 'analyst', task: 'Analyze: {{scan.result}}', dependsOn: ['scan'] },
+            ],
+          },
+          {
+            name: '並行收集 → 匯總',
+            when: '多個獨立資料來源',
+            shape: 'shell(A) + shell(B) + shell(C) → analyst(匯總)',
+            example: [
+              { id: 'a', worker: 'shell', task: 'task-a', dependsOn: [] },
+              { id: 'b', worker: 'shell', task: 'task-b', dependsOn: [] },
+              { id: 'c', worker: 'analyst', task: 'Combine: {{a.result}} + {{b.result}}', dependsOn: ['a', 'b'] },
+            ],
+          },
+          {
+            name: '實作 → 測試 → 驗證',
+            when: '改 code 需要驗證',
+            shape: 'coder(改) → shell(測試) → reviewer(review)',
+            example: [
+              { id: 'code', worker: 'coder', task: 'Fix the bug in X', dependsOn: [] },
+              { id: 'test', worker: 'shell', task: 'npm test', dependsOn: ['code'] },
+              { id: 'review', worker: 'reviewer', task: 'Review changes: {{code.result}}', dependsOn: ['code'] },
+            ],
+          },
+          {
+            name: '部署 → 健檢 → 視覺驗證',
+            when: '部署後需要確認服務正常',
+            shape: 'shell(部署) → web-fetch(健檢) + web-verify(截圖)',
+            example: [
+              { id: 'deploy', worker: 'shell', task: 'npm run deploy', dependsOn: [] },
+              { id: 'health', worker: 'web-fetch', task: 'curl -sf http://service/health', dependsOn: ['deploy'] },
+              { id: 'visual', worker: 'web-verify', task: 'screenshot http://service/', dependsOn: ['deploy'] },
+            ],
+          },
+        ],
+      },
       tips: [
-        'shell worker 最快（毫秒級），適合檔案操作、命令、測試',
-        'SDK workers（researcher/coder/analyst）用 Claude API，較慢但能思考',
+        'shell / web-fetch 最快（毫秒級），優先用',
+        'SDK workers 用 Claude API，較慢但能思考 — 只在需要判斷時用',
         '大任務拆成多個小 steps 並行跑，比一個大 step 快且 context 小',
         'retry 設在不穩定的步驟上：{ retry: { maxRetries: 2, onExhausted: "skip" } }',
         'callback 比 polling 好 — 設了就不用自己查狀態',
+        'web-fetch 不能處理 JS 渲染的頁面 — 需要 JS 就用 web-browser',
       ],
     });
   });
