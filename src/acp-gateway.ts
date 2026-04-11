@@ -11,7 +11,7 @@
  *   └── Dispatch (acquire → send task → collect result → release)
  */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execSync as execSyncImported, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
@@ -473,8 +473,7 @@ export function createGateway(): ACPGateway {
   for (const backend of DEFAULT_BACKENDS) {
     // Check if CLI exists before registering
     try {
-      const { execSync } = require('node:child_process');
-      execSync(`which ${backend.command}`, { stdio: 'ignore' });
+      execSyncImported(`which ${backend.command}`, { stdio: 'ignore' });
       gateway.register(backend);
     } catch {
       // CLI not installed — skip

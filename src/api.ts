@@ -32,6 +32,15 @@ import type { LLMProvider } from './llm-provider.js';
 import { PLAN_TEMPLATES } from './templates.js';
 import { execSync } from 'node:child_process';
 
+// Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
+const API_KEY = process.env.MIDDLEWARE_API_KEY;
+function authMiddleware(c: { req: { header: (name: string) => string | undefined }; json: (body: unknown, status: number) => Response }, next: () => Promise<void | Response>): Promise<void | Response> {
+  if (!API_KEY) return next(); // no key configured → open access (dev mode)
+  const auth = c.req.header('Authorization');
+  if (auth === `Bearer ${API_KEY}`) return next();
+  return Promise.resolve(c.json({ error: 'Unauthorized' }, 401));
+}
+
 // =============================================================================
 // Middleware Instance
 // =============================================================================
@@ -84,20 +93,14 @@ export function createMiddleware(config?: MiddlewareConfig) {
       const vendor = def.vendor ?? 'anthropic';
       if (vendor === 'anthropic') {
         // Anthropic uses Agent SDK (has tools, subagents, permissions)
-        // Skills: inject into worker prompt as additional context
-        const skillsPrompt = def.skills?.length
-          ? `\n\n<skills>\n${def.skills.join('\n---\n')}\n</skills>`
-          : '';
         workerProviders.set(name, createSdkProvider({
           model: def.agent.model ?? 'sonnet',
           cwd,
           allowedTools: def.agent.tools as string[] | undefined,
           maxTurns: def.agent.maxTurns,
-          maxBudgetUsd: 5,
+          maxBudgetUsd: def.maxBudgetUsd ?? 5,
           mcpServers: def.mcpServers,
         }));
-        // Patch prompt with skills if any
-        if (skillsPrompt) def.agent.prompt = (def.agent.prompt ?? '') + skillsPrompt;
       } else {
         // Other vendors (openai, google, local, anthropic-managed) use direct API
         workerProviders.set(name, createProvider({
@@ -107,6 +110,13 @@ export function createMiddleware(config?: MiddlewareConfig) {
       }
     }
   }
+
+  // Compose worker prompt with skills at runtime — never mutate def.agent.prompt
+  const composePrompt = (def: WorkerDefinition): string => {
+    const base = def.agent.prompt ?? '';
+    if (!def.skills?.length) return base;
+    return `${base}\n\n<skills>\n${def.skills.join('\n---\n')}\n</skills>`;
+  };
 
   // Worker executor — routes to correct backend (built-in + custom), supports multimodal
   const executeWorker = async (worker: string, task: string | import('./llm-provider.js').ContentBlock[], timeoutMs: number): Promise<string> => {
@@ -122,7 +132,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
         const maxTurns = def.agent.maxTurns ?? 10;
         const safetyTimeout = Math.max(timeoutMs, maxTurns * 120_000);
         return Promise.race([
-          provider.think(task, def.agent.prompt ?? ''),
+          provider.think(task, composePrompt(def)),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error(`Worker ${worker} timeout after ${safetyTimeout}ms (maxTurns=${maxTurns})`)), safetyTimeout),
           ),
@@ -172,15 +182,17 @@ export function createMiddleware(config?: MiddlewareConfig) {
       }
       case 'logic': {
         // Pure JS function — deterministic, zero LLM
+        // Safety: logicFn runs in-process. Block dangerous patterns.
         const fn = def.logicFn;
         if (!fn) throw new Error(`Worker ${worker}: logicFn not configured`);
+        const blocked = ['require(', 'import(', 'process.exit', 'child_process', 'eval(', 'Function('];
+        const found = blocked.find(b => fn.includes(b));
+        if (found) throw new Error(`Logic worker rejected: contains "${found}"`);
         const taskStr = typeof task === 'string' ? task : JSON.stringify(task);
         try {
-          // Create function with `input` and `context` args
           const execFn = new Function('input', 'context', fn) as (input: string, context: Record<string, unknown>) => unknown;
           const result = execFn(taskStr, { cwd, worker });
-          // Handle async functions
-          const resolved = result instanceof Promise ? await result : result;
+          const resolved = result instanceof Promise ? await Promise.race([result, new Promise((_, rej) => setTimeout(() => rej(new Error('Logic timeout 10s')), 10_000))]) : result;
           return typeof resolved === 'string' ? resolved : JSON.stringify(resolved);
         } catch (err) {
           throw new Error(`Logic error: ${err instanceof Error ? err.message : String(err)}`);
@@ -196,14 +208,17 @@ export function createMiddleware(config?: MiddlewareConfig) {
           body: JSON.stringify({ worker: upstreamWorker, task, timeout: timeoutMs / 1000 }),
         });
         const { taskId } = await res.json() as { taskId: string };
-        // Poll for result
+        // Poll for result with exponential backoff + jitter
         const start = Date.now();
+        let pollInterval = 2000;
         while (Date.now() - start < timeoutMs) {
           const statusRes = await fetch(`${url}/status/${taskId}`);
           const status = await statusRes.json() as { status: string; result?: unknown; error?: string };
           if (status.status === 'completed') return typeof status.result === 'string' ? status.result : JSON.stringify(status.result);
           if (status.status === 'failed') throw new Error(status.error ?? 'Upstream task failed');
-          await new Promise(r => setTimeout(r, 2000));
+          const jitter = Math.random() * pollInterval * 0.3;
+          await new Promise(r => setTimeout(r, pollInterval + jitter));
+          pollInterval = Math.min(pollInterval * 1.5, 15000);
         }
         throw new Error(`Upstream middleware timeout after ${timeoutMs}ms`);
       }
@@ -246,11 +261,25 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   const mw = createMiddleware(config);
   const app = new Hono();
 
+  // Auth on all mutating endpoints (health/dashboard/events exempt)
+  app.use('/dispatch', authMiddleware as never);
+  app.use('/plan', authMiddleware as never);
+  app.use('/plan/*', authMiddleware as never);
+  app.use('/workers', authMiddleware as never);
+  app.use('/workers/*', authMiddleware as never);
+  app.use('/gateway/*', authMiddleware as never);
+  app.use('/presets', authMiddleware as never);
+  app.use('/presets/*', authMiddleware as never);
+  app.use('/task/*', authMiddleware as never);
+
+  // Helper: all workers (built-in + custom)
+  const mergedWorkerNames = () => [...getWorkerNames(), ...Array.from(mw.customWorkers.keys())];
+
   // Health
   app.get('/health', (c) => c.json({
     status: 'ok',
     service: 'agent-middleware',
-    workers: getWorkerNames(),
+    workers: mergedWorkerNames(),
     tasks: mw.buffer.list({ limit: 0 }).length,
   }));
 
@@ -290,7 +319,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const plan: ActionPlan = { goal: body.goal, steps: body.steps, acceptance: body.acceptance, convergence: body.convergence };
 
     // Validate
-    const errors = mw.planEngine.validate(plan, new Set(getWorkerNames()));
+    const errors = mw.planEngine.validate(plan, new Set(mergedWorkerNames()));
     if (errors.length > 0) return c.json({ error: 'validation_failed', errors }, 400);
 
     const planId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
@@ -304,14 +333,19 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const resultPromise = mw.planEngine.execute(plan);
     mw.plans.set(planId, { plan, resultPromise });
 
-    // Cleanup after completion
+    // Cleanup after completion + evict plan after 1h
     resultPromise.then(result => {
       for (const step of result.steps) {
         if (step.status !== 'completed') {
           mw.buffer.fail(step.id, step.output);
         }
       }
-    }).catch(() => {});
+      // Store result for GET /plan/:id, evict after 1h
+      (mw.plans.get(planId) as Record<string, unknown>).result = result;
+      setTimeout(() => mw.plans.delete(planId), 3_600_000);
+    }).catch(() => {
+      setTimeout(() => mw.plans.delete(planId), 3_600_000);
+    });
 
     return c.json({ planId, status: 'executing', steps: plan.steps.length });
   });
@@ -334,6 +368,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const failed = steps.filter(s => s.status === 'failed').length;
     const running = steps.filter(s => s.status === 'running').length;
 
+    const planResult = (entry as Record<string, unknown>).result as Record<string, unknown> | undefined;
     return c.json({
       planId,
       goal: entry.plan.goal,
@@ -341,7 +376,24 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       completed, failed, running,
       pending: entry.plan.steps.length - completed - failed - running,
       steps,
+      ...(planResult ? { result: { acceptance: planResult.acceptance, digestContext: planResult.digestContext } } : {}),
     });
+  });
+
+  // DELETE /plan/:id — cancel all running steps in a plan
+  app.delete('/plan/:id', (c) => {
+    const planId = c.req.param('id');
+    const entry = mw.plans.get(planId);
+    if (!entry) return c.json({ error: 'not found' }, 404);
+    const steps = mw.buffer.list({ planId });
+    let cancelled = 0;
+    for (const step of steps) {
+      if (step.status === 'running' || step.status === 'pending') {
+        mw.buffer.cancel(step.id);
+        cancelled++;
+      }
+    }
+    return c.json({ ok: true, cancelled });
   });
 
   // DELETE /task/:id — cancel
@@ -458,20 +510,15 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       ...(body.skills ? { skills: body.skills } : {}),
     };
 
-    // Skills: inject into worker prompt
-    if (def.skills?.length) {
-      def.agent.prompt = (def.agent.prompt ?? '') + `\n\n<skills>\n${def.skills.join('\n---\n')}\n</skills>`;
-    }
-
     mw.customWorkers.set(body.name, def);
-    // Also register SDK provider if sdk backend
+    // Register SDK provider if sdk backend (skills composed at runtime via composePrompt)
     if (def.backend === 'sdk') {
       mw.workerProviders.set(body.name, createSdkProvider({
         model: def.agent.model ?? 'sonnet',
         cwd: config?.cwd ?? process.cwd(),
         allowedTools: def.agent.tools as string[] | undefined,
         maxTurns: def.agent.maxTurns,
-        maxBudgetUsd: 5,
+        maxBudgetUsd: def.maxBudgetUsd ?? 5,
         mcpServers: def.mcpServers,
       }));
     }
@@ -506,11 +553,6 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       skills: body.skills ?? existing.skills,
     };
 
-    // Skills: inject into prompt
-    if (updated.skills?.length) {
-      updated.agent.prompt = (updated.agent.prompt ?? '') + `\n\n<skills>\n${updated.skills.join('\n---\n')}\n</skills>`;
-    }
-
     mw.customWorkers.set(name, updated);
     if (updated.backend === 'sdk') {
       mw.workerProviders.set(name, createSdkProvider({
@@ -518,7 +560,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         cwd: config?.cwd ?? process.cwd(),
         allowedTools: updated.agent.tools as string[] | undefined,
         maxTurns: updated.agent.maxTurns,
-        maxBudgetUsd: 5,
+        maxBudgetUsd: updated.maxBudgetUsd ?? 5,
         mcpServers: updated.mcpServers,
       }));
     }
@@ -613,9 +655,12 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   });
 
   // Periodic cleanup: archive completed tasks after 1h, expire after 7d
-  setInterval(() => {
+  const cleanupTimer = setInterval(() => {
     mw.buffer.cleanup({ archiveAfterMs: 3_600_000, expireAfterMs: 7 * 24 * 3_600_000 });
   }, 60_000);
+  // Graceful shutdown: clear interval
+  process.on('SIGTERM', () => clearInterval(cleanupTimer));
+  process.on('SIGINT', () => clearInterval(cleanupTimer));
 
   // ─── Presets API ───
 
@@ -689,11 +734,12 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ taskId, status: 'running', backend: body.backend });
   });
 
-  // ─── Dashboard ───
+  // ─── Dashboard (cached) ───
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  let dashboardCache: string | null = null;
   app.get('/dashboard', (c) => {
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf-8');
-    return c.html(html);
+    if (!dashboardCache) dashboardCache = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf-8');
+    return c.html(dashboardCache);
   });
   // Redirect root to dashboard
   app.get('/', (c) => c.redirect('/dashboard'));

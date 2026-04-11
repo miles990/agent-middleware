@@ -40,6 +40,8 @@ export interface WorkerDefinition {
   maxConcurrency?: number;
   /** Fallback timeout for non-plan dispatch. For SDK workers in plans, actual timeout = max(this, maxTurns * 120s) */
   defaultTimeoutSeconds: number;
+  /** Budget per task in USD (for SDK backend). Default: 5 */
+  maxBudgetUsd?: number;
   /** MCP servers available to this worker — gives access to external tools (DB, browser, APIs, cross-agent comms) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mcpServers?: Record<string, any>;

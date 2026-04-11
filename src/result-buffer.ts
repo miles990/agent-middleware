@@ -76,6 +76,16 @@ export class ResultBuffer {
     try { fs.appendFileSync(this.persistPath, JSON.stringify(record) + '\n'); } catch { /* fail-open */ }
   }
 
+  /** Atomic rewrite: write to tmp file, rename over original */
+  private persistAtomic(records: TaskRecord[]): void {
+    if (!this.persistPath) return;
+    const tmp = this.persistPath + '.tmp';
+    try {
+      fs.writeFileSync(tmp, records.map(r => JSON.stringify(r)).join('\n') + '\n');
+      fs.renameSync(tmp, this.persistPath);
+    } catch { /* fail-open */ }
+  }
+
   /** Generate unique task ID */
   nextId(): string {
     return `task-${Date.now()}-${(this.counter++).toString(36)}`;
@@ -204,12 +214,9 @@ export class ResultBuffer {
       }
     }
 
-    // Compact JSONL: rewrite with only active + archived tasks (remove expired)
-    if ((archivedCount > 0 || expiredCount > 0) && this.persistPath) {
-      try {
-        const allRecords = [...this.tasks.values(), ...this.archived.values()];
-        fs.writeFileSync(this.persistPath, allRecords.map(r => JSON.stringify(r)).join('\n') + '\n');
-      } catch { /* fail-open */ }
+    // Compact JSONL: atomic rewrite with only active + archived tasks (remove expired)
+    if (archivedCount > 0 || expiredCount > 0) {
+      this.persistAtomic([...this.tasks.values(), ...this.archived.values()]);
     }
 
     return { archived: archivedCount, expired: expiredCount };
@@ -224,7 +231,11 @@ export class ResultBuffer {
 
   /** Broadcast a raw event (for plan-level events like retry, convergence, mutation) */
   broadcast(event: { type: string; data: unknown }): void {
-    const taskEvent = { type: event.type, task: event.data, timestamp: new Date() } as unknown as TaskEvent;
-    this.emit(taskEvent);
+    // Plan events have different shape than TaskEvents — broadcast to listeners directly
+    // with a clearly-typed wrapper so subscribers can distinguish
+    const planEvent = { type: event.type as TaskEvent['type'], task: { id: 'plan-event', status: 'completed' as const, worker: 'system' } as TaskRecord, timestamp: new Date(), planData: event.data };
+    for (const listener of this.listeners) {
+      try { listener(planEvent); } catch { /* fire-and-forget */ }
+    }
   }
 }
