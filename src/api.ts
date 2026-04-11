@@ -140,27 +140,20 @@ export function createMiddleware(config?: MiddlewareConfig) {
         ]);
       }
       case 'shell': {
-        const SHELL_RESULT_CAP = 50_000;
-        const capOutput = (raw: string): string => {
-          if (raw.length <= SHELL_RESULT_CAP) return raw;
-          return raw.slice(0, SHELL_RESULT_CAP) + `\n[TRUNCATED: original ${raw.length} chars, showing first ${SHELL_RESULT_CAP}]`;
-        };
         try {
           const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
           if (def.shellAllowlist?.length) {
-            // Structural enforcement: execFileSync bypasses shell interpretation entirely.
-            // No pipes, semicolons, $() — the allowlist is enforced by the OS, not regex.
             const parts = shellCmd.trim().split(/\s+/);
             const cmdBase = parts[0];
             if (!def.shellAllowlist.some(a => cmdBase === a || cmdBase.endsWith(`/${a}`))) {
               throw new Error(`Shell command "${cmdBase}" not in allowlist: ${def.shellAllowlist.join(', ')}`);
             }
-            const output = execFileSync(cmdBase, parts.slice(1), { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
-            return capOutput(output);
+            return execFileSync(cmdBase, parts.slice(1), { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
           }
-          // No allowlist → trusted agent, full shell features (pipes, redirection, etc.)
-          const output = execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
-          return capOutput(output);
+          // No allowlist → trusted agent, full shell features
+          // Store FULL result — no truncation. Template substitution caps at 4K for LLM safety.
+          // Agent can access full result via GET /status/:stepId
+          return execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           throw new Error(`Shell error: ${msg.slice(0, 500)}`);
@@ -422,7 +415,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           '用 SDK worker 做 shell 能做的事 — 浪費 30 秒等 AI 回答 echo hello',
           '一個 step 做所有事 — context 爆炸，拆開並行更快',
           '串行做可以並行的事 — dependsOn=[] 就能並行',
-          '大資料直接塞進 AI prompt — 先用 shell+jq 提取需要的部分。例如：step1(curl API 83K) → step2(jq 提取 2K) → step3(analyst 分析 2K)',
+          '大資料直接塞進 AI prompt — 先用 shell+jq 提取需要的部分，或用 GET /status/:stepId/result?offset=0&limit=5000 分頁取',
         ],
       },
       planPatterns: {
@@ -629,11 +622,23 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     });
   });
 
-  // GET /status/:id — task status
+  // GET /status/:id — task status (full result inline)
   app.get('/status/:id', (c) => {
     const task = mw.buffer.get(c.req.param('id'));
     if (!task) return c.json({ error: 'not found' }, 404);
     return c.json(task);
+  });
+
+  // GET /status/:id/result — paginated result access for large outputs
+  // Query: ?offset=0&limit=5000 (default: full result)
+  app.get('/status/:id/result', (c) => {
+    const task = mw.buffer.get(c.req.param('id'));
+    if (!task) return c.json({ error: 'not found' }, 404);
+    const raw = typeof task.result === 'string' ? task.result : JSON.stringify(task.result ?? '');
+    const offset = parseInt(c.req.query('offset') ?? '0');
+    const limit = parseInt(c.req.query('limit') ?? '0') || raw.length;
+    const slice = raw.slice(offset, offset + limit);
+    return c.json({ id: task.id, totalSize: raw.length, offset, limit, hasMore: offset + limit < raw.length, data: slice });
   });
 
   // GET /plan/:id — plan status

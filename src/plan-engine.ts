@@ -132,7 +132,11 @@ function resolveStepContext(task: string, results: Map<string, StepResult>): str
     const result = results.get(stepId);
     if (!result) return match;
     switch (field) {
-      case 'result': case 'output': return result.output?.trim().slice(0, 4000) ?? '';
+      case 'result': case 'output': {
+        const raw = result.output?.trim() ?? '';
+        if (raw.length <= 4000) return raw;
+        return raw.slice(0, 4000) + `\n[... ${raw.length} chars total — use GET /status/${stepId} for full result, or add a shell step with jq to extract what you need]`;
+      }
       case 'summary': return result.structured?.summary ?? result.output?.slice(0, 500) ?? '';
       case 'status': return result.status;
       case 'findings': return result.structured?.findings?.join('\n') ?? '';
