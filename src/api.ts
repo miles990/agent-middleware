@@ -151,9 +151,13 @@ export function createMiddleware(config?: MiddlewareConfig) {
             return execFileSync(cmdBase, parts.slice(1), { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
           }
           // No allowlist → trusted agent, full shell features
+          // Explicit `shell: '/bin/bash'` — more forgiving than default /bin/sh for
+          // glob patterns, compound commands, heredocs, process substitution, arrays.
+          // Agents construct commands idiomatically (bash-style); sh-strict mode rejects
+          // common patterns (e.g. `[[ ]]`, `<(...)`) that agents assume work.
           // Store FULL result — no truncation. Template substitution caps at 4K for LLM safety.
           // Agent can access full result via GET /status/:stepId
-          return execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
+          return execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024, shell: '/bin/bash' });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           throw new Error(`Shell error: ${msg.slice(0, 500)}`);
@@ -268,7 +272,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
 
   // Track plans (max capacity to prevent OOM)
   const MAX_PLANS = 100;
-  const plans = new Map<string, { plan: ActionPlan; resultPromise: Promise<import('./plan-engine.js').PlanResult> }>();
+  const plans = new Map<string, { plan: ActionPlan; resultPromise: Promise<import('./plan-engine.js').PlanResult>; createdAt: string }>();
   let planCounter = 0;
 
   // Evict oldest completed plans when capacity exceeded
@@ -569,7 +573,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     // Execute — plan engine events (dispatched/completed/failed) use remapped IDs → match buffer
     const resultPromise = mw.planEngine.execute(execPlan);
-    mw.plans.set(planId, { plan: execPlan, resultPromise });
+    mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt: new Date().toISOString() });
     mw.evictOldPlans();
 
     // Cleanup after completion + evict plan after 1h + webhook callback
@@ -649,21 +653,42 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ id: task.id, totalSize: raw.length, offset, limit, hasMore: offset + limit < raw.length, data: slice });
   });
 
-  // GET /plan/:id — plan status
+  // GET /plan/:id — plan status with merged plan structure + runtime state
   app.get('/plan/:id', async (c) => {
     const planId = c.req.param('id');
     const entry = mw.plans.get(planId);
     if (!entry) return c.json({ error: 'not found' }, 404);
 
-    const steps = mw.buffer.list({ planId });
-    const completed = steps.filter(s => s.status === 'completed').length;
-    const failed = steps.filter(s => s.status === 'failed').length;
-    const running = steps.filter(s => s.status === 'running').length;
+    const runtimeSteps = mw.buffer.list({ planId });
+    const completed = runtimeSteps.filter(s => s.status === 'completed').length;
+    const failed = runtimeSteps.filter(s => s.status === 'failed').length;
+    const running = runtimeSteps.filter(s => s.status === 'running').length;
+
+    // Merge plan definition (static: dependsOn, worker, label) with runtime state
+    // (status, timings, result). Source of truth for structure is the plan;
+    // source of truth for execution state is the buffer. This matches GET /plans.
+    const mergedSteps = entry.plan.steps.map(planStep => {
+      const runtime = runtimeSteps.find(r => r.id === planStep.id);
+      return {
+        id: planStep.id,
+        worker: planStep.worker,
+        label: planStep.label,
+        dependsOn: planStep.dependsOn ?? [],
+        status: runtime?.status ?? 'pending',
+        submittedAt: runtime?.submittedAt,
+        startedAt: runtime?.startedAt,
+        completedAt: runtime?.completedAt,
+        durationMs: runtime?.durationMs,
+        error: runtime?.error,
+        result: runtime?.result,
+        metadata: runtime?.metadata,
+      };
+    });
 
     const planResult = (entry as Record<string, unknown>).result as Record<string, unknown> | undefined;
     // Total duration: earliest submit to latest completion
-    const submittedTimes = steps.map(s => s.submittedAt ? new Date(s.submittedAt).getTime() : Infinity);
-    const completedTimes = steps.filter(s => s.completedAt).map(s => new Date(s.completedAt!).getTime());
+    const submittedTimes = runtimeSteps.map(s => s.submittedAt ? new Date(s.submittedAt).getTime() : Infinity);
+    const completedTimes = runtimeSteps.filter(s => s.completedAt).map(s => new Date(s.completedAt!).getTime());
     const totalDurationMs = submittedTimes.length && completedTimes.length
       ? Math.max(...completedTimes) - Math.min(...submittedTimes)
       : undefined;
@@ -671,12 +696,13 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({
       planId,
       goal: entry.plan.goal,
+      createdAt: entry.createdAt,
       totalSteps: entry.plan.steps.length,
       completed, failed, running,
       pending: entry.plan.steps.length - completed - failed - running,
       ...(totalDurationMs !== undefined ? { totalDurationMs } : {}),
       ...(callbackSentAt ? { callbackSentAt } : {}),
-      steps,
+      steps: mergedSteps,
       ...(planResult ? { result: { acceptance: planResult.acceptance, digestContext: planResult.digestContext } } : {}),
     });
   });
@@ -916,6 +942,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       return {
         planId: id,
         goal: entry.plan.goal,
+        createdAt: entry.createdAt,
         totalSteps: entry.plan.steps.length,
         completed, failed, running,
         steps: entry.plan.steps.map(s => ({
@@ -986,7 +1013,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       })),
     };
     const resultPromise = mw.planEngine.execute(execPlan);
-    mw.plans.set(planId, { plan: execPlan, resultPromise });
+    mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt: new Date().toISOString() });
     mw.evictOldPlans();
     resultPromise.then(result => {
       mw.markPlanCompleted(planId);
