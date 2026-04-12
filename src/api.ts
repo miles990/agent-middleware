@@ -469,6 +469,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         '大任務拆成多個小 steps 並行跑，比一個大 step 快且 context 小',
         'retry 設在不穩定的步驟上：{ retry: { maxRetries: 2, onExhausted: "skip" } }',
         'callback 比 polling 好 — 設了就不用自己查狀態。callbackFrom 要用目標 API 接受的身份（如 alex/kuro/claude-code）',
+        '不確定路徑？先加一個 shell step 跑 ls/find 驗證，再用結果設計後續 steps — 寫錯路徑整個下游都會 skip',
         'web-fetch 不能處理 JS 渲染的頁面 — 需要 JS 就用 web-browser',
       ],
     });
