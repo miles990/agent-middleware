@@ -88,7 +88,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
       tools: ['Read', 'Grep', 'Glob'],
       prompt: 'You are a reviewer. Read carefully, identify issues. Return structured JSON: { "summary": "...", "findings": ["issue1", "issue2"], "confidence": 0.0-1.0 }.',
       model: 'haiku',
-      maxTurns: 5,
+      maxTurns: 10,
     },
     backend: 'sdk',
     maxConcurrency: 6,
