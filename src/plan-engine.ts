@@ -127,19 +127,45 @@ export type WorkerExecutor = (worker: string, task: string | import('./llm-provi
 
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
-function resolveStepContext(task: string, results: Map<string, StepResult>): string {
+/**
+ * Shell-escape a value for single-quoted bash/sh context.
+ * Wraps in single quotes and replaces any embedded single quote with `'\''`.
+ * This is the bulletproof POSIX shell quoting technique — safe for any content
+ * including backticks, `$()`, `&&`, `;`, newlines, etc.
+ */
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function resolveStepContext(task: string, results: Map<string, StepResult>, consumerWorker?: string): string {
+  // When consumer is a shell worker, substituted values are shell-escaped to
+  // prevent injection. Agents no longer need to worry about quotes, backticks,
+  // `$()`, newlines in upstream results breaking their shell commands.
+  // Non-shell workers (analyst, coder, etc.) get raw values because templates
+  // there are natural-language prompts, not executable code.
+  //
+  // LIMITATION: this is a worker-NAME check, not a backend check. Custom workers
+  // registered with `backend: 'shell'` but a different name (e.g. `deploy-runner`)
+  // will NOT get auto-escape. If/when custom shell-backend workers become common,
+  // thread a `isShellBackend(name): boolean` lookup through from PlanEngine opts
+  // and check that instead. Today all shell-backend usage goes through the
+  // built-in `shell` worker so this is safe.
+  const isShellConsumer = consumerWorker === 'shell';
+  const escape = isShellConsumer ? shellEscape : (v: string) => v;
   return task.replace(/\{\{([\w][\w.:_-]*)\.(\w+)\}\}/g, (match, stepId, field) => {
     const result = results.get(stepId);
     if (!result) return match;
     switch (field) {
       case 'result': case 'output': {
         const raw = result.output?.trim() ?? '';
-        if (raw.length <= 4000) return raw;
-        return raw.slice(0, 4000) + `\n[... ${raw.length} chars total — use GET /status/${stepId} for full result, or add a shell step with jq to extract what you need]`;
+        const capped = raw.length <= 4000
+          ? raw
+          : raw.slice(0, 4000) + `\n[... ${raw.length} chars total — use GET /status/${stepId} for full result, or add a shell step with jq to extract what you need]`;
+        return escape(capped);
       }
-      case 'summary': return result.structured?.summary ?? result.output?.slice(0, 500) ?? '';
-      case 'status': return result.status;
-      case 'findings': return result.structured?.findings?.join('\n') ?? '';
+      case 'summary': return escape(result.structured?.summary ?? result.output?.slice(0, 500) ?? '');
+      case 'status': return escape(result.status);
+      case 'findings': return escape(result.structured?.findings?.join('\n') ?? '');
       case 'confidence': return String(result.structured?.confidence ?? '');
       default: return match;
     }
@@ -243,10 +269,28 @@ export class PlanEngine {
 
   validate(plan: ActionPlan, availableWorkers: Set<string>): string[] {
     const errors: string[] = [];
-    if (!plan.steps?.length) { errors.push('Plan has no steps'); return errors; }
+    if (!plan || typeof plan !== 'object') { errors.push('Plan must be an object'); return errors; }
+    if (!Array.isArray(plan.steps) || plan.steps.length === 0) { errors.push('Plan has no steps'); return errors; }
+    // Required field checks — the most common failure mode was typo'd field
+    // names (e.g. `input` instead of `task`) passing through parse but crashing
+    // downstream. Explicit validation gives the caller a 400 with a clear message.
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      if (!step || typeof step !== 'object') {
+        errors.push(`Step[${i}]: must be an object`);
+        continue;
+      }
+      if (!step.id || typeof step.id !== 'string') errors.push(`Step[${i}]: missing or invalid 'id' (string required)`);
+      if (!step.worker || typeof step.worker !== 'string') errors.push(`Step[${i}${step.id ? ` (${step.id})` : ''}]: missing or invalid 'worker' (string required)`);
+      if (typeof step.task !== 'string' && !Array.isArray(step.task)) {
+        errors.push(`Step[${i}${step.id ? ` (${step.id})` : ''}]: missing or invalid 'task' (string or array required — did you mean 'task' instead of 'input' or 'prompt'?)`);
+      }
+    }
+    if (errors.length > 0) return errors;
+
     const ids = new Set(plan.steps.map(s => s.id));
     for (const step of plan.steps) {
-      if (!availableWorkers.has(step.worker)) errors.push(`Step ${step.id}: unknown worker '${step.worker}'`);
+      if (!availableWorkers.has(step.worker)) errors.push(`Step ${step.id}: unknown worker '${step.worker}' (available: ${[...availableWorkers].slice(0, 5).join(', ')}${availableWorkers.size > 5 ? '...' : ''})`);
       for (const dep of step.dependsOn ?? []) {
         if (!ids.has(dep)) errors.push(`Step ${step.id}: depends on unknown '${dep}'`);
         if (dep === step.id) errors.push(`Step ${step.id}: self-dependency`);
@@ -384,7 +428,7 @@ export class PlanEngine {
           workerRunning.set(step.worker, currentConc + 1);
           const ac = new AbortController();
           this.abortControllers.set(step.id, ac);
-          const resolvedTask = resolveStepContext(step.task, results);
+          const resolvedTask = resolveStepContext(step.task, results, step.worker);
           this.emit({ type: 'step.dispatched', step, resolvedTask });
           const defaultTimeout = this.opts.getWorkerTimeoutSeconds?.(step.worker) ?? 120;
           const timeoutMs = (step.timeoutSeconds ?? defaultTimeout) * 1000;
@@ -565,8 +609,9 @@ function buildResult(plan: ActionPlan, results: Map<string, StepResult>, start: 
     replanCandidates,
   };
 
-  // Build text digest
-  const digestParts: string[] = [`# Plan Result: ${plan.goal}\n`];
+  // Build text digest — fallback to '(no goal specified)' when goal is undefined,
+  // prevents literal "undefined" appearing in agent-facing reports
+  const digestParts: string[] = [`# Plan Result: ${plan.goal || '(no goal specified)'}\n`];
   if (plan.acceptance) digestParts.push(`Acceptance: ${plan.acceptance}\n`);
   for (const s of steps) {
     const summary = s.structured?.summary ?? s.output?.slice(0, 500);

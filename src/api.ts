@@ -301,6 +301,22 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   const mw = createMiddleware(config);
   const app = new Hono();
 
+  // Global error handler — uncaught exceptions in routes return structured JSON
+  // instead of bare "Internal Server Error" text. This matters for AI callers:
+  // a 21-byte text crash is opaque; a JSON body with error+message is debuggable.
+  app.onError((err, c) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 3).join('\n') : undefined;
+    console.error(`[api] uncaught ${c.req.method} ${c.req.url}: ${msg}`);
+    if (stack) console.error(stack);
+    return c.json({
+      error: 'internal_server_error',
+      message: msg,
+      path: new URL(c.req.url).pathname,
+      method: c.req.method,
+    }, 500);
+  });
+
   // Auth on all mutating endpoints (health/dashboard/events exempt)
   app.use('/dispatch', authMiddleware as never);
   app.use('/plan', authMiddleware as never);
