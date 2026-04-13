@@ -10,7 +10,12 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "dev": "tsx src/server.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "setup": "node scripts/setup.mjs",
+    "deploy": "git pull --ff-only && pnpm install && pnpm run build && pm2 reload ecosystem.config.cjs --update-env"
+  },
+  "bin": {
+    "agent-middleware-setup": "./scripts/setup.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.98",
@@ -20,6 +25,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@clack/prompts": "^1.2.0",
     "@types/node": "^22.15.3",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"

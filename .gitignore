@@ -1,5 +1,11 @@
 node_modules/
 dist/
 *.log
+logs/
 .env
 .DS_Store
+.pm2/
+plan-history.jsonl
+results.jsonl
+_output.md
+_outline.json
