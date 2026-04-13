@@ -50,6 +50,13 @@ export interface MiddlewareConfig {
   cwd?: string;
 }
 
+export interface PlanHistoryRecord {
+  planId: string;
+  createdAt: string;
+  caller?: string;
+  plan: ActionPlan;
+}
+
 export function createMiddleware(config?: MiddlewareConfig) {
   const cwd = config?.cwd ?? process.cwd();
   const buffer = new ResultBuffer();
@@ -290,7 +297,24 @@ export function createMiddleware(config?: MiddlewareConfig) {
     }
   };
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted };
+  // Plan definition persistence (for replay/audit). Separate from result-buffer
+  // which stores per-task records. This stores plan-level metadata: goal, full
+  // step structure (dependsOn, label, retry), createdAt, caller. Survives
+  // middleware restart and evict-after-1h. Append-only JSONL.
+  const planHistoryPath = path.join(cwd, 'plan-history.jsonl');
+  const persistPlanHistory = (record: PlanHistoryRecord): void => {
+    try { fs.appendFileSync(planHistoryPath, JSON.stringify(record) + '\n'); } catch { /* fail-open */ }
+  };
+  const readPlanHistory = (): PlanHistoryRecord[] => {
+    try {
+      const raw = fs.readFileSync(planHistoryPath, 'utf-8');
+      return raw.split('\n').filter(Boolean).map(line => {
+        try { return JSON.parse(line) as PlanHistoryRecord; } catch { return null; }
+      }).filter((x): x is PlanHistoryRecord => x !== null);
+    } catch { return []; }
+  };
+
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory };
 }
 
 // =============================================================================
@@ -321,6 +345,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.use('/dispatch', authMiddleware as never);
   app.use('/plan', authMiddleware as never);
   app.use('/plan/*', authMiddleware as never);
+  app.use('/plans', authMiddleware as never);
+  app.use('/plans/*', authMiddleware as never);
   app.use('/workers', authMiddleware as never);
   app.use('/workers/*', authMiddleware as never);
   app.use('/gateway/*', authMiddleware as never);
@@ -589,8 +615,14 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     // Execute — plan engine events (dispatched/completed/failed) use remapped IDs → match buffer
     const resultPromise = mw.planEngine.execute(execPlan);
-    mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt: new Date().toISOString() });
+    const createdAt = new Date().toISOString();
+    mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt });
     mw.evictOldPlans();
+    // Persist LOGICAL plan definition (pre-prefix) for replay/audit. Persisting
+    // execPlan would leak planId prefixes into step.id, dependsOn, condition.stepId,
+    // and {{template.result}} references — making replay require complex stripping.
+    // Storing logical means replay just re-runs the same POST /plan flow.
+    mw.persistPlanHistory({ planId, createdAt, caller: body.caller, plan });
 
     // Cleanup after completion + evict plan after 1h + webhook callback
     const planCb = body.callback;
@@ -948,6 +980,173 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ ok: true });
   });
 
+  // GET /plans/history — paginated audit log of all plans ever submitted
+  // Reads from append-only JSONL (survives 1h evict + middleware restart).
+  // Merges with live buffer state for runtime status when available.
+  // Query params: ?since=ISO&until=ISO&status=completed|failed|running&limit=N&offset=N
+  app.get('/plans/history', (c) => {
+    const records = mw.readPlanHistory();
+    const since = c.req.query('since');
+    const until = c.req.query('until');
+    const statusFilter = c.req.query('status');
+    const limit = Math.min(parseInt(c.req.query('limit') ?? '50', 10), 500);
+    const offset = parseInt(c.req.query('offset') ?? '0', 10);
+
+    // Enrich each record with current runtime state from buffer
+    const enriched = records.map(r => {
+      const runtimeSteps = mw.buffer.list({ planId: r.planId });
+      const completed = runtimeSteps.filter(s => s.status === 'completed').length;
+      const failed = runtimeSteps.filter(s => s.status === 'failed' || s.status === 'timeout').length;
+      const running = runtimeSteps.filter(s => s.status === 'running').length;
+      const total = r.plan.steps.length;
+      const planStatus =
+        running > 0 ? 'running'
+        : failed > 0 ? 'failed'
+        : completed === total ? 'completed'
+        : completed === 0 && failed === 0 && running === 0 ? 'unknown'  // evicted + no buffer trace
+        : 'partial';
+      return {
+        planId: r.planId,
+        createdAt: r.createdAt,
+        caller: r.caller,
+        goal: r.plan.goal,
+        totalSteps: total,
+        completed, failed, running,
+        status: planStatus,
+      };
+    });
+
+    // Filter
+    let filtered = enriched;
+    if (since) filtered = filtered.filter(r => r.createdAt >= since);
+    if (until) filtered = filtered.filter(r => r.createdAt <= until);
+    if (statusFilter) filtered = filtered.filter(r => r.status === statusFilter);
+
+    // Sort newest first
+    filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    // Paginate
+    const total = filtered.length;
+    const page = filtered.slice(offset, offset + limit);
+    return c.json({ total, offset, limit, plans: page });
+  });
+
+  // GET /plans/history/:planId — single historical plan with full definition
+  // Returns plan.steps with dependsOn/worker/label/retry — enables replay.
+  // Works even for 1h-evicted plans (reads from JSONL).
+  app.get('/plans/history/:planId', (c) => {
+    const planId = c.req.param('planId');
+    const records = mw.readPlanHistory();
+    const record = records.find(r => r.planId === planId);
+    if (!record) return c.json({ error: 'not found in history' }, 404);
+    // Historical plan uses LOGICAL step IDs (pre-prefix). Runtime buffer uses
+    // prefixed IDs (`{planId}_{stepId}`). Match by constructing the expected
+    // runtime ID from logical + planId.
+    const runtimeSteps = mw.buffer.list({ planId });
+    const mergedSteps = record.plan.steps.map(ps => {
+      const runtimeId = `${planId}_${ps.id}`;
+      const runtime = runtimeSteps.find(r => r.id === runtimeId);
+      return {
+        id: ps.id,
+        worker: ps.worker,
+        label: ps.label,
+        task: ps.task,
+        dependsOn: ps.dependsOn ?? [],
+        retry: ps.retry,
+        condition: ps.condition,
+        // Runtime fields (may be undefined if evicted from buffer too)
+        status: runtime?.status,
+        submittedAt: runtime?.submittedAt,
+        startedAt: runtime?.startedAt,
+        completedAt: runtime?.completedAt,
+        durationMs: runtime?.durationMs,
+        error: runtime?.error,
+        result: runtime?.result,
+      };
+    });
+    return c.json({
+      planId,
+      createdAt: record.createdAt,
+      caller: record.caller,
+      goal: record.plan.goal,
+      acceptance: record.plan.acceptance,
+      totalSteps: record.plan.steps.length,
+      steps: mergedSteps,
+    });
+  });
+
+  // POST /plans/history/:planId/replay — create a NEW plan from historical definition
+  // History stores LOGICAL plan (pre-prefix), so replay just re-runs the same
+  // submission flow as POST /plan: validate → prefix → execute. Zero stripping needed.
+  // Returns new planId. Original remains unchanged in history.
+  app.post('/plans/history/:planId/replay', async (c) => {
+    const originalId = c.req.param('planId');
+    const records = mw.readPlanHistory();
+    const record = records.find(r => r.planId === originalId);
+    if (!record) return c.json({ error: 'not found in history' }, 404);
+
+    // Logical plan from history — all IDs/dependsOn/condition.stepId/templates
+    // are in their pre-prefix form. This is structurally identical to what
+    // POST /plan receives as `body.steps` + `body.goal`.
+    const logicalPlan: ActionPlan = record.plan;
+    const errors = mw.planEngine.validate(logicalPlan, new Set(mergedWorkerNames()));
+    if (errors.length > 0) return c.json({ error: 'replay validation failed', errors, originalPlanId: originalId }, 400);
+
+    const newPlanId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
+    const replayCaller = `replay:${originalId}`;
+    for (const step of logicalPlan.steps) {
+      const uid = `${newPlanId}_${step.id}`;
+      mw.buffer.submit({ id: uid, planId: newPlanId, worker: step.worker, task: step.task, label: step.label, caller: replayCaller });
+    }
+    const idMap = new Map(logicalPlan.steps.map(s => [s.id, `${newPlanId}_${s.id}`]));
+    const remapTemplates = (task: string) => {
+      let t = task;
+      for (const [orig, prefixed] of idMap) t = t.replaceAll(`{{${orig}.`, `{{${prefixed}.`);
+      return t;
+    };
+    const execPlan: ActionPlan = {
+      ...logicalPlan,
+      steps: logicalPlan.steps.map(s => ({
+        ...s,
+        id: idMap.get(s.id)!,
+        task: typeof s.task === 'string' ? remapTemplates(s.task) : s.task,
+        dependsOn: (s.dependsOn ?? []).map(d => idMap.get(d) ?? d),
+        // Remap condition.stepId if present — it references another step by logical ID
+        condition: s.condition ? { ...s.condition, stepId: idMap.get(s.condition.stepId) ?? s.condition.stepId } : undefined,
+      })),
+      // Remap convergence.checkStepId if present
+      convergence: logicalPlan.convergence
+        ? { ...logicalPlan.convergence, checkStepId: logicalPlan.convergence.checkStepId ? (idMap.get(logicalPlan.convergence.checkStepId) ?? logicalPlan.convergence.checkStepId) : undefined }
+        : undefined,
+    };
+    const resultPromise = mw.planEngine.execute(execPlan);
+    const createdAt = new Date().toISOString();
+    mw.plans.set(newPlanId, { plan: execPlan, resultPromise, createdAt });
+    mw.evictOldPlans();
+    // Persist the LOGICAL plan (not execPlan) — matches POST /plan behavior
+    mw.persistPlanHistory({ planId: newPlanId, createdAt, caller: replayCaller, plan: logicalPlan });
+
+    // Match POST /plan lifecycle: mark completed + 1h cleanup after completion
+    resultPromise.then(result => {
+      for (const step of result.steps) {
+        if (step.status !== 'completed') mw.buffer.fail(step.id, step.output);
+      }
+      mw.markPlanCompleted(newPlanId);
+      (mw.plans.get(newPlanId) as Record<string, unknown>).result = result;
+      setTimeout(() => mw.plans.delete(newPlanId), 3_600_000);
+    }).catch(() => {
+      mw.markPlanCompleted(newPlanId);
+      setTimeout(() => mw.plans.delete(newPlanId), 3_600_000);
+    });
+
+    return c.json({
+      planId: newPlanId,
+      replayedFrom: originalId,
+      status: 'executing',
+      steps: execPlan.steps.length,
+    });
+  });
+
   // GET /plans — list all plans with goals
   app.get('/plans', (c) => {
     const plans = [...mw.plans.entries()].map(([id, entry]) => {
@@ -1029,8 +1228,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       })),
     };
     const resultPromise = mw.planEngine.execute(execPlan);
-    mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt: new Date().toISOString() });
+    const createdAt = new Date().toISOString();
+    mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt });
     mw.evictOldPlans();
+    // Persist LOGICAL plan (pre-prefix) for replay/audit
+    mw.persistPlanHistory({ planId, createdAt, plan });
     resultPromise.then(result => {
       mw.markPlanCompleted(planId);
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
