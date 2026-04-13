@@ -31,7 +31,7 @@ import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.j
 import type { LLMProvider } from './llm-provider.js';
 import { PLAN_TEMPLATES } from './templates.js';
 import { execSync, execFileSync } from 'node:child_process';
-// brain.ts exists as a library for agents that want planning — not used by middleware itself
+import { brainPlan, type WorkerInfo } from './brain.js';
 
 // Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
 const API_KEY = process.env.MIDDLEWARE_API_KEY;
@@ -55,6 +55,14 @@ export interface PlanHistoryRecord {
   createdAt: string;
   caller?: string;
   plan: ActionPlan;
+}
+
+export interface RecoveryOption {
+  action: 'wait_and_retry' | 'alternative_approach' | 'escalate' | 'abort';
+  description: string;
+  confidence: number;
+  wait_ms?: number;
+  why?: string;
 }
 
 export function createMiddleware(config?: MiddlewareConfig) {
@@ -147,6 +155,91 @@ export function createMiddleware(config?: MiddlewareConfig) {
         ]);
       }
       case 'shell': {
+        // Two input formats supported (Constraint Texture: shell = POSIX process, not LLM prompt):
+        //
+        //   1. LEGACY string: task = "ls -la && cat foo.json"
+        //      Full bash string, all dependencies must be inlined (escape hell for JSON).
+        //
+        //   2. STRUCTURED workspace: task = ContentBlock[] containing a JSON block
+        //      { "command": "...", "workspace": { "files": {...}, "env": {...}, "stdin": "..." } }
+        //      Middleware creates scratch dir, writes files, pipes stdin, executes command.
+        //      Dependencies ({{stepId.result}}) are resolved BEFORE this layer by plan engine,
+        //      so workspace.files values are already-resolved strings.
+        //
+        // Detection: if task is a ContentBlock[] with a single text block whose first char is '{'
+        // AND parses to an object with a "command" field → structured mode.
+        // Otherwise → legacy mode.
+
+        const tryParseStructured = (): {
+          command: string;
+          workspace?: {
+            files?: Record<string, string>;
+            env?: Record<string, string>;
+            stdin?: string;
+          };
+        } | null => {
+          let raw: string;
+          if (typeof task === 'string') {
+            raw = task.trim();
+          } else {
+            const textBlock = task.find(b => b.type === 'text');
+            if (!textBlock) return null;
+            raw = (textBlock as { text: string }).text.trim();
+          }
+          if (!raw.startsWith('{')) return null;
+          try {
+            const parsed = JSON.parse(raw) as { command?: unknown; workspace?: unknown };
+            if (typeof parsed.command !== 'string') return null;
+            return parsed as { command: string; workspace?: { files?: Record<string, string>; env?: Record<string, string>; stdin?: string } };
+          } catch {
+            return null;
+          }
+        };
+
+        const structured = tryParseStructured();
+
+        if (structured) {
+          // Structured workspace mode — middleware manages scratch dir + deps.
+          const fsMod = await import('node:fs');
+          const pathMod = await import('node:path');
+          const osMod = await import('node:os');
+          const scratchDir = fsMod.mkdtempSync(pathMod.join(osMod.tmpdir(), 'mw-shell-'));
+          try {
+            // Write dependency files
+            if (structured.workspace?.files) {
+              for (const [filename, content] of Object.entries(structured.workspace.files)) {
+                // Prevent path traversal — files must be relative and contain no ..
+                if (filename.includes('..') || pathMod.isAbsolute(filename)) {
+                  throw new Error(`Invalid file path in workspace.files: ${filename}`);
+                }
+                const fullPath = pathMod.join(scratchDir, filename);
+                fsMod.mkdirSync(pathMod.dirname(fullPath), { recursive: true });
+                fsMod.writeFileSync(fullPath, content, 'utf-8');
+              }
+            }
+            // Execute command in scratch dir with optional env + stdin
+            const execOpts: Parameters<typeof execSync>[1] = {
+              cwd: scratchDir,
+              timeout: timeoutMs,
+              encoding: 'utf-8',
+              maxBuffer: 2 * 1024 * 1024,
+              shell: '/bin/bash',
+              env: { ...process.env, ...(structured.workspace?.env ?? {}) },
+            };
+            if (structured.workspace?.stdin !== undefined) {
+              (execOpts as Record<string, unknown>).input = structured.workspace.stdin;
+            }
+            return execSync(structured.command, execOpts) as string;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`Shell error (structured): ${msg.slice(0, 500)}`);
+          } finally {
+            // Always clean up scratch dir
+            try { fsMod.rmSync(scratchDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+          }
+        }
+
+        // Legacy string mode — preserved for backward compatibility
         try {
           const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
           if (def.shellAllowlist?.length) {
@@ -314,7 +407,109 @@ export function createMiddleware(config?: MiddlewareConfig) {
     } catch { return []; }
   };
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory };
+  // Lazy-init internal brain for /accomplish endpoint.
+  // Uses sonnet by default — brain.ts createBrain defaults to opus which is
+  // ill-suited as planner (per arxiv 2604.06296 §6.2 role2_never_called finding:
+  // stronger models in planner role systematically fail to delegate).
+  // Sonnet has a better delegation disposition while still producing valid JSON plans.
+  let _brain: LLMProvider | null = null;
+  const getBrain = (): LLMProvider => {
+    if (_brain) return _brain;
+    _brain = createSdkProvider({
+      model: process.env.MIDDLEWARE_BRAIN_MODEL ?? 'sonnet',
+      cwd,
+      allowedTools: [], // brain ONLY produces plans, never dispatches directly
+      maxTurns: 1, // single-shot planning call — no tool use needed
+      maxBudgetUsd: 1,
+    });
+    return _brain;
+  };
+
+  // Lazy-init critic model for recovery_options generation.
+  // Uses Haiku — per arxiv 2604.06296 Table 1: "Opus answerer + Haiku critic = 98.84%"
+  // beats Opus+Opus on MathQA. Critic role (judging failure + proposing options)
+  // benefits from cheaper models, not stronger ones.
+  let _critic: LLMProvider | null = null;
+  const getCritic = (): LLMProvider => {
+    if (_critic) return _critic;
+    _critic = createSdkProvider({
+      model: process.env.MIDDLEWARE_CRITIC_MODEL ?? 'haiku',
+      cwd,
+      allowedTools: [],
+      maxTurns: 1,
+      maxBudgetUsd: 0.5,
+    });
+    return _critic;
+  };
+
+  // Generate recovery_options for a failed plan — AI-actionable alternatives
+  // instead of raw stack traces. See proposal: Constraint Texture for errors.
+  const RECOVERY_SYSTEM = `You are a failure diagnosis critic. Given a failed task plan, produce 2-4 actionable recovery options.
+
+OUTPUT FORMAT: Return JSON inside \`\`\`json ... \`\`\` block:
+{
+  "semantic_diagnosis": "one-sentence human-readable explanation of what went wrong",
+  "options": [
+    {
+      "action": "wait_and_retry" | "alternative_approach" | "escalate" | "abort",
+      "description": "what the caller should do",
+      "confidence": 0.0-1.0,
+      "wait_ms": <only for wait_and_retry>,
+      "why": "brief rationale"
+    }
+  ]
+}
+
+RULES:
+- action values are a closed set — don't invent new ones
+- confidence reflects how likely this option succeeds
+- Order options by recommended priority (best first)
+- Be specific: "retry with exponential backoff" not "try again"
+- If the failure is unrecoverable, include { "action": "abort", ... } with confidence 1.0`;
+
+  const generateRecoveryOptions = async (
+    goal: string,
+    failedSteps: Array<{ id: string; worker: string; error: string }>,
+    fullErrorContext: string,
+  ): Promise<{ semantic_diagnosis: string; options: RecoveryOption[] } | null> => {
+    if (!failedSteps.length) return null;
+    const prompt = [
+      `Goal: ${goal}`,
+      `Failed steps:\n${failedSteps.map(s => `  - ${s.id} (${s.worker}): ${s.error.slice(0, 300)}`).join('\n')}`,
+      `Full context:\n${fullErrorContext.slice(0, 2000)}`,
+    ].join('\n\n');
+    try {
+      const response = await getCritic().think(prompt, RECOVERY_SYSTEM);
+      const match = response.match(/```json\s*([\s\S]*?)```/) ?? response.match(/(\{[\s\S]*"options"[\s\S]*\})/);
+      if (!match) return null;
+      const parsed = JSON.parse(match[1]) as { semantic_diagnosis?: string; options?: RecoveryOption[] };
+      if (!Array.isArray(parsed.options)) return null;
+      return {
+        semantic_diagnosis: parsed.semantic_diagnosis ?? 'No diagnosis produced',
+        options: parsed.options,
+      };
+    } catch {
+      return null; // fail-open — if critic fails, caller still gets raw errors
+    }
+  };
+
+  // Convert worker definitions to brain-visible info (drops backend details,
+  // keeps only what brain needs to choose wisely: name, description, model tier).
+  const brainWorkerInfo = (): WorkerInfo[] => {
+    const out: WorkerInfo[] = [];
+    for (const [name, def] of Object.entries(allWorkers())) {
+      out.push({
+        name,
+        description: def.agent.description ?? '',
+        backend: def.backend,
+        model: def.agent.model,
+        maxConcurrency: def.maxConcurrency,
+      });
+    }
+    return out;
+  };
+
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory, getBrain, brainWorkerInfo, generateRecoveryOptions };
 }
 
 // =============================================================================
@@ -347,6 +542,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.use('/plan/*', authMiddleware as never);
   app.use('/plans', authMiddleware as never);
   app.use('/plans/*', authMiddleware as never);
+  app.use('/accomplish', authMiddleware as never);
   app.use('/workers', authMiddleware as never);
   app.use('/workers/*', authMiddleware as never);
   app.use('/gateway/*', authMiddleware as never);
@@ -673,6 +869,241 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       planId,
       status: 'executing',
       steps: plan.steps.length,
+    });
+  });
+
+  // POST /accomplish — goal-oriented API (Constraint Texture: convergence over prescription)
+  //
+  // Caller provides WHAT they want (goal + success_criteria + constraints).
+  // Middleware decides HOW — brain generates DAG plan, auto-routes workers,
+  // caller never needs to know worker catalog or shell syntax.
+  //
+  // Body: {
+  //   goal: "natural-language description of desired end state",
+  //   success_criteria?: "how to judge when done",
+  //   constraints?: { max_latency_ms?, max_cost_usd?, must_use?, must_not? },
+  //   context?: { prior_attempts?, caller_identity?, extra? },
+  //   caller?, callback?, callbackFrom?, wait?
+  // }
+  //
+  // Rationale: POST /dispatch forces caller to know worker catalog; POST /plan
+  // forces caller to write DAG. Both are prescription patterns — they push
+  // structural decisions onto the caller. /accomplish accepts convergence
+  // conditions and lets brain produce the path. See arxiv 2604.06296 — the
+  // optimal pipeline has model selection happen at plan-level, not call-level.
+  app.post('/accomplish', async (c) => {
+    const body = await c.req.json<{
+      goal: string;
+      success_criteria?: string;
+      constraints?: {
+        max_latency_ms?: number;
+        max_cost_usd?: number;
+        must_use?: string[];
+        must_not?: string[];
+      };
+      context?: {
+        prior_attempts?: Array<{ error?: string; tried?: string }>;
+        caller_identity?: string;
+        extra?: string;
+      };
+      caller?: string;
+      callback?: string;
+      callbackFrom?: string;
+      wait?: boolean;
+    }>();
+
+    if (!body.goal || typeof body.goal !== 'string') {
+      return c.json({ error: 'goal (string) required' }, 400);
+    }
+
+    const waitMode = body.wait || c.req.query('wait') === 'true';
+
+    // Build composite goal + context string for brain
+    const fullGoal = body.success_criteria
+      ? `${body.goal}\n\nSuccess criteria: ${body.success_criteria}`
+      : body.goal;
+
+    const contextParts: string[] = [];
+    if (body.constraints) {
+      const c = body.constraints;
+      const lines: string[] = [];
+      if (c.max_latency_ms) lines.push(`- Max latency: ${c.max_latency_ms}ms`);
+      if (c.max_cost_usd) lines.push(`- Max cost: $${c.max_cost_usd}`);
+      if (c.must_use?.length) lines.push(`- Must use: ${c.must_use.join(', ')}`);
+      if (c.must_not?.length) lines.push(`- Must NOT: ${c.must_not.join(', ')}`);
+      if (lines.length) contextParts.push(`Constraints:\n${lines.join('\n')}`);
+    }
+    if (body.context?.prior_attempts?.length) {
+      const attempts = body.context.prior_attempts
+        .map((a, i) => `  ${i + 1}. ${a.tried ?? 'unknown'} → ${a.error ?? 'unknown error'}`)
+        .join('\n');
+      contextParts.push(`Prior attempts (avoid repeating):\n${attempts}`);
+    }
+    if (body.context?.caller_identity) contextParts.push(`Caller: ${body.context.caller_identity}`);
+    if (body.context?.extra) contextParts.push(body.context.extra);
+    const brainContext = contextParts.length > 0 ? contextParts.join('\n\n') : undefined;
+
+    // Ask brain to produce a DAG plan
+    let rawBrainResponse: string;
+    try {
+      rawBrainResponse = await brainPlan(mw.getBrain(), fullGoal, {
+        context: brainContext,
+        availableWorkers: mw.brainWorkerInfo(),
+      });
+    } catch (err) {
+      return c.json({
+        status: 'planning_failed',
+        goal: body.goal,
+        error: `Brain planning failed: ${err instanceof Error ? err.message : String(err)}`,
+      }, 500);
+    }
+
+    // Parse brain's JSON response
+    const plan = parsePlan(rawBrainResponse);
+    if (!plan) {
+      return c.json({
+        status: 'planning_failed',
+        goal: body.goal,
+        error: 'Brain did not produce a valid plan (missing ```json``` block or invalid structure)',
+        raw_response: rawBrainResponse.slice(0, 2000),
+      }, 500);
+    }
+
+    // Validate plan against worker catalog
+    const validationErrors = mw.planEngine.validate(plan, new Set(mergedWorkerNames()));
+    if (validationErrors.length > 0) {
+      return c.json({
+        status: 'planning_failed',
+        goal: body.goal,
+        error: 'Brain produced invalid plan',
+        validation_errors: validationErrors,
+        plan,
+      }, 500);
+    }
+
+    // From here on: reuse the /plan execution path (ID remap + buffer + engine).
+    const planId = `acc-${Date.now()}-${(mw.planCounter++).toString(36)}`;
+    for (const step of plan.steps) {
+      const uid = `${planId}_${step.id}`;
+      mw.buffer.submit({ id: uid, planId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+    }
+
+    const idMap = new Map(plan.steps.map(s => [s.id, `${planId}_${s.id}`]));
+    const remapTemplates = (task: string) => {
+      let t = task;
+      for (const [orig, prefixed] of idMap) {
+        t = t.replaceAll(`{{${orig}.`, `{{${prefixed}.`);
+      }
+      return t;
+    };
+    const execPlan = {
+      ...plan,
+      steps: plan.steps.map(s => ({
+        ...s,
+        id: idMap.get(s.id)!,
+        task: remapTemplates(s.task),
+        dependsOn: (s.dependsOn ?? []).map(d => idMap.get(d) ?? d),
+      })),
+    };
+
+    const resultPromise = mw.planEngine.execute(execPlan);
+    const createdAt = new Date().toISOString();
+    mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt });
+    mw.evictOldPlans();
+    // Persist logical plan + original goal for audit/replay
+    mw.persistPlanHistory({ planId, createdAt, caller: body.caller, plan });
+
+    const planCb = body.callback;
+    const planCbFrom = body.callbackFrom ?? 'middleware';
+    resultPromise.then(result => {
+      for (const step of result.steps) {
+        if (step.status !== 'completed') {
+          mw.buffer.fail(step.id, step.output);
+        }
+      }
+      mw.markPlanCompleted(planId);
+      (mw.plans.get(planId) as Record<string, unknown>).result = result;
+      setTimeout(() => mw.plans.delete(planId), 3_600_000);
+      if (planCb) {
+        const completed = result.steps.filter(s => s.status === 'completed').length;
+        sendCallback(planCb, planCbFrom, {
+          type: 'accomplish.completed',
+          id: planId,
+          status: `${completed}/${result.steps.length} completed`,
+          result: { goal: body.goal, accepted: result.accepted },
+        });
+      }
+    }).catch(() => {
+      mw.markPlanCompleted(planId);
+      setTimeout(() => mw.plans.delete(planId), 3_600_000);
+      if (planCb) sendCallback(planCb, planCbFrom, {
+        type: 'accomplish.failed',
+        id: planId,
+        status: 'failed',
+        error: `goal: ${body.goal}`,
+      });
+    });
+
+    if (waitMode) {
+      try {
+        const result = await resultPromise;
+        mw.markPlanCompleted(planId);
+        (mw.plans.get(planId) as Record<string, unknown>).result = result;
+        const steps = mw.buffer.list({ planId });
+
+        // On partial failure, ask critic for actionable recovery options.
+        // This converts raw stack traces into AI-actionable alternatives
+        // (Constraint Texture: error is a convergence signal, not a debug dump).
+        let recovery: Awaited<ReturnType<typeof mw.generateRecoveryOptions>> = null;
+        const failedStepDetails = result.steps
+          .filter(s => s.status === 'failed' || s.status === 'timeout')
+          .map(s => ({ id: s.id, worker: s.worker, error: s.output }));
+        if (!result.accepted && failedStepDetails.length > 0) {
+          recovery = await mw.generateRecoveryOptions(
+            body.goal,
+            failedStepDetails,
+            result.digestContext,
+          );
+        }
+
+        return c.json({
+          planId,
+          status: result.accepted ? 'completed' : 'partial',
+          goal: body.goal,
+          success_criteria: body.success_criteria,
+          plan: {
+            goal: plan.goal,
+            acceptance: plan.acceptance,
+            steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn })),
+          },
+          steps: steps.map(s => ({
+            id: s.id, worker: s.worker, label: s.label, status: s.status,
+            result: s.result, error: s.error, durationMs: s.durationMs,
+          })),
+          summary: result.summary,
+          ...(recovery && { recovery_options: recovery.options, semantic_diagnosis: recovery.semantic_diagnosis }),
+        });
+      } catch (err) {
+        mw.markPlanCompleted(planId);
+        return c.json({
+          planId,
+          status: 'failed',
+          goal: body.goal,
+          error: err instanceof Error ? err.message : String(err),
+        }, 500);
+      }
+    }
+
+    return c.json({
+      planId,
+      status: 'executing',
+      goal: body.goal,
+      success_criteria: body.success_criteria,
+      plan: {
+        goal: plan.goal,
+        acceptance: plan.acceptance,
+        steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn })),
+      },
     });
   });
 
