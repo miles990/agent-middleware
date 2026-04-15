@@ -598,10 +598,17 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         : event.type === 'plan.completed'
           ? `Plan ${event.id} completed. Status: ${event.status}`
           : `Event: ${event.type} on ${event.id}`;
+    // Payload carries both chat-shaped fields (from/text for Chat Room ingestion)
+    // and structured event fields (type/id/status/result/error for programmatic
+    // drainage, e.g. mini-agent delegation result reconciliation). One code path,
+    // one payload; consumers pick what they need.
+    const payload: Record<string, unknown> = { from, text, type: event.type, id: event.id, status: event.status };
+    if (event.result !== undefined) payload.result = event.result;
+    if (event.error !== undefined) payload.error = event.error;
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, text }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10_000),
     }).catch((err) => { console.error(`[sendCallback] POST ${url} failed:`, err instanceof Error ? err.message : err); });
   };
