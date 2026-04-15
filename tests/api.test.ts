@@ -245,6 +245,80 @@ describe('Presets', () => {
   });
 });
 
+describe('Commitments Ledger', () => {
+  it('POST /commit rejects missing source', async () => {
+    const res = await request('/commit', { method: 'POST', body: { text: 'do x', parsed: { action: 'do x' } } });
+    assert.equal(res.status, 400);
+  });
+
+  it('POST /commit rejects invalid channel', async () => {
+    const res = await request('/commit', {
+      method: 'POST',
+      body: { source: { channel: 'bogus' }, text: 'do x', parsed: { action: 'do x' } },
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('POST /commit creates active commitment', async () => {
+    const res = await request('/commit', {
+      method: 'POST',
+      body: {
+        source: { channel: 'room', message_id: 'm-1' },
+        text: '我會在下 cycle 寫 §5',
+        parsed: { action: '寫 §5 schema', deadline: '下 cycle', to: '@CC' },
+      },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { id: string; status: string; created_at: string };
+    assert.ok(body.id.startsWith('cmt-'));
+    assert.equal(body.status, 'active');
+    assert.ok(body.created_at);
+  });
+
+  it('GET /commits filters by status', async () => {
+    const res = await request('/commits?status=active');
+    assert.equal(res.status, 200);
+    const body = await res.json() as { count: number; items: Array<{ status: string }> };
+    assert.ok(body.count >= 1);
+    for (const c of body.items) assert.equal(c.status, 'active');
+  });
+
+  it('PATCH /commit/:id transitions to fulfilled with resolution', async () => {
+    const create = await request('/commit', {
+      method: 'POST',
+      body: {
+        source: { channel: 'inner' },
+        text: 'commit X',
+        parsed: { action: 'X' },
+      },
+    });
+    const { id } = await create.json() as { id: string };
+    const patch = await request(`/commit/${id}`, {
+      method: 'PATCH',
+      body: { status: 'fulfilled', resolution: { kind: 'commit', evidence: 'cf2b96f' } },
+    });
+    assert.equal(patch.status, 200);
+    const updated = await patch.json() as { status: string; resolution: { kind: string; evidence: string }; resolved_at: string };
+    assert.equal(updated.status, 'fulfilled');
+    assert.equal(updated.resolution.kind, 'commit');
+    assert.equal(updated.resolution.evidence, 'cf2b96f');
+    assert.ok(updated.resolved_at);
+  });
+
+  it('PATCH /commit/:id returns 404 for unknown', async () => {
+    const res = await request('/commit/nonexistent', { method: 'PATCH', body: { status: 'cancelled' } });
+    assert.equal(res.status, 404);
+  });
+
+  it('GET /commits/stale finds aged active commitments', async () => {
+    const res = await request('/commits/stale?older_than_seconds=0');
+    assert.equal(res.status, 200);
+    const body = await res.json() as { count: number; older_than_seconds: number };
+    assert.ok(body.count >= 1);
+    assert.equal(body.older_than_seconds, 0);
+  });
+});
+
 describe('Dashboard', () => {
   it('GET /dashboard returns HTML', async () => {
     const res = await request('/dashboard');

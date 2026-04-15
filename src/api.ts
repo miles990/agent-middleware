@@ -32,6 +32,7 @@ import type { LLMProvider } from './llm-provider.js';
 import { PLAN_TEMPLATES } from './templates.js';
 import { execSync, execFileSync } from 'node:child_process';
 import { brainPlan, type WorkerInfo } from './brain.js';
+import { openStore as openCommitmentStore, validateInput as validateCommitmentInput, type CommitmentStatus, type CommitmentChannel, type CommitmentPatch } from './commitment-ledger.js';
 
 // Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
 const API_KEY = process.env.MIDDLEWARE_API_KEY;
@@ -518,7 +519,10 @@ RULES:
     return out;
   };
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory, getBrain, brainWorkerInfo, generateRecoveryOptions };
+  // Commitments ledger — cross-cycle "I will do X" promises (proposal §5)
+  const commitments = openCommitmentStore(cwd);
+
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory, getBrain, brainWorkerInfo, generateRecoveryOptions, commitments };
 }
 
 // =============================================================================
@@ -558,6 +562,10 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.use('/presets', authMiddleware as never);
   app.use('/presets/*', authMiddleware as never);
   app.use('/task/*', authMiddleware as never);
+  app.use('/commit', authMiddleware as never);
+  app.use('/commit/*', authMiddleware as never);
+  app.use('/commits', authMiddleware as never);
+  app.use('/commits/*', authMiddleware as never);
 
   // Helper: all workers (built-in + custom)
   const mergedWorkerNames = () => [...getWorkerNames(), ...Array.from(mw.customWorkers.keys())];
@@ -1838,6 +1846,63 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       .then(result => mw.buffer.complete(taskId, result))
       .catch(err => mw.buffer.fail(taskId, err instanceof Error ? err.message : String(err)));
     return c.json({ taskId, status: 'running', backend: body.backend });
+  });
+
+  // ─── Commitments Ledger (proposal §5 — cross-cycle "I will do X" durability) ───
+  // POST /commit       — create
+  // PATCH /commit/:id  — update status / resolution / linked ids
+  // GET /commits       — query (status, channel)
+  // GET /commits/stale — older-than filter (perception hook)
+  app.post('/commit', async (c) => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+    const v = validateCommitmentInput(body);
+    if (!v.ok) return c.json({ error: 'validation_failed', message: v.error }, 400);
+    const cmt = mw.commitments.create(v.value);
+    return c.json(cmt);
+  });
+
+  app.patch('/commit/:id', async (c) => {
+    const id = c.req.param('id');
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+    if (!body || typeof body !== 'object') return c.json({ error: 'body must be object' }, 400);
+    const b = body as Record<string, unknown>;
+    const validStatuses: CommitmentStatus[] = ['active', 'fulfilled', 'superseded', 'cancelled'];
+    if (b.status !== undefined && !validStatuses.includes(b.status as CommitmentStatus)) {
+      return c.json({ error: `status must be one of: ${validStatuses.join(',')}` }, 400);
+    }
+    const patch: CommitmentPatch = {};
+    if (b.status) patch.status = b.status as CommitmentStatus;
+    if (b.linked_task_id !== undefined) patch.linked_task_id = typeof b.linked_task_id === 'string' ? b.linked_task_id : undefined;
+    if (b.linked_dag_id !== undefined) patch.linked_dag_id = typeof b.linked_dag_id === 'string' ? b.linked_dag_id : undefined;
+    if (b.resolution && typeof b.resolution === 'object') {
+      const r = b.resolution as Record<string, unknown>;
+      if (typeof r.kind === 'string' && typeof r.evidence === 'string') {
+        patch.resolution = { kind: r.kind as CommitmentPatch['resolution'] extends infer T ? T extends { kind: infer K } ? K : never : never, evidence: r.evidence };
+      }
+    }
+    const updated = mw.commitments.patch(id, patch);
+    if (!updated) return c.json({ error: 'not_found', id }, 404);
+    return c.json(updated);
+  });
+
+  app.get('/commits', (c) => {
+    const status = c.req.query('status') as CommitmentStatus | undefined;
+    const channel = c.req.query('source.channel') as CommitmentChannel | undefined;
+    const items = mw.commitments.query({ status, channel });
+    return c.json({ count: items.length, items });
+  });
+
+  app.get('/commits/stale', (c) => {
+    const olderThanRaw = c.req.query('older_than_seconds') ?? '900';
+    const older_than_seconds = Number.parseInt(olderThanRaw, 10);
+    if (!Number.isFinite(older_than_seconds) || older_than_seconds < 0) {
+      return c.json({ error: 'older_than_seconds must be non-negative integer' }, 400);
+    }
+    const status = c.req.query('status') as CommitmentStatus | undefined;
+    const items = mw.commitments.stale({ older_than_seconds, status });
+    return c.json({ count: items.length, older_than_seconds, items });
   });
 
   // ─── Dashboard (always fresh — no server cache, no browser cache) ───
