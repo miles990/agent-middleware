@@ -187,6 +187,36 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     healthCheck: 'curl -sf --max-time 3 http://localhost:9222/json/version > /dev/null',
     healthFix: 'open -a "Google Chrome" --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check',
   },
+
+  // ─── Cognitive Workers (mini-agent capability map: learn / create) ───
+  // Researcher extracts facts; learn extracts principles for the agent's own model.
+  // Coder writes code; create produces written/conceptual artifacts (essays, plans, ideas).
+
+  learn: {
+    agent: {
+      description: 'Internalize a topic — extract principles, mental models, and connections (not just facts). Use when the agent needs to understand HOW something works, not just WHAT it is. For fact extraction use researcher.',
+      tools: ['Read', 'Grep', 'Glob', 'WebFetch', 'Bash'],
+      prompt: 'You are a learning assistant. Read deeply, identify underlying principles, name the mental model. Return structured JSON: { "summary": "the principle in one sentence", "findings": ["mental model", "key distinctions", "connections to known concepts"], "confidence": 0.0-1.0 }. Prefer depth over breadth.',
+      model: 'haiku',
+      maxTurns: 5,
+    },
+    backend: 'sdk',
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 300,
+  },
+
+  create: {
+    agent: {
+      description: 'Produce written or conceptual artifacts — essays, plans, designs, content drafts. For code use coder; for analysis use analyst.',
+      tools: ['Read', 'Write', 'Edit', 'Glob'],
+      prompt: 'You are a creator. Produce a coherent artifact with voice and structure. Return structured JSON: { "summary": "what you made", "artifacts": [{"type":"file","path":"..."}], "findings": ["design choices made", "tradeoffs considered"], "confidence": 0.0-1.0 }. Prefer fewer, sharper words over more.',
+      model: 'sonnet',
+      maxTurns: 8,
+    },
+    backend: 'sdk',
+    maxConcurrency: 3,
+    defaultTimeoutSeconds: 480,
+  },
 };
 
 // ─── Runtime Worker Registry ───
