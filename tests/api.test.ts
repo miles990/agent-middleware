@@ -305,6 +305,24 @@ describe('Commitments Ledger', () => {
     assert.ok(updated.resolved_at);
   });
 
+  it('GET /commit/:id returns commitment', async () => {
+    const create = await request('/commit', {
+      method: 'POST',
+      body: { source: { channel: 'inner' }, text: 'get-by-id', parsed: { action: 'g' } },
+    });
+    const { id } = await create.json() as { id: string };
+    const res = await request(`/commit/${id}`);
+    assert.equal(res.status, 200);
+    const body = await res.json() as { id: string; text: string };
+    assert.equal(body.id, id);
+    assert.equal(body.text, 'get-by-id');
+  });
+
+  it('GET /commit/:id returns 404 for unknown', async () => {
+    const res = await request('/commit/nonexistent');
+    assert.equal(res.status, 404);
+  });
+
   it('PATCH /commit/:id returns 404 for unknown', async () => {
     const res = await request('/commit/nonexistent', { method: 'PATCH', body: { status: 'cancelled' } });
     assert.equal(res.status, 404);

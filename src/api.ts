@@ -1862,6 +1862,12 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json(cmt);
   });
 
+  app.get('/commit/:id', (c) => {
+    const cmt = mw.commitments.get(c.req.param('id'));
+    if (!cmt) return c.json({ error: 'not_found' }, 404);
+    return c.json(cmt);
+  });
+
   app.patch('/commit/:id', async (c) => {
     const id = c.req.param('id');
     let body: unknown;
