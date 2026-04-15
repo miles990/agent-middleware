@@ -117,6 +117,38 @@ curl -X POST http://localhost:3100/plan \
 └────────────────────────────────────────────────┘
 ```
 
+## Forge (Worktree Isolation)
+
+For workers that mutate git state (primarily `coder`), middleware exposes
+worktree allocation via `/forge/*` endpoints. It shells out to an external
+`forge-lite.sh` script (e.g. mini-agent's) — configure via env:
+
+```bash
+export FORGE_LITE_PATH=/path/to/forge-lite.sh
+```
+
+Without `FORGE_LITE_PATH` set, all `/forge/*` routes return
+`503 { error: "forge_not_configured" }`. Other endpoints unaffected — middleware
+stays pure-infra by default.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/forge/allocate` | POST | Claim a slot, return `{ slot_id, worktree_path, branch }` |
+| `/forge/release/:slot_id` | POST | Release in-use slot (idempotent) |
+| `/forge/list` | GET | All slots + state (free / busy / abandoned) |
+| `/forge/info/:slot_id` | GET | Single-slot detail |
+| `/forge/cleanup` | POST | Reclaim abandoned slots (dead PIDs) |
+
+Example:
+
+```bash
+curl -X POST http://localhost:3200/forge/allocate \
+  -H "Content-Type: application/json" \
+  -H "X-Caller-Pid: $$" \
+  -d '{"purpose":"coder: refactor X"}'
+# → { "slot_id": "forge-1", "worktree_path": "...", "branch": "forge/slot-1-...", ... }
+```
+
 ## License
 
 MIT
