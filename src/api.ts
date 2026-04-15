@@ -1943,8 +1943,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ error: 'forge_error', message: msg }, 500);
   };
 
+  // Forge scope is single-repo (middleware's own cwd). Cross-repo worktree
+  // allocation is deferred to Phase 2; body.repo_path intentionally not accepted
+  // here to avoid silent-ignore surprise.
   app.post('/forge/allocate', async (c) => {
-    let body: { repo_path?: string; purpose?: string; ttl_sec?: number; files?: string; no_install?: boolean } = {};
+    let body: { purpose?: string; ttl_sec?: number; files?: string; no_install?: boolean } = {};
     try { body = await c.req.json(); } catch { /* allow empty body */ }
     const purpose = (body.purpose ?? '').trim();
     if (!purpose) {
