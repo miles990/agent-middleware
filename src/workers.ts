@@ -149,7 +149,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
 
   'web-fetch': {
     agent: {
-      description: 'Fetch web pages/APIs (L0). Fast, no browser needed. For: GET/POST URLs, read HTML/JSON, check HTTP status. Does NOT render JavaScript.',
+      description: 'Fetch web pages/APIs (L0) via shell — pass a curl/wget command string (e.g. `curl -sf https://api.example.com/x`), NOT natural language. Fast, no browser, no JS. For JS-rendered pages use web-browser; for LLM summary use researcher.',
       tools: [],
       prompt: '',
     },
