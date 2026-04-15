@@ -3,7 +3,7 @@
  * Reference: Tanren's createAgentSdkProvider (verified working).
  */
 
-import type { LLMProvider, Prompt } from './llm-provider.js';
+import type { LLMProvider, Prompt, RuntimeOptions } from './llm-provider.js';
 import { promptToText } from './content-adapter.js';
 
 export interface SdkProviderOptions {
@@ -25,7 +25,7 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
   const identityMode = opts?.identityMode ?? 'override';
 
   return {
-    async think(prompt: Prompt, systemPrompt: string): Promise<string> {
+    async think(prompt: Prompt, systemPrompt: string, runtimeOpts?: RuntimeOptions): Promise<string> {
       const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
       const sysOpt = systemPrompt
@@ -42,7 +42,8 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
       for await (const msg of query({
         prompt: promptStr,
         options: {
-          cwd: opts?.cwd ?? process.cwd(),
+          // Precedence: per-call runtimeOpts.cwd > provider-baked opts.cwd > process.cwd()
+          cwd: runtimeOpts?.cwd ?? opts?.cwd ?? process.cwd(),
           allowedTools: opts?.allowedTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
           disallowedTools: opts?.disallowedTools,
           maxTurns: opts?.maxTurns,

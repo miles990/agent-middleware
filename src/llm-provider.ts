@@ -72,12 +72,25 @@ export interface StructuredResponse {
 // Provider Interface
 // =============================================================================
 
+/**
+ * Per-call runtime overrides — lets caller scope a single think() to a specific
+ * filesystem context without rebuilding the provider.
+ *
+ * Today: `cwd` for filesystem-touching backends (sdk, shell). Other providers
+ * ignore unknown fields. Expand carefully — every field here widens the trust
+ * surface for /dispatch callers.
+ */
+export interface RuntimeOptions {
+  /** Absolute workdir for this call. Validated at dispatch boundary (must exist + be directory). */
+  cwd?: string;
+}
+
 export interface LLMProvider {
-  think(prompt: Prompt, systemPrompt: string): Promise<string>;
+  think(prompt: Prompt, systemPrompt: string, opts?: RuntimeOptions): Promise<string>;
   /** Extended: return structured response with multimodal output */
-  thinkStructured?(prompt: Prompt, systemPrompt: string): Promise<StructuredResponse>;
+  thinkStructured?(prompt: Prompt, systemPrompt: string, opts?: RuntimeOptions): Promise<StructuredResponse>;
   /** Streaming: yield partial results as they arrive */
-  thinkStream?(prompt: Prompt, systemPrompt: string): AsyncIterable<StreamChunk>;
+  thinkStream?(prompt: Prompt, systemPrompt: string, opts?: RuntimeOptions): AsyncIterable<StreamChunk>;
 }
 
 /** Chunk emitted during streaming */

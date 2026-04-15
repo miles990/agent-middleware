@@ -43,6 +43,12 @@ export interface PlanStep {
   };
   /** Mechanical verification: shell command that must exit 0 for step to count as completed */
   verifyCommand?: string;
+  /**
+   * Per-step workdir. Absolute path; filesystem-touching backends (sdk, shell)
+   * run in this directory instead of middleware's cwd. Validated at API boundary
+   * (must exist + be a directory). Non-filesystem backends ignore.
+   */
+  cwd?: string;
 }
 
 export interface ActionPlan {
@@ -119,7 +125,12 @@ export interface PlanResult {
   convergenceIterations: number;
 }
 
-export type WorkerExecutor = (worker: string, task: string | import('./llm-provider.js').ContentBlock[], timeoutMs: number) => Promise<string>;
+export type WorkerExecutor = (
+  worker: string,
+  task: string | import('./llm-provider.js').ContentBlock[],
+  timeoutMs: number,
+  opts?: { cwd?: string },
+) => Promise<string>;
 
 // =============================================================================
 // Helpers
@@ -536,7 +547,7 @@ export class PlanEngine {
 
       const stepStart = Date.now();
       try {
-        const output = await this.executor(step.worker, task, timeoutMs);
+        const output = await this.executor(step.worker, task, timeoutMs, step.cwd ? { cwd: step.cwd } : undefined);
 
         // Mechanical verification: run verifyCommand if defined (async — won't block event loop)
         if (step.verifyCommand) {

@@ -79,6 +79,70 @@ describe('Dispatch', () => {
     assert.ok(body.taskId);
     assert.equal(body.status, 'running');
   });
+
+  it('POST /dispatch rejects relative cwd', async () => {
+    const res = await request('/dispatch', { method: 'POST', body: { worker: 'shell', task: 'echo x', cwd: 'relative/path' } });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: string };
+    assert.ok(body.error.includes('absolute'));
+  });
+
+  it('POST /dispatch rejects nonexistent cwd', async () => {
+    const res = await request('/dispatch', { method: 'POST', body: { worker: 'shell', task: 'echo x', cwd: '/tmp/does-not-exist-9f8e7d' } });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: string };
+    assert.ok(body.error.includes('does not exist'));
+  });
+
+  it('POST /dispatch rejects cwd that is a file not directory', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tmpFile = path.join(os.tmpdir(), `mw-cwd-file-${Date.now()}`);
+    fs.writeFileSync(tmpFile, 'x');
+    try {
+      const res = await request('/dispatch', { method: 'POST', body: { worker: 'shell', task: 'echo x', cwd: tmpFile } });
+      assert.equal(res.status, 400);
+      const body = await res.json() as { error: string };
+      assert.ok(body.error.includes('not a directory'));
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  it('POST /dispatch executes shell in caller-supplied cwd (wait mode)', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mw-cwd-ok-'));
+    const marker = path.join(tmpDir, 'marker.txt');
+    fs.writeFileSync(marker, 'hello-from-cwd');
+    try {
+      const res = await request('/dispatch?wait=true', { method: 'POST', body: { worker: 'shell', task: 'cat marker.txt', cwd: tmpDir } });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { status: string; result: string };
+      assert.equal(body.status, 'completed');
+      assert.ok(body.result.includes('hello-from-cwd'), `expected result to include marker content, got: ${body.result}`);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Plan cwd validation', () => {
+  it('POST /plan rejects step with invalid cwd', async () => {
+    const res = await request('/plan', {
+      method: 'POST',
+      body: {
+        goal: 'test',
+        steps: [{ id: 's1', worker: 'shell', task: 'echo x', dependsOn: [], cwd: '/tmp/does-not-exist-8e7d6c' }],
+      },
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: string; errors: Array<{ stepId: string; error: string }> };
+    assert.equal(body.error, 'cwd_validation_failed');
+    assert.equal(body.errors[0].stepId, 's1');
+  });
 });
 
 describe('Plan', () => {

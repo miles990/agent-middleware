@@ -134,10 +134,17 @@ export function createMiddleware(config?: MiddlewareConfig) {
     return `${base}\n\n<skills>\n${def.skills.join('\n---\n')}\n</skills>`;
   };
 
-  // Worker executor — routes to correct backend (built-in + custom), supports multimodal
-  const executeWorker = async (worker: string, task: string | import('./llm-provider.js').ContentBlock[], timeoutMs: number): Promise<string> => {
+  // Worker executor — routes to correct backend (built-in + custom), supports multimodal.
+  // opts.cwd: per-task workdir override (validated at /dispatch + /plan boundary).
+  const executeWorker = async (
+    worker: string,
+    task: string | import('./llm-provider.js').ContentBlock[],
+    timeoutMs: number,
+    opts?: { cwd?: string },
+  ): Promise<string> => {
     const def = allWorkers()[worker];
     if (!def) throw new Error(`Unknown worker: ${worker}`);
+    const taskCwd = opts?.cwd;
 
     switch (def.backend) {
       case 'sdk': {
@@ -148,7 +155,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
         const maxTurns = def.agent.maxTurns ?? 10;
         const safetyTimeout = Math.max(timeoutMs, maxTurns * 120_000);
         return Promise.race([
-          provider.think(task, composePrompt(def)),
+          provider.think(task, composePrompt(def), taskCwd ? { cwd: taskCwd } : undefined),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error(`Worker ${worker} timeout after ${safetyTimeout}ms (maxTurns=${maxTurns})`)), safetyTimeout),
           ),
@@ -239,7 +246,9 @@ export function createMiddleware(config?: MiddlewareConfig) {
           }
         }
 
-        // Legacy string mode — preserved for backward compatibility
+        // Legacy string mode — preserved for backward compatibility.
+        // taskCwd overrides middleware root cwd (validated at dispatch boundary).
+        const execCwd = taskCwd ?? cwd;
         try {
           const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
           if (def.shellAllowlist?.length) {
@@ -248,7 +257,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
             if (!def.shellAllowlist.some(a => cmdBase === a || cmdBase.endsWith(`/${a}`))) {
               throw new Error(`Shell command "${cmdBase}" not in allowlist: ${def.shellAllowlist.join(', ')}`);
             }
-            return execFileSync(cmdBase, parts.slice(1), { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
+            return execFileSync(cmdBase, parts.slice(1), { cwd: execCwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
           }
           // No allowlist → trusted agent, full shell features
           // Explicit `shell: '/bin/bash'` — more forgiving than default /bin/sh for
@@ -257,7 +266,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
           // common patterns (e.g. `[[ ]]`, `<(...)`) that agents assume work.
           // Store FULL result — no truncation. Template substitution caps at 4K for LLM safety.
           // Agent can access full result via GET /status/:stepId
-          return execSync(shellCmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024, shell: '/bin/bash' });
+          return execSync(shellCmd, { cwd: execCwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024, shell: '/bin/bash' });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           throw new Error(`Shell error: ${msg.slice(0, 500)}`);
@@ -553,6 +562,21 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   // Helper: all workers (built-in + custom)
   const mergedWorkerNames = () => [...getWorkerNames(), ...Array.from(mw.customWorkers.keys())];
 
+  // Validate caller-supplied per-task cwd. Returns null on ok, error string on reject.
+  // Trust model: API is auth-gated (MIDDLEWARE_API_KEY), so caller is trusted. These
+  // checks catch typos + obvious misuse, not hostile attackers.
+  const validateTaskCwd = (cwd: string): string | null => {
+    if (typeof cwd !== 'string' || !cwd) return 'cwd must be a non-empty string';
+    if (!path.isAbsolute(cwd)) return `cwd must be absolute path: ${cwd}`;
+    try {
+      const st = fs.statSync(cwd);
+      if (!st.isDirectory()) return `cwd is not a directory: ${cwd}`;
+    } catch {
+      return `cwd does not exist: ${cwd}`;
+    }
+    return null;
+  };
+
   // Webhook callback — fire-and-forget POST to caller's endpoint on events
   const sendCallback = (url: string, from: string, event: { type: string; id: string; status: string; result?: unknown; error?: string }) => {
     const text = event.type === 'task.completed'
@@ -718,9 +742,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   });
 
   // POST /dispatch — single task (supports multimodal)
-  // Body: { worker, task, timeout?, caller? }
+  // Body: { worker, task, timeout?, caller?, cwd? }
   //   task: string (text only) OR ContentBlock[] (multimodal)
   //   ContentBlock: { type: 'text', text } | { type: 'image', source: { type, mediaType, data } } | { type: 'file', path, mediaType? }
+  //   cwd: absolute directory path — scopes this task's filesystem access (sdk/shell backends).
+  //        Must exist + be a directory. Caller owns lifecycle (create before, cleanup after).
   app.post('/dispatch', async (c) => {
     const body = await c.req.json<{
       worker: string;
@@ -730,12 +756,17 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       callback?: string;       // webhook URL — POST event on completion/failure
       callbackFrom?: string;   // "from" field in callback payload (default: "middleware")
       wait?: boolean;          // block until task complete
+      cwd?: string;            // per-task workdir (see validateTaskCwd)
     }>();
     const waitMode = body.wait || c.req.query('wait') === 'true';
     if (!body.worker || !body.task) return c.json({ error: 'worker and task required' }, 400);
 
     const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
     if (!allW[body.worker]) return c.json({ error: `Unknown worker: ${body.worker}` }, 400);
+
+    // Validate caller-supplied cwd before spending a taskId / starting work.
+    const cwdErr = body.cwd !== undefined ? validateTaskCwd(body.cwd) : null;
+    if (cwdErr) return c.json({ error: cwdErr }, 400);
 
     const def = allW[body.worker];
     const timeoutMs = (body.timeout ?? def.defaultTimeoutSeconds) * 1000;
@@ -745,7 +776,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     const cb = body.callback;
     const cbFrom = body.callbackFrom ?? 'middleware';
-    const execPromise = mw.executeWorker(body.worker, body.task, timeoutMs)
+    const execPromise = mw.executeWorker(body.worker, body.task, timeoutMs, body.cwd ? { cwd: body.cwd } : undefined)
       .then(result => {
         mw.buffer.complete(taskId, result);
         if (cb) sendCallback(cb, cbFrom, { type: 'task.completed', id: taskId, status: 'completed', result });
@@ -780,6 +811,16 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // Validate
     const errors = mw.planEngine.validate(plan, new Set(mergedWorkerNames()));
     if (errors.length > 0) return c.json({ error: 'validation_failed', errors }, 400);
+
+    // Validate per-step cwd (if any). Reject whole plan if any step's cwd is invalid.
+    const cwdErrors: Array<{ stepId: string; error: string }> = [];
+    for (const step of plan.steps) {
+      if (step.cwd !== undefined) {
+        const err = validateTaskCwd(step.cwd);
+        if (err) cwdErrors.push({ stepId: step.id, error: err });
+      }
+    }
+    if (cwdErrors.length > 0) return c.json({ error: 'cwd_validation_failed', errors: cwdErrors }, 400);
 
     const planId = `plan-${Date.now()}-${(mw.planCounter++).toString(36)}`;
 
