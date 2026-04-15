@@ -33,6 +33,8 @@ import { PLAN_TEMPLATES } from './templates.js';
 import { execSync, execFileSync } from 'node:child_process';
 import { brainPlan, type WorkerInfo } from './brain.js';
 import { openStore as openCommitmentStore, validateInput as validateCommitmentInput, type CommitmentStatus, type CommitmentChannel, type CommitmentOwner, type CommitmentPatch } from './commitment-ledger.js';
+import * as forgeClient from './forge-client.js';
+import { ForgeError } from './forge-client.js';
 
 // Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
 const API_KEY = process.env.MIDDLEWARE_API_KEY;
@@ -566,6 +568,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.use('/commit/*', authMiddleware as never);
   app.use('/commits', authMiddleware as never);
   app.use('/commits/*', authMiddleware as never);
+  app.use('/forge', authMiddleware as never);
+  app.use('/forge/*', authMiddleware as never);
 
   // Helper: all workers (built-in + custom)
   const mergedWorkerNames = () => [...getWorkerNames(), ...Array.from(mw.customWorkers.keys())];
@@ -1910,6 +1914,93 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const status = c.req.query('status') as CommitmentStatus | undefined;
     const items = mw.commitments.stale({ older_than_seconds, status });
     return c.json({ count: items.length, older_than_seconds, items });
+  });
+
+  // ─── Forge worktree endpoints (W7) ───
+  // Shell out to mini-agent's forge-lite.sh via FORGE_LITE_PATH env var.
+  // If unset, all routes return 503 { error: "forge_not_configured" }.
+  const forgeErrorResponse = (c: {
+    json: (body: unknown, status: number) => Response;
+  }, err: unknown): Response => {
+    if (err instanceof ForgeError) {
+      if (err.code === 'FORGE_NOT_CONFIGURED') {
+        return c.json({ error: 'forge_not_configured' }, 503);
+      }
+      if (err.code === 'NO_FREE_SLOT') {
+        let inUse: string[] = [];
+        try { inUse = err.stderr ? JSON.parse(err.stderr) : []; } catch { /* ignore */ }
+        return c.json({ error: 'no_free_slot', in_use: inUse }, 503);
+      }
+      if (err.code === 'NOT_FOUND') {
+        return c.json({ error: 'not_found', message: err.message }, 404);
+      }
+      if (err.code === 'INVALID_SLOT_ID') {
+        return c.json({ error: 'invalid_slot_id', message: err.message }, 400);
+      }
+      return c.json({ error: 'forge_error', message: err.message, stderr: err.stderr }, 500);
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: 'forge_error', message: msg }, 500);
+  };
+
+  app.post('/forge/allocate', async (c) => {
+    let body: { repo_path?: string; purpose?: string; ttl_sec?: number; files?: string; no_install?: boolean } = {};
+    try { body = await c.req.json(); } catch { /* allow empty body */ }
+    const purpose = (body.purpose ?? '').trim();
+    if (!purpose) {
+      return c.json({ error: 'purpose is required' }, 400);
+    }
+    const pidHeader = c.req.header('X-Caller-Pid');
+    const callerPid = pidHeader ? Number.parseInt(pidHeader, 10) : 0;
+    try {
+      const result = await forgeClient.allocate({
+        purpose,
+        callerPid: Number.isFinite(callerPid) ? callerPid : 0,
+        files: body.files,
+        noInstall: body.no_install,
+      });
+      return c.json(result);
+    } catch (err) {
+      return forgeErrorResponse(c, err);
+    }
+  });
+
+  app.post('/forge/release/:slot_id', async (c) => {
+    const slotId = c.req.param('slot_id');
+    try {
+      const result = await forgeClient.release(slotId);
+      return c.json(result);
+    } catch (err) {
+      return forgeErrorResponse(c, err);
+    }
+  });
+
+  app.get('/forge/list', async (c) => {
+    try {
+      const result = await forgeClient.list();
+      return c.json(result);
+    } catch (err) {
+      return forgeErrorResponse(c, err);
+    }
+  });
+
+  app.get('/forge/info/:slot_id', async (c) => {
+    const slotId = c.req.param('slot_id');
+    try {
+      const result = await forgeClient.info(slotId);
+      return c.json(result);
+    } catch (err) {
+      return forgeErrorResponse(c, err);
+    }
+  });
+
+  app.post('/forge/cleanup', async (c) => {
+    try {
+      const result = await forgeClient.cleanup();
+      return c.json(result);
+    } catch (err) {
+      return forgeErrorResponse(c, err);
+    }
   });
 
   // ─── Dashboard (always fresh — no server cache, no browser cache) ───
