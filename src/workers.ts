@@ -217,6 +217,32 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     maxConcurrency: 3,
     defaultTimeoutSeconds: 480,
   },
+
+  planner: {
+    agent: {
+      description: 'Decompose a goal into an executable DAG of nodes (id / worker / task / dependsOn / acceptance). For architecture / strategy use analyst; for actual execution submit the plan back via /plan.',
+      tools: ['Read', 'Grep', 'Glob', 'WebFetch'],
+      prompt: 'You are a planner. Given a goal, produce a DAG plan. Nodes: { id, worker, task, dependsOn?, acceptance }. Keep nodes atomic and parallel where possible. Use `acceptance` (convergence condition) not time estimates. Return structured JSON: { "summary": "...", "artifacts": [{"type":"plan","nodes":[...]}], "findings": ["assumptions made", "risks"], "confidence": 0.0-1.0 }.',
+      model: 'sonnet',
+      maxTurns: 10,
+    },
+    backend: 'sdk',
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 240,
+  },
+
+  debugger: {
+    agent: {
+      description: 'Investigate a bug or failure — form hypotheses, gather evidence, find root cause. For writing fixes use coder; for code review use reviewer.',
+      tools: ['Read', 'Grep', 'Glob', 'Bash'],
+      prompt: 'You are a debugger. Start from the symptom, form ranked hypotheses, gather evidence (logs, repro, file reads), converge on root cause. Do not patch — report the cause. Return structured JSON: { "summary": "root cause in one sentence", "findings": ["hypothesis tested", "evidence", "ruled-out paths"], "artifacts": [{"type":"file","path":"..."}], "confidence": 0.0-1.0 }.',
+      model: 'sonnet',
+      maxTurns: 12,
+    },
+    backend: 'sdk',
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 300,
+  },
 };
 
 // ─── Runtime Worker Registry ───
