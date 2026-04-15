@@ -32,7 +32,7 @@ import type { LLMProvider } from './llm-provider.js';
 import { PLAN_TEMPLATES } from './templates.js';
 import { execSync, execFileSync } from 'node:child_process';
 import { brainPlan, type WorkerInfo } from './brain.js';
-import { openStore as openCommitmentStore, validateInput as validateCommitmentInput, type CommitmentStatus, type CommitmentChannel, type CommitmentPatch } from './commitment-ledger.js';
+import { openStore as openCommitmentStore, validateInput as validateCommitmentInput, type CommitmentStatus, type CommitmentChannel, type CommitmentOwner, type CommitmentPatch } from './commitment-ledger.js';
 
 // Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
 const API_KEY = process.env.MIDDLEWARE_API_KEY;
@@ -1889,8 +1889,9 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
   app.get('/commits', (c) => {
     const status = c.req.query('status') as CommitmentStatus | undefined;
-    const channel = c.req.query('source.channel') as CommitmentChannel | undefined;
-    const items = mw.commitments.query({ status, channel });
+    const channel = (c.req.query('channel') ?? c.req.query('source.channel')) as CommitmentChannel | undefined;
+    const owner = c.req.query('owner') as CommitmentOwner | undefined;
+    const items = mw.commitments.query({ status, channel, owner });
     return c.json({ count: items.length, items });
   });
 

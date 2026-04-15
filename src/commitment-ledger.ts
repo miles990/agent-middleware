@@ -11,6 +11,8 @@ import * as path from 'node:path';
 export type CommitmentChannel = 'room' | 'inner' | 'delegate' | 'user-prompt';
 export type CommitmentStatus = 'active' | 'fulfilled' | 'superseded' | 'cancelled';
 export type CommitmentResolutionKind = 'commit' | 'chat' | 'task-close' | 'supersede' | 'cancel';
+export type CommitmentOwner = string;
+const OWNER_MAX = 64;
 
 export interface CommitmentSource {
   channel: CommitmentChannel;
@@ -32,9 +34,11 @@ export interface CommitmentResolution {
 export interface Commitment {
   id: string;
   created_at: string;
+  owner?: CommitmentOwner;
   source: CommitmentSource;
   text: string;
   parsed: CommitmentParsed;
+  acceptance?: string;
   status: CommitmentStatus;
   linked_task_id?: string;
   linked_dag_id?: string;
@@ -43,9 +47,11 @@ export interface Commitment {
 }
 
 export interface CommitmentInput {
+  owner?: CommitmentOwner;
   source: CommitmentSource;
   text: string;
   parsed: CommitmentParsed;
+  acceptance?: string;
   linked_task_id?: string;
   linked_dag_id?: string;
 }
@@ -76,9 +82,17 @@ export function validateInput(input: unknown): { ok: true; value: CommitmentInpu
   if (!i.parsed || typeof i.parsed !== 'object') return { ok: false, error: 'parsed required' };
   const p = i.parsed as Record<string, unknown>;
   if (typeof p.action !== 'string' || !p.action) return { ok: false, error: 'parsed.action required' };
+  if (i.owner !== undefined) {
+    if (typeof i.owner !== 'string' || !i.owner) return { ok: false, error: 'owner must be non-empty string' };
+    if (i.owner.length > OWNER_MAX) return { ok: false, error: `owner exceeds max length ${OWNER_MAX}` };
+  }
+  if (i.acceptance !== undefined && typeof i.acceptance !== 'string') {
+    return { ok: false, error: 'acceptance must be string' };
+  }
   return {
     ok: true,
     value: {
+      owner: i.owner as CommitmentOwner | undefined,
       source: {
         channel: src.channel as CommitmentChannel,
         message_id: typeof src.message_id === 'string' ? src.message_id : undefined,
@@ -90,6 +104,7 @@ export function validateInput(input: unknown): { ok: true; value: CommitmentInpu
         deadline: typeof p.deadline === 'string' ? p.deadline : undefined,
         to: typeof p.to === 'string' ? p.to : undefined,
       },
+      acceptance: typeof i.acceptance === 'string' ? i.acceptance : undefined,
       linked_task_id: typeof i.linked_task_id === 'string' ? i.linked_task_id : undefined,
       linked_dag_id: typeof i.linked_dag_id === 'string' ? i.linked_dag_id : undefined,
     },
@@ -100,9 +115,11 @@ export function createCommitment(input: CommitmentInput): Commitment {
   return {
     id: newId(),
     created_at: new Date().toISOString(),
+    owner: input.owner,
     source: input.source,
     text: input.text,
     parsed: input.parsed,
+    acceptance: input.acceptance,
     status: 'active',
     linked_task_id: input.linked_task_id,
     linked_dag_id: input.linked_dag_id,
@@ -127,7 +144,7 @@ export interface CommitmentStore {
   create(input: CommitmentInput): Commitment;
   patch(id: string, p: CommitmentPatch): Commitment | null;
   get(id: string): Commitment | undefined;
-  query(filter: { status?: CommitmentStatus; channel?: CommitmentChannel }): Commitment[];
+  query(filter: { status?: CommitmentStatus; channel?: CommitmentChannel; owner?: CommitmentOwner }): Commitment[];
   stale(opts: { older_than_seconds: number; status?: CommitmentStatus }): Commitment[];
   all(): Commitment[];
 }
@@ -173,6 +190,7 @@ export function openStore(cwd: string): CommitmentStore {
       for (const c of map.values()) {
         if (filter.status && c.status !== filter.status) continue;
         if (filter.channel && c.source.channel !== filter.channel) continue;
+        if (filter.owner && c.owner !== filter.owner) continue;
         out.push(c);
       }
       return out.sort((a, b) => a.created_at.localeCompare(b.created_at));

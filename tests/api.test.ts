@@ -310,6 +310,49 @@ describe('Commitments Ledger', () => {
     assert.equal(res.status, 404);
   });
 
+  it('POST /commit accepts owner + acceptance', async () => {
+    const res = await request('/commit', {
+      method: 'POST',
+      body: {
+        owner: 'kuro',
+        source: { channel: 'inner', cycle_id: 'c-100' },
+        text: 'ship X',
+        parsed: { action: 'X' },
+        acceptance: 'tests pass + diff merged',
+      },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { id: string; owner: string; acceptance: string };
+    assert.equal(body.owner, 'kuro');
+    assert.equal(body.acceptance, 'tests pass + diff merged');
+  });
+
+  it('POST /commit rejects empty owner string', async () => {
+    const res = await request('/commit', {
+      method: 'POST',
+      body: { owner: '', source: { channel: 'inner' }, text: 'x', parsed: { action: 'x' } },
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('POST /commit accepts arbitrary owner string (generic infra)', async () => {
+    const res = await request('/commit', {
+      method: 'POST',
+      body: { owner: 'akari', source: { channel: 'inner' }, text: 'x', parsed: { action: 'x' } },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { owner: string };
+    assert.equal(body.owner, 'akari');
+  });
+
+  it('GET /commits filters by owner', async () => {
+    const res = await request('/commits?owner=kuro');
+    assert.equal(res.status, 200);
+    const body = await res.json() as { count: number; items: Array<{ owner: string }> };
+    assert.ok(body.count >= 1);
+    for (const c of body.items) assert.equal(c.owner, 'kuro');
+  });
+
   it('GET /commits/stale finds aged active commitments', async () => {
     const res = await request('/commits/stale?older_than_seconds=0');
     assert.equal(res.status, 200);
