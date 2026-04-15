@@ -176,6 +176,13 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
 .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--cyan)}
 .fg textarea{resize:vertical;min-height:60px}
 .modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.fg-adv{margin:8px 0;border:1px solid var(--b1);border-radius:6px;padding:6px 10px;background:var(--s2)}
+.fg-adv summary{font-family:var(--mono);font-size:10px;color:var(--t4);letter-spacing:.5px;cursor:pointer;padding:2px 0;text-transform:uppercase}
+.fg-adv summary code{font-size:9px;color:var(--cyan);background:var(--s1);padding:1px 4px;border-radius:3px;text-transform:none}
+.fg-adv[open]{padding-bottom:10px}
+.fg-adv[data-be]{display:none}
+.fg-adv[data-be].show{display:block}
+.fg-adv > textarea,.fg-adv > input{width:100%;padding:8px 10px;background:var(--s1);border:1px solid var(--b1);border-radius:6px;color:var(--t1);font-family:var(--mono);font-size:12px;outline:none;margin-top:6px}
 </style>
 </head>
 <body>
@@ -254,13 +261,44 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
   <div class="modal">
     <h2 id="wmT">Add Worker</h2>
     <div class="fg"><label>Name</label><input id="wmN" placeholder="translator"></div>
-    <div class="fg"><label>Backend</label><select id="wmB"><option value="sdk">SDK</option><option value="acp">ACP</option><option value="shell">Shell</option><option value="webhook">Webhook</option><option value="logic">Logic</option><option value="middleware">Middleware</option></select></div>
+    <div class="fg"><label>Backend</label><select id="wmB" onchange="wmShowBackend(this.value)"><option value="sdk">SDK</option><option value="acp">ACP</option><option value="shell">Shell</option><option value="webhook">Webhook</option><option value="logic">Logic</option><option value="middleware">Middleware</option></select></div>
     <div class="fg"><label>Vendor</label><select id="wmV"><option value="anthropic">Anthropic</option><option value="anthropic-managed">Managed</option><option value="openai">OpenAI</option><option value="google">Google</option><option value="local">Local</option></select></div>
     <div class="fg"><label>Model</label><select id="wmM"><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></select></div>
     <div class="fg"><label>Description</label><textarea id="wmD" placeholder="When to use..."></textarea></div>
     <div class="fg"><label>Prompt</label><textarea id="wmP" placeholder="You are a..."></textarea></div>
     <div class="fg"><label>Tools</label><input id="wmTo" placeholder="Read, Grep, Glob, Bash"></div>
-    <div class="fg"><label>Timeout (s)</label><input id="wmTi" type="number" value="120"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+      <div class="fg"><label>Timeout (s)</label><input id="wmTi" type="number" value="120"></div>
+      <div class="fg"><label>MaxTurns</label><input id="wmMt" type="number" placeholder="10"></div>
+      <div class="fg"><label>Concurrency</label><input id="wmCc" type="number" placeholder="auto"></div>
+      <div class="fg"><label>Budget USD</label><input id="wmBu" type="number" step="0.5" placeholder="5"></div>
+    </div>
+    <details class="fg-adv"><summary>Skills (markdown blocks, separate with <code>---</code>)</summary>
+      <textarea id="wmSk" placeholder="# Skill 1&#10;You are good at X.&#10;---&#10;# Skill 2&#10;Always do Y." style="min-height:80px;font-family:var(--mono)"></textarea>
+    </details>
+    <details class="fg-adv"><summary>MCP Servers (JSON object: <code>{name: {command, args, env}}</code>)</summary>
+      <textarea id="wmMcp" placeholder='{"sqlite":{"command":"mcp-server-sqlite","args":["--db","data.db"]}}' style="min-height:80px;font-family:var(--mono)"></textarea>
+    </details>
+    <details class="fg-adv"><summary>Health</summary>
+      <div class="fg"><label>Health Check (shell, exit 0 = healthy)</label><input id="wmHc" placeholder="curl -sf http://localhost:8080/health"></div>
+      <div class="fg"><label>Health Fix (shell or instruction)</label><input id="wmHf" placeholder="systemctl restart svc"></div>
+    </details>
+    <details class="fg-adv" data-be="shell"><summary>Shell Allowlist (csv, empty = allow all)</summary>
+      <input id="wmSa" placeholder="git, curl, jq">
+    </details>
+    <details class="fg-adv" data-be="acp"><summary>ACP</summary>
+      <div class="fg"><label>ACP Command</label><input id="wmAc" placeholder="claude / kiro-cli / codex"></div>
+    </details>
+    <details class="fg-adv" data-be="middleware"><summary>Middleware</summary>
+      <div class="fg"><label>Upstream URL</label><input id="wmMu" placeholder="http://upstream:3200"></div>
+      <div class="fg"><label>Upstream Worker</label><input id="wmMw" placeholder="researcher"></div>
+    </details>
+    <details class="fg-adv" data-be="webhook"><summary>Webhook (JSON: <code>{url, method, headers, bodyTemplate, resultPath}</code>)</summary>
+      <textarea id="wmWh" placeholder='{"url":"https://api.example.com/x","method":"POST","bodyTemplate":"{\"q\":{{input}}}","resultPath":"data.result"}' style="min-height:80px;font-family:var(--mono)"></textarea>
+    </details>
+    <details class="fg-adv" data-be="logic"><summary>Logic Function (JS body, receives <code>input</code> + <code>context</code>)</summary>
+      <textarea id="wmLf" placeholder="return { summary: input.toUpperCase() };" style="min-height:80px;font-family:var(--mono)"></textarea>
+    </details>
     <div class="modal-foot">
       <button class="btn" id="wmDel" onclick="delW()" style="display:none;color:var(--red);border-color:var(--red)">Delete</button>
       <div style="flex:1"></div>
@@ -491,10 +529,32 @@ function renderAch(items){
 }
 
 // ═══ Worker Modal ═══
-function openWM(){editW=null;$('wmT').textContent='Add Worker';['wmN','wmD','wmP'].forEach(id=>$(id).value='');$('wmN').disabled=false;$('wmTo').value='Read, Grep, Glob, Bash';$('wmTi').value='120';$('wmDel').style.display='none';$('mWM').classList.add('on')}
-function editWM(n){editW=n;const w=W[n];$('wmT').textContent='Edit: '+n;$('wmN').value=n;$('wmN').disabled=true;$('wmB').value=w.backend||'sdk';$('wmV').value=w.vendor||'anthropic';$('wmM').value=w.model||'sonnet';$('wmD').value=w.description||'';$('wmP').value=w.prompt||'';$('wmTo').value=(w.tools||[]).join(', ');$('wmTi').value=w.timeout||120;$('wmDel').style.display=w.builtin===false?'block':'none';$('mWM').classList.add('on')}
+const WM_FIELDS=['wmN','wmD','wmP','wmSk','wmMcp','wmHc','wmHf','wmSa','wmAc','wmMu','wmMw','wmWh','wmLf','wmMt','wmCc','wmBu'];
+function wmShowBackend(b){document.querySelectorAll('.fg-adv[data-be]').forEach(el=>{el.classList.toggle('show',el.dataset.be===b)})}
+function openWM(){editW=null;$('wmT').textContent='Add Worker';WM_FIELDS.forEach(id=>$(id).value='');$('wmN').disabled=false;$('wmB').value='sdk';$('wmV').value='anthropic';$('wmM').value='sonnet';$('wmTo').value='Read, Grep, Glob, Bash';$('wmTi').value='120';$('wmDel').style.display='none';wmShowBackend('sdk');$('mWM').classList.add('on')}
+function editWM(n){editW=n;const w=W[n];$('wmT').textContent='Edit: '+n;$('wmN').value=n;$('wmN').disabled=true;$('wmB').value=w.backend||'sdk';$('wmV').value=w.vendor||'anthropic';$('wmM').value=w.model||'sonnet';$('wmD').value=w.description||'';$('wmP').value=w.prompt||'';$('wmTo').value=(w.tools||[]).join(', ');$('wmTi').value=w.timeout||120;$('wmMt').value=w.maxTurns||'';$('wmCc').value=w.maxConcurrency||'';$('wmBu').value=w.maxBudgetUsd||'';$('wmSk').value=(w.skills||[]).join('\n---\n');$('wmMcp').value=w.mcpServers?JSON.stringify(w.mcpServers,null,2):'';$('wmHc').value=w.healthCheck||'';$('wmHf').value=w.healthFix||'';$('wmSa').value=(w.shellAllowlist||[]).join(', ');$('wmAc').value=w.acpCommand||'';$('wmMu').value=w.middlewareUrl||'';$('wmMw').value=w.middlewareWorker||'';$('wmWh').value=w.webhook?JSON.stringify(w.webhook,null,2):'';$('wmLf').value=w.logicFn||'';$('wmDel').style.display=w.builtin===false?'block':'none';wmShowBackend(w.backend||'sdk');$('mWM').classList.add('on')}
 function closeM(id){$(id).classList.remove('on')}
-async function saveW(){const d={name:$('wmN').value.trim(),backend:$('wmB').value,vendor:$('wmV').value,model:$('wmM').value,description:$('wmD').value,prompt:$('wmP').value,tools:$('wmTo').value.split(',').map(s=>s.trim()).filter(Boolean),timeout:parseInt($('wmTi').value)||120};if(!d.name)return;const url=editW?`${API}/workers/${d.name}`:`${API}/workers`;const r=await(await fetch(url,{method:editW?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})).json();if(r.error){alert(r.error);return}await loadW();closeM('mWM')}
+function wmParseJson(id,label){const v=$(id).value.trim();if(!v)return undefined;try{return JSON.parse(v)}catch(e){throw new Error(`${label} JSON invalid: ${e.message}`)}}
+async function saveW(){
+  const name=$('wmN').value.trim();if(!name)return;
+  const d={name,backend:$('wmB').value,vendor:$('wmV').value,model:$('wmM').value,description:$('wmD').value,prompt:$('wmP').value,tools:$('wmTo').value.split(',').map(s=>s.trim()).filter(Boolean),timeout:parseInt($('wmTi').value)||120};
+  const mt=parseInt($('wmMt').value);if(!isNaN(mt))d.maxTurns=mt;
+  const cc=parseInt($('wmCc').value);if(!isNaN(cc))d.maxConcurrency=cc;
+  const bu=parseFloat($('wmBu').value);if(!isNaN(bu))d.maxBudgetUsd=bu;
+  const sk=$('wmSk').value.trim();if(sk)d.skills=sk.split(/\n---\n/).map(s=>s.trim()).filter(Boolean);
+  const hc=$('wmHc').value.trim();if(hc)d.healthCheck=hc;
+  const hf=$('wmHf').value.trim();if(hf)d.healthFix=hf;
+  const sa=$('wmSa').value.split(',').map(s=>s.trim()).filter(Boolean);if(sa.length)d.shellAllowlist=sa;
+  const ac=$('wmAc').value.trim();if(ac)d.acpCommand=ac;
+  const mu=$('wmMu').value.trim();if(mu)d.middlewareUrl=mu;
+  const mw=$('wmMw').value.trim();if(mw)d.middlewareWorker=mw;
+  const lf=$('wmLf').value;if(lf.trim())d.logicFn=lf;
+  try{const m=wmParseJson('wmMcp','MCP Servers');if(m)d.mcpServers=m;const wh=wmParseJson('wmWh','Webhook');if(wh)d.webhook=wh}catch(e){alert(e.message);return}
+  const url=editW?`${API}/workers/${d.name}`:`${API}/workers`;
+  const r=await(await fetch(url,{method:editW?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})).json();
+  if(r.error){alert(r.error);return}
+  await loadW();closeM('mWM')
+}
 async function delW(){if(!editW||!confirm('Delete "'+editW+'"?'))return;await fetch(`${API}/workers/${editW}`,{method:'DELETE'});await loadW();closeM('mWM')}
 
 // ═══ Backend Modal ═══

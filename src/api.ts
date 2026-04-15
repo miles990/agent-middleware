@@ -1273,12 +1273,18 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       maxTurns: def.agent.maxTurns,
       timeout: def.defaultTimeoutSeconds,
       maxConcurrency: def.maxConcurrency,
+      maxBudgetUsd: def.maxBudgetUsd,
       builtin,
-      ...(def.mcpServers ? { mcpServers: Object.keys(def.mcpServers) } : {}),
+      ...(def.acpCommand ? { acpCommand: def.acpCommand } : {}),
+      ...(def.middlewareUrl ? { middlewareUrl: def.middlewareUrl } : {}),
+      ...(def.middlewareWorker ? { middlewareWorker: def.middlewareWorker } : {}),
+      ...(def.mcpServers ? { mcpServers: def.mcpServers, mcpServerNames: Object.keys(def.mcpServers) } : {}),
       ...(def.skills?.length ? { skills: def.skills } : {}),
       ...(def.shellAllowlist?.length ? { shellAllowlist: def.shellAllowlist } : {}),
-      ...(def.webhook ? { webhook: { url: def.webhook.url, method: def.webhook.method ?? 'GET' } } : {}),
-      ...(def.logicFn ? { hasLogicFn: true } : {}),
+      ...(def.webhook ? { webhook: def.webhook } : {}),
+      ...(def.logicFn ? { logicFn: def.logicFn, hasLogicFn: true } : {}),
+      ...(def.healthCheck ? { healthCheck: def.healthCheck } : {}),
+      ...(def.healthFix ? { healthFix: def.healthFix } : {}),
     });
     const all = [
       ...Object.entries(WORKERS).map(([name, def]) => serialize(name, def, true)),
@@ -1316,9 +1322,14 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       name: string; backend?: string; model?: string; vendor?: string;
       description?: string; prompt?: string; tools?: string[];
       maxTurns?: number; timeout?: number;
+      maxConcurrency?: number; maxBudgetUsd?: number;
+      acpCommand?: string;
+      middlewareUrl?: string; middlewareWorker?: string;
       webhook?: { url: string; method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers?: Record<string, string>; bodyTemplate?: string; resultPath?: string };
       logicFn?: string;
-      mcpServers?: Record<string, unknown>; skills?: string[]; healthCheck?: string;
+      shellAllowlist?: string[];
+      mcpServers?: Record<string, unknown>; skills?: string[];
+      healthCheck?: string; healthFix?: string;
     }>();
     if (!body.name) return c.json({ error: 'name required' }, 400);
     if (WORKERS[body.name]) return c.json({ error: 'cannot override built-in worker' }, 400);
@@ -1334,11 +1345,18 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       backend: (body.backend ?? 'sdk') as WorkerDefinition['backend'],
       vendor: (body.vendor ?? 'anthropic') as WorkerDefinition['vendor'],
       defaultTimeoutSeconds: body.timeout ?? 120,
+      ...(body.maxConcurrency != null ? { maxConcurrency: body.maxConcurrency } : {}),
+      ...(body.maxBudgetUsd != null ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
+      ...(body.acpCommand ? { acpCommand: body.acpCommand } : {}),
+      ...(body.middlewareUrl ? { middlewareUrl: body.middlewareUrl } : {}),
+      ...(body.middlewareWorker ? { middlewareWorker: body.middlewareWorker } : {}),
       ...(body.webhook ? { webhook: body.webhook } : {}),
       ...(body.logicFn ? { logicFn: body.logicFn } : {}),
+      ...(body.shellAllowlist?.length ? { shellAllowlist: body.shellAllowlist } : {}),
       ...(body.mcpServers ? { mcpServers: body.mcpServers } : {}),
       ...(body.skills ? { skills: body.skills } : {}),
       ...(body.healthCheck ? { healthCheck: body.healthCheck } : {}),
+      ...(body.healthFix ? { healthFix: body.healthFix } : {}),
     };
 
     mw.customWorkers.set(body.name, def);
@@ -1364,9 +1382,16 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     if (!mw.customWorkers.has(name)) return c.json({ error: 'worker not found' }, 404);
 
     const body = await c.req.json<{
-      backend?: string; model?: string; description?: string;
+      backend?: string; vendor?: string; model?: string; description?: string;
       prompt?: string; tools?: string[]; maxTurns?: number; timeout?: number;
-      mcpServers?: Record<string, unknown>; skills?: string[]; healthCheck?: string;
+      maxConcurrency?: number; maxBudgetUsd?: number;
+      acpCommand?: string;
+      middlewareUrl?: string; middlewareWorker?: string;
+      webhook?: { url: string; method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers?: Record<string, string>; bodyTemplate?: string; resultPath?: string };
+      logicFn?: string;
+      shellAllowlist?: string[];
+      mcpServers?: Record<string, unknown>; skills?: string[];
+      healthCheck?: string; healthFix?: string;
     }>();
 
     const existing = mw.customWorkers.get(name)!;
@@ -1379,10 +1404,20 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         maxTurns: body.maxTurns ?? existing.agent.maxTurns,
       },
       backend: (body.backend ?? existing.backend) as WorkerDefinition['backend'],
+      vendor: (body.vendor ?? existing.vendor) as WorkerDefinition['vendor'],
       defaultTimeoutSeconds: body.timeout ?? existing.defaultTimeoutSeconds,
+      maxConcurrency: body.maxConcurrency ?? existing.maxConcurrency,
+      maxBudgetUsd: body.maxBudgetUsd ?? existing.maxBudgetUsd,
+      acpCommand: body.acpCommand ?? existing.acpCommand,
+      middlewareUrl: body.middlewareUrl ?? existing.middlewareUrl,
+      middlewareWorker: body.middlewareWorker ?? existing.middlewareWorker,
+      webhook: body.webhook ?? existing.webhook,
+      logicFn: body.logicFn ?? existing.logicFn,
+      shellAllowlist: body.shellAllowlist ?? existing.shellAllowlist,
       mcpServers: body.mcpServers ?? existing.mcpServers,
       skills: body.skills ?? existing.skills,
       healthCheck: body.healthCheck ?? existing.healthCheck,
+      healthFix: body.healthFix ?? existing.healthFix,
     };
 
     mw.customWorkers.set(name, updated);
