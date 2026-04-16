@@ -243,6 +243,21 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     maxConcurrency: 4,
     defaultTimeoutSeconds: 300,
   },
+
+  // ─── Auth Workers ───
+
+  'google-oauth': {
+    agent: {
+      description: 'Google OAuth login via CDP (Chrome DevTools Protocol). Actions: check (verify login state), login (full OAuth flow), login <service-url> (OAuth on a specific service), cookies (dump auth cookies). Outputs NDJSON step-by-step diagnostics with screenshots. Exit 0=success, 1=failure, 2=needs human (2FA/CAPTCHA).',
+      tools: [],
+      prompt: '',
+    },
+    backend: 'shell',
+    maxConcurrency: 1,  // shared Chrome — only one auth flow at a time
+    defaultTimeoutSeconds: 60,
+    healthCheck: 'curl -sf --max-time 3 http://localhost:9222/json/version > /dev/null',
+    healthFix: 'open -a "Google Chrome" --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check --user-data-dir=$HOME/.mini-agent/chrome-cdp-profile',
+  },
 };
 
 // ─── Runtime Worker Registry ───
