@@ -425,6 +425,19 @@ export function createMiddleware(config?: MiddlewareConfig) {
       }).filter((x): x is PlanHistoryRecord => x !== null);
     } catch { return []; }
   };
+  /** Compact plan-history.jsonl — remove records older than maxAgeDays. */
+  const compactPlanHistory = (maxAgeDays = 30): { removed: number; kept: number } => {
+    const records = readPlanHistory();
+    const cutoff = Date.now() - maxAgeDays * 24 * 3_600_000;
+    const kept = records.filter(r => new Date(r.createdAt).getTime() >= cutoff);
+    const removed = records.length - kept.length;
+    if (removed > 0) {
+      try {
+        fs.writeFileSync(planHistoryPath, kept.map(r => JSON.stringify(r)).join('\n') + (kept.length ? '\n' : ''), 'utf-8');
+      } catch { /* fail-open */ }
+    }
+    return { removed, kept: kept.length };
+  };
 
   // Lazy-init internal brain for /accomplish endpoint.
   // Uses sonnet by default — brain.ts createBrain defaults to opus which is
@@ -531,7 +544,7 @@ RULES:
   // Commitments ledger — cross-cycle "I will do X" promises (proposal §5)
   const commitments = openCommitmentStore(cwd);
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory, getBrain, brainWorkerInfo, generateRecoveryOptions, commitments };
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory, compactPlanHistory, getBrain, brainWorkerInfo, generateRecoveryOptions, commitments };
 }
 
 // =============================================================================
@@ -541,6 +554,23 @@ RULES:
 export function createRouter(config?: MiddlewareConfig): Hono {
   const mw = createMiddleware(config);
   const app = new Hono();
+
+  // Startup: compaction + stale-scan (before recovery, so recovered data is clean)
+  {
+    // Compact JSONL files — deduplicate commitments, prune old plan history
+    const phResult = mw.compactPlanHistory(30);
+    if (phResult.removed > 0) console.log(`[lifecycle] startup: compacted plan-history (removed ${phResult.removed}, kept ${phResult.kept})`);
+    const cmResult = mw.commitments.compact();
+    if (cmResult) console.log(`[lifecycle] startup: compacted commitments (${cmResult.after} unique records)`);
+
+    // Stale-scan commitments immediately (don't wait for 60s periodic)
+    const COMMITMENT_STALE_SECONDS_STARTUP = 7 * 24 * 3600;
+    const stale = mw.commitments.stale({ older_than_seconds: COMMITMENT_STALE_SECONDS_STARTUP, status: 'active' });
+    for (const c of stale) {
+      mw.commitments.patch(c.id, { status: 'cancelled', resolution: { kind: 'cancel', evidence: 'lifecycle-gc: startup stale-scan > 7d' } });
+    }
+    if (stale.length > 0) console.log(`[lifecycle] startup: expired ${stale.length} stale commitments`);
+  }
 
   // Startup recovery: cancel orphaned pending tasks from plans lost on prior restart
   {
@@ -1895,6 +1925,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       return {
         planId: id,
         goal: entry.plan.goal,
+        acceptance: entry.plan.acceptance,
         createdAt: entry.createdAt,
         totalSteps: entry.plan.steps.length,
         completed, failed, running,
@@ -2013,9 +2044,16 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       if (stale.length > 0) console.log(`[lifecycle] expired ${stale.length} stale commitments`);
     } catch (e) { console.warn('[lifecycle] commitment GC error (fail-open):', e); }
   }, 60_000);
-  // Graceful shutdown: clear interval
-  process.on('SIGTERM', () => clearInterval(cleanupTimer));
-  process.on('SIGINT', () => clearInterval(cleanupTimer));
+  // Periodic compaction: compact JSONL files every 6h
+  const compactionTimer = setInterval(() => {
+    const ph = mw.compactPlanHistory(30);
+    if (ph.removed > 0) console.log(`[lifecycle] compaction: plan-history removed ${ph.removed}, kept ${ph.kept}`);
+    const cm = mw.commitments.compact();
+    if (cm) console.log(`[lifecycle] compaction: commitments deduped to ${cm.after} records`);
+  }, 6 * 3_600_000);
+  // Graceful shutdown: clear intervals
+  process.on('SIGTERM', () => { clearInterval(cleanupTimer); clearInterval(compactionTimer); });
+  process.on('SIGINT', () => { clearInterval(cleanupTimer); clearInterval(compactionTimer); });
 
   // ─── Presets API ───
 

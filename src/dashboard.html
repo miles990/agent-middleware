@@ -167,6 +167,32 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
 
 /* ═══ Modal ═══ */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:200;place-items:center}
+/* ═══ History ═══ */
+.hist{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:12px 16px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:.2s}
+.hist:hover{border-color:var(--b2);transform:translateY(-1px)}
+.hist-goal{font-size:12px;font-weight:500;flex:1;margin-right:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-meta{display:flex;gap:10px;align-items:center;flex-shrink:0;font-family:var(--mono);font-size:10px;color:var(--t3)}
+.hist-badge{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;font-weight:600;letter-spacing:.3px}
+.hist-badge.completed{background:var(--cyan-a);color:var(--cyan)}
+.hist-badge.failed{background:var(--red-a);color:var(--red)}
+.hist-badge.running{background:var(--blue-a);color:var(--blue)}
+.hist-badge.unknown{background:var(--s3);color:var(--t4)}
+.btn-replay{font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:4px;border:1px solid var(--purple);background:transparent;color:var(--purple);cursor:pointer;transition:.15s;letter-spacing:.3px}
+.btn-replay:hover{background:var(--purple);color:var(--bg)}
+
+/* ═══ Commitments ═══ */
+.cmt{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:12px 16px;margin-bottom:6px;transition:.2s;border-left:3px solid var(--t4)}
+.cmt.active{border-left-color:var(--purple)}
+.cmt.fulfilled{border-left-color:var(--cyan);opacity:.7}
+.cmt.cancelled{border-left-color:var(--t4);opacity:.45}
+.cmt-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.cmt-text{font-size:12px;flex:1;line-height:1.5}
+.cmt-action{font-weight:600;color:var(--t1)}
+.cmt-bottom{display:flex;gap:12px;margin-top:6px;font-family:var(--mono);font-size:9px;color:var(--t4)}
+.cmt-tag{font-family:var(--mono);font-size:8px;padding:2px 6px;border-radius:3px;letter-spacing:.3px}
+.cmt-tag.owner{background:var(--blue-a);color:var(--blue)}
+.cmt-tag.channel{background:var(--s3);color:var(--t3)}
+
 .modal-bg.on{display:grid}
 .modal{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:24px;width:460px;max-height:80vh;overflow-y:auto}
 .modal h2{font-family:var(--mono);font-size:13px;font-weight:600;margin-bottom:16px;letter-spacing:.5px}
@@ -199,12 +225,15 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
   <div class="metric">Plans<b id="mPlans">0</b></div>
   <div class="metric">Tasks<b id="mTasks">0</b></div>
   <div class="metric">Running<b id="mRun" style="color:var(--blue)">0</b></div>
+  <div class="metric">Commits<b id="mCmts" style="color:var(--purple)">0</b></div>
   <div class="metric">Workers<b id="mWork">0</b></div>
-  <div class="metric">Backends<b id="mBack">0</b></div>
+  <div class="metric">Success<b id="mRate" style="color:var(--cyan)">-</b></div>
 </div>
 
 <div class="tabs">
   <div class="tab on" data-t="plans">Pipelines<span class="cnt" id="tCnt">0</span></div>
+  <div class="tab" data-t="history">History</div>
+  <div class="tab" data-t="commitments">Commitments<span class="cnt" id="cmtCnt" style="background:rgba(167,139,250,.12);color:var(--purple)">0</span></div>
   <div class="tab" data-t="workers">Workers</div>
   <div class="tab" data-t="gateway">Gateway</div>
   <div class="tab" data-t="achieved">Achieved</div>
@@ -219,6 +248,28 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
       <input id="dT" placeholder="Task description..." onkeydown="if(event.key==='Enter')fire()">
       <button class="btn btn-p" onclick="fire()">Dispatch</button>
     </div>
+  </div>
+  <div class="section" id="sHistory">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--t4);letter-spacing:.5px">Plan execution history (last 30 days)</div>
+      <div style="display:flex;gap:6px">
+        <select id="hFilter" style="padding:4px 8px;background:var(--s2);border:1px solid var(--b1);border-radius:4px;color:var(--t2);font-family:var(--mono);font-size:10px" onchange="loadH()">
+          <option value="">All</option><option value="completed">Completed</option><option value="failed">Failed</option>
+        </select>
+      </div>
+    </div>
+    <div id="hList"></div>
+  </div>
+  <div class="section" id="sCommitments">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--t4);letter-spacing:.5px">Cross-cycle commitment ledger</div>
+      <div style="display:flex;gap:6px">
+        <select id="cmtFilter" style="padding:4px 8px;background:var(--s2);border:1px solid var(--b1);border-radius:4px;color:var(--t2);font-family:var(--mono);font-size:10px" onchange="loadCmt()">
+          <option value="">All</option><option value="active">Active</option><option value="fulfilled">Fulfilled</option><option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+    </div>
+    <div id="cmtList"></div>
   </div>
   <div class="section" id="sWorkers">
     <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn" onclick="openWM()">+ Add Worker</button></div>
@@ -330,9 +381,10 @@ const $=id=>document.getElementById(id);
 const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML};
 
 async function init(){
-  await Promise.all([loadW(),loadT(),loadGW(),loadP()]);
+  await Promise.all([loadW(),loadT(),loadGW(),loadP(),loadH(),loadCmt()]);
   connectSSE();
   setInterval(()=>{loadT();loadGW();loadP()},6000);
+  setInterval(()=>{loadH();loadCmt()},15000);
   setInterval(loadW,12000);
   document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
@@ -340,6 +392,8 @@ async function init(){
     t.classList.add('on');
     $('s'+t.dataset.t.charAt(0).toUpperCase()+t.dataset.t.slice(1)).classList.add('on');
     if(t.dataset.t==='achieved')loadAch();
+    if(t.dataset.t==='history')loadH();
+    if(t.dataset.t==='commitments')loadCmt();
   });
 }
 
@@ -560,6 +614,88 @@ async function delW(){if(!editW||!confirm('Delete "'+editW+'"?'))return;await fe
 // ═══ Backend Modal ═══
 function openBM(){['bmN','bmC','bmA'].forEach(id=>$(id).value='');$('bmM').value='2';$('mBM').classList.add('on')}
 async function saveB(){const d={name:$('bmN').value.trim(),command:$('bmC').value.trim(),args:$('bmA').value.split(',').map(s=>s.trim()).filter(Boolean),maxSessions:parseInt($('bmM').value)||2};if(!d.name||!d.command)return;await fetch(`${API}/gateway/backends`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});await loadGW();closeM('mBM')}
+
+// ═══ History ═══
+let H=[];
+async function loadH(){
+  try{
+    const f=$('hFilter').value;
+    const q=f?`?status=${f}&limit=100`:'?limit=100';
+    const r=await(await fetch(`${API}/plans/history${q}`)).json();
+    H=r.plans||[];renderH();
+    // Success rate metric
+    const all=H.length;
+    const ok=H.filter(p=>p.status==='completed').length;
+    $('mRate').textContent=all?`${Math.round(ok/all*100)}%`:'-';
+  }catch{}
+}
+function renderH(){
+  const c=$('hList');
+  if(!H.length){c.innerHTML='<div class="empty"><div class="empty-icon">&#x25CB;</div><div class="empty-text">No plan history</div></div>';return}
+  c.innerHTML=H.map(p=>{
+    const date=new Date(p.createdAt).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const steps=`${p.completed}/${p.totalSteps}`;
+    return `<div class="hist" onclick="window.open('${API}/plans/history/${esc(p.planId)}','_blank')">
+      <div class="hist-goal">${esc(p.goal||p.planId)}</div>
+      <div class="hist-meta">
+        ${p.caller?`<span style="color:var(--blue)">${esc(p.caller)}</span>`:''}
+        <span>${steps} steps</span>
+        <span>${date}</span>
+        <span class="hist-badge ${p.status}">${p.status}</span>
+        <button class="btn-replay" onclick="event.stopPropagation();replayPlan('${esc(p.planId)}')" title="Replay this plan">&#x21BB; Replay</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function replayPlan(planId){
+  if(!confirm('Replay this plan with original parameters?'))return;
+  try{
+    const r=await(await fetch(`${API}/plans/history/${planId}/replay`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    if(r.error){alert(r.error);return}
+    alert(`Replayed as ${r.planId} (${r.steps} steps)`);
+    loadT().then(()=>{loadP();loadH()});
+  }catch(e){alert('Replay failed: '+e)}
+}
+
+// ═══ Commitments ═══
+let CMT=[];
+async function loadCmt(){
+  try{
+    const f=$('cmtFilter').value;
+    const q=f?`?status=${f}`:'';
+    const r=await(await fetch(`${API}/commits${q}`)).json();
+    CMT=r.commitments||r||[];
+    if(Array.isArray(CMT))CMT.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    const active=CMT.filter(c=>c.status==='active').length;
+    $('mCmts').textContent=CMT.length;
+    $('cmtCnt').textContent=active;
+    renderCmt();
+  }catch{}
+}
+function renderCmt(){
+  const c=$('cmtList');
+  if(!CMT.length){c.innerHTML='<div class="empty"><div class="empty-icon">&#x2690;</div><div class="empty-text">No commitments</div></div>';return}
+  c.innerHTML=CMT.map(cm=>{
+    const date=new Date(cm.created_at).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const resolved=cm.resolved_at?new Date(cm.resolved_at).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+    const resBadge=cm.resolution?`<span style="color:var(--cyan)">${cm.resolution.kind}</span>`:'';
+    return `<div class="cmt ${cm.status}">
+      <div class="cmt-top">
+        <div class="cmt-text"><span class="cmt-action">${esc(cm.parsed?.action||'')}</span> ${esc(cm.text||'')}</div>
+        <span class="hist-badge ${cm.status==='active'?'running':cm.status==='fulfilled'?'completed':cm.status}">${cm.status}</span>
+      </div>
+      <div class="cmt-bottom">
+        ${cm.owner?`<span class="cmt-tag owner">${esc(cm.owner)}</span>`:''}
+        <span class="cmt-tag channel">${cm.source?.channel||'?'}</span>
+        <span>${date}</span>
+        ${resolved?`<span>resolved ${resolved}</span>`:''}
+        ${resBadge}
+        ${cm.linked_dag_id?`<span style="color:var(--blue)">plan:${esc(cm.linked_dag_id.slice(-8))}</span>`:''}
+        ${cm.acceptance?`<span style="color:var(--t3)" title="${esc(cm.acceptance)}">&#x2691; acceptance</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
 
 // ═══ Utils ═══
 function on(){$('cDot').className='conn-dot';$('cText').textContent='online'}

@@ -147,6 +147,8 @@ export interface CommitmentStore {
   query(filter: { status?: CommitmentStatus; channel?: CommitmentChannel; owner?: CommitmentOwner }): Commitment[];
   stale(opts: { older_than_seconds: number; status?: CommitmentStatus }): Commitment[];
   all(): Commitment[];
+  /** Compact JSONL — rewrite with only the latest record per ID. */
+  compact(): { before: number; after: number } | null;
 }
 
 export function openStore(cwd: string): CommitmentStore {
@@ -202,6 +204,14 @@ export function openStore(cwd: string): CommitmentStore {
     },
     all() {
       return [...map.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    },
+    /** Compact JSONL — rewrite with only the latest record per ID. */
+    compact() {
+      try {
+        const lines = [...map.values()].map(c => JSON.stringify(c));
+        fs.writeFileSync(file, lines.join('\n') + (lines.length ? '\n' : ''), 'utf-8');
+        return { before: -1, after: lines.length }; // before unknown without re-reading
+      } catch { return null; }
     },
   };
 }
