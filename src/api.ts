@@ -535,6 +535,13 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   const mw = createMiddleware(config);
   const app = new Hono();
 
+  // Startup recovery: cancel orphaned pending tasks from plans lost on prior restart
+  {
+    const activePlanIds = new Set(mw.plans.keys());
+    const orphaned = mw.buffer.cancelOrphans(activePlanIds);
+    if (orphaned > 0) console.log(`[lifecycle] startup: cancelled ${orphaned} orphaned tasks`);
+  }
+
   // Global error handler — uncaught exceptions in routes return structured JSON
   // instead of bare "Internal Server Error" text. This matters for AI callers:
   // a 21-byte text crash is opaque; a JSON body with error+message is debuggable.
@@ -1780,8 +1787,24 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   });
 
   // Periodic cleanup: archive completed tasks after 1h, expire after 7d
+  // + lifecycle sweep: cancel orphaned tasks, expire stale commitments
+  const COMMITMENT_STALE_SECONDS = 7 * 24 * 3600; // 7 days
   const cleanupTimer = setInterval(() => {
     mw.buffer.cleanup({ archiveAfterMs: 3_600_000, expireAfterMs: 7 * 24 * 3_600_000 });
+
+    // Lifecycle sweep: cancel orphaned pending tasks (plan lost on restart/eviction)
+    const activePlanIds = new Set(mw.plans.keys());
+    const orphaned = mw.buffer.cancelOrphans(activePlanIds);
+    if (orphaned > 0) console.log(`[lifecycle] cancelled ${orphaned} orphaned tasks`);
+
+    // Lifecycle sweep: expire stale commitments (active > 7 days)
+    try {
+      const stale = mw.commitments.stale({ older_than_seconds: COMMITMENT_STALE_SECONDS, status: 'active' });
+      for (const c of stale) {
+        mw.commitments.patch(c.id, { status: 'cancelled', resolution: { kind: 'cancel', evidence: 'lifecycle-gc: auto-expired active > 7d' } });
+      }
+      if (stale.length > 0) console.log(`[lifecycle] expired ${stale.length} stale commitments`);
+    } catch { /* fail-open — commitment GC is best-effort */ }
   }, 60_000);
   // Graceful shutdown: clear interval
   process.on('SIGTERM', () => clearInterval(cleanupTimer));

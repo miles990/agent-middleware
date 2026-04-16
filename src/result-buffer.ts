@@ -185,6 +185,26 @@ export class ResultBuffer {
   }
 
   /**
+   * Cancel orphaned tasks: pending tasks whose planId is not in the active plan set.
+   * These are remnants from plans lost on restart or evicted from memory.
+   * Returns count of cancelled tasks.
+   */
+  cancelOrphans(activePlanIds: Set<string>): number {
+    let count = 0;
+    for (const [id, task] of this.tasks) {
+      if (task.status === 'pending' && task.planId && !activePlanIds.has(task.planId)) {
+        task.status = 'cancelled';
+        task.error = 'Parent plan no longer active (orphaned)';
+        task.completedAt = new Date();
+        this.persist(task);
+        this.emit({ type: 'task.cancelled', task, timestamp: new Date() });
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
    * Archive completed tasks older than archiveAfterMs.
    * Remove archived tasks older than expireAfterMs.
    * Called periodically.

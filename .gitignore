@@ -9,3 +9,4 @@ plan-history.jsonl
 results.jsonl
 _output.md
 _outline.json
+.claude/logs/
