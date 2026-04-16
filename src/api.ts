@@ -1772,6 +1772,12 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const limit = Math.min(parseInt(c.req.query('limit') ?? '50', 10), 500);
     const offset = parseInt(c.req.query('offset') ?? '0', 10);
 
+    // Build terminal event map: planId → last event (completed/failed)
+    const terminalEvents = new Map<string, PlanHistoryRecord>();
+    for (const r of records) {
+      if (r.event === 'completed' || r.event === 'failed') terminalEvents.set(r.planId, r);
+    }
+
     // Enrich each record with current runtime state from buffer
     const enriched = records.filter(r => r.plan).map(r => {
       const runtimeSteps = mw.buffer.list({ planId: r.planId });
@@ -1779,20 +1785,34 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       const failed = runtimeSteps.filter(s => s.status === 'failed' || s.status === 'timeout').length;
       const running = runtimeSteps.filter(s => s.status === 'running').length;
       const total = r.plan!.steps.length;
+
+      // Check JSONL terminal event when buffer is empty (tasks evicted after 1h)
+      const terminal = terminalEvents.get(r.planId);
       const planStatus =
         running > 0 ? 'running'
         : failed > 0 ? 'failed'
         : completed === total ? 'completed'
-        : completed === 0 && failed === 0 && running === 0 ? 'unknown'  // evicted + no buffer trace
+        : completed === 0 && failed === 0 && running === 0
+          ? (terminal?.event === 'completed' ? 'completed'
+             : terminal?.event === 'failed' ? 'failed'
+             : 'unknown')
         : 'partial';
+
+      // Use terminal summary when buffer is evicted
+      const termCompleted = terminal?.summary?.completed ?? completed;
+      const termFailed = terminal?.summary?.failed ?? failed;
+
       return {
         planId: r.planId,
         createdAt: r.createdAt,
         caller: r.caller,
         goal: r.plan!.goal,
         totalSteps: total,
-        completed, failed, running,
+        completed: completed || termCompleted,
+        failed: failed || termFailed,
+        running,
         status: planStatus,
+        durationMs: terminal?.durationMs,
       };
     });
 
