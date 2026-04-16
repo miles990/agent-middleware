@@ -161,6 +161,31 @@ function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Inject absolute-path convergence condition for file_exists acceptance.
+ *
+ * Only fires when: step has structured file_exists acceptance AND value is
+ * a relative path. Non-filesystem workers (researcher, analyst, reviewer) are
+ * skipped — they don't write files. Task arrays (multimodal) are skipped —
+ * prepending to ContentBlock[] is a separate concern.
+ */
+function injectFileExistsConvergence(
+  task: string,
+  step: PlanStep,
+  engineCwd: string | undefined,
+): string {
+  const ac = step.acceptance_criteria;
+  if (!ac || typeof ac !== 'object' || ac.type !== 'file_exists') return task;
+  if (ac.value.startsWith('/')) return task; // already absolute
+  const baseDir = step.cwd ?? engineCwd ?? process.cwd();
+  const baseSource = step.cwd ? 'step.cwd' : (engineCwd ? 'engine.cwd' : 'process.cwd()');
+  // Use path.resolve via string concat — avoids adding node:path import at module top
+  const absPath = `${baseDir.replace(/\/$/, '')}/${ac.value}`;
+  console.log(`[plan-engine] inject convergence step=${step.id} worker=${step.worker} relPath=${ac.value} absPath=${absPath} baseSource=${baseSource}`);
+  const note = `[ACCEPTANCE CONDITION]\nAfter this step completes, a file MUST exist at this ABSOLUTE path:\n  ${absPath}\n\nUse this absolute path when writing. Do not rely on relative paths or cwd assumptions — worker subprocess cwd may differ from middleware cwd.\n\n--- Original Task ---\n`;
+  return note + task;
+}
+
 function resolveStepContext(task: string, results: Map<string, StepResult>, consumerWorker?: string): string {
   // When consumer is a shell worker, substituted values are shell-escaped to
   // prevent injection. Agents no longer need to worry about quotes, backticks,
@@ -261,6 +286,14 @@ export interface PlanEngineOptions {
   maxBackoffMs?: number;
   /** Resolve timeout for a worker — lets plan engine use worker-specific defaults instead of hardcoded 120s */
   getWorkerTimeoutSeconds?: (workerName: string) => number;
+  /**
+   * Middleware's own cwd — used as fallback for path resolution in structured
+   * acceptance (file_exists, test_passes) when step.cwd is not set. Threading this
+   * explicitly avoids relying on process.cwd(), and lets dispatch-time path
+   * injection (see executeWithRetry) produce absolute paths for convergence
+   * conditions — worker subprocess cwd may diverge from middleware cwd.
+   */
+  cwd?: string;
 }
 
 export class PlanEngine {
@@ -453,10 +486,27 @@ export class PlanEngine {
           workerRunning.set(step.worker, currentConc + 1);
           const ac = new AbortController();
           this.abortControllers.set(step.id, ac);
-          const resolvedTask = resolveStepContext(step.task, results, step.worker);
+          let resolvedTask = resolveStepContext(step.task, results, step.worker);
+          // Inject convergence condition — absolute path for file_exists acceptance.
+          // Rationale: worker subprocess cwd is unreliable across SDK/CLI boundaries,
+          // so "mesh-output/x.md" may be written to worker's own cwd (often HOME)
+          // while middleware's acceptance check looks in middleware cwd. Prepending
+          // the absolute path tells the worker exactly where the file must end up —
+          // turning a prescription ("write to X") into a convergence condition
+          // ("this absolute path MUST exist"). cwd-free, process-boundary-safe.
+          resolvedTask = injectFileExistsConvergence(resolvedTask, step, this.opts.cwd);
           this.emit({ type: 'step.dispatched', step, resolvedTask });
           const defaultTimeout = this.opts.getWorkerTimeoutSeconds?.(step.worker) ?? 120;
           const timeoutMs = (step.timeoutSeconds ?? defaultTimeout) * 1000;
+          // Environment snapshot — captures the live cwd/HOME/step-cwd at dispatch
+          // time so post-mortem of any step failure can reconstruct the exact
+          // filesystem context the worker was handed, without re-running the plan.
+          const acStr = step.acceptance_criteria
+            ? (typeof step.acceptance_criteria === 'string'
+                ? step.acceptance_criteria
+                : `${step.acceptance_criteria.type}:${step.acceptance_criteria.value}`)
+            : 'none';
+          console.log(`[plan-engine] dispatch step=${step.id} worker=${step.worker} timeoutMs=${timeoutMs} step.cwd=${step.cwd ?? '-'} engine.cwd=${this.opts.cwd ?? '-'} process.cwd=${process.cwd()} HOME=${process.env.HOME ?? '-'} acceptance=${acStr}`);
           const order = dispatchOrder++;
 
           this.executeWithRetry(step, resolvedTask, timeoutMs, order, retryCounts, ac.signal)
@@ -573,6 +623,7 @@ export class PlanEngine {
             const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
             // Verification failed — treat as step failure (may retry)
             lastError = `Verify failed: ${msg}`;
+            console.error(`[plan-engine] verify FAIL step=${step.id} worker=${step.worker} attempt=${attempt}/${maxRetries} cmd=${step.verifyCommand} err=${msg}`);
             if (attempt === maxRetries) {
               return { id: step.id, worker: step.worker, status: 'failed', output: `${output}\n\n[VERIFY FAILED] ${lastError}`, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
             }
@@ -588,12 +639,13 @@ export class PlanEngine {
         if (step.acceptance_criteria) {
           const ac = step.acceptance_criteria;
           const checkResult = typeof ac === 'object'
-            ? await evaluateStructuredAcceptance(ac, output, step.cwd)
+            ? await evaluateStructuredAcceptance(ac, output, step.cwd ?? this.opts.cwd)
             : (structured?.accepted === false ? { pass: false, reason: 'worker rejected' } : { pass: true, reason: '' });
 
           if (!checkResult.pass) {
             const criteriaStr = typeof ac === 'string' ? ac : `${ac.type}:${ac.value}`;
             lastError = `Acceptance failed: ${criteriaStr} — ${checkResult.reason}`;
+            console.error(`[plan-engine] acceptance FAIL step=${step.id} worker=${step.worker} attempt=${attempt}/${maxRetries} criteria=${criteriaStr} reason=${checkResult.reason}`);
             this.emit({ type: 'step.acceptance_failed', step, criteria: criteriaStr, output: structured?.summary });
             if (attempt === maxRetries) {
               return { id: step.id, worker: step.worker, status: 'failed', output: `${output}\n\n[ACCEPTANCE FAILED] ${lastError}`, structured, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
@@ -605,9 +657,12 @@ export class PlanEngine {
         return { id: step.id, worker: step.worker, status: 'completed', output, structured, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
       } catch (err) {
         if (signal?.aborted) {
+          console.error(`[plan-engine] step CANCELLED step=${step.id} worker=${step.worker} attempt=${attempt}/${maxRetries}`);
           return { id: step.id, worker: step.worker, status: 'skipped', output: 'Cancelled', durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
         }
         lastError = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : undefined;
+        console.error(`[plan-engine] step EXCEPTION step=${step.id} worker=${step.worker} attempt=${attempt}/${maxRetries} err=${lastError}${stack ? `\n${stack}` : ''}`);
         if (attempt === maxRetries) {
           const status = lastError.includes('timeout') ? 'timeout' as const : 'failed' as const;
           if (step.retry?.onExhausted === 'skip') {
@@ -639,20 +694,49 @@ async function evaluateStructuredAcceptance(
 
     case 'file_exists': {
       const fs = await import('node:fs');
-      const target = ac.value.startsWith('/') ? ac.value : `${cwd ?? process.cwd()}/${ac.value}`;
-      return fs.existsSync(target)
-        ? { pass: true, reason: '' }
-        : { pass: false, reason: `file not found: ${target}` };
+      const baseDir = cwd ?? process.cwd();
+      const baseSource = cwd ? 'step.cwd|engine.cwd' : 'process.cwd()';
+      const target = ac.value.startsWith('/') ? ac.value : `${baseDir}/${ac.value}`;
+      if (fs.existsSync(target)) {
+        console.log(`[acceptance] file_exists PASS path=${target}`);
+        return { pass: true, reason: '' };
+      }
+
+      // Diagnostic probe: if the relative file isn't at the expected base, check
+      // common divergent locations (HOME, process.cwd()) and surface where it
+      // actually landed. Makes cwd-drift bugs self-describing instead of silent.
+      if (!ac.value.startsWith('/')) {
+        const probes: Array<[string, string]> = [];
+        const home = process.env.HOME;
+        if (home && home !== baseDir) probes.push([`${home}/${ac.value}`, 'HOME']);
+        const pcwd = process.cwd();
+        if (pcwd !== baseDir) probes.push([`${pcwd}/${ac.value}`, 'process.cwd()']);
+        const foundAt = probes.find(([p]) => fs.existsSync(p));
+        if (foundAt) {
+          console.error(`[acceptance] file_exists FAIL-DIVERGENT expected=${target} actual=${foundAt[0]} at=${foundAt[1]} baseDir=${baseDir} baseSource=${baseSource}`);
+          return {
+            pass: false,
+            reason: `file not found at expected path: ${target} (baseDir: ${baseDir}, source: ${baseSource}) — but file exists at ${foundAt[0]} [${foundAt[1]}] — worker wrote to wrong cwd`,
+          };
+        }
+      }
+      console.error(`[acceptance] file_exists FAIL-MISSING path=${target} baseDir=${baseDir} baseSource=${baseSource}`);
+      return { pass: false, reason: `file not found: ${target} (baseDir: ${baseDir}, source: ${baseSource})` };
     }
 
     case 'test_passes': {
+      const execCwd = cwd ?? process.cwd();
+      const baseSource = cwd ? 'step.cwd|engine.cwd' : 'process.cwd()';
       try {
         const { exec } = await import('node:child_process');
         const { promisify } = await import('node:util');
-        await promisify(exec)(ac.value, { timeout: 30_000, cwd: cwd ?? process.cwd() });
+        await promisify(exec)(ac.value, { timeout: 30_000, cwd: execCwd });
+        console.log(`[acceptance] test_passes PASS cmd=${ac.value} cwd=${execCwd} baseSource=${baseSource}`);
         return { pass: true, reason: '' };
       } catch (err) {
-        return { pass: false, reason: `test command failed: ${err instanceof Error ? err.message : String(err)}` };
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[acceptance] test_passes FAIL cmd=${ac.value} cwd=${execCwd} baseSource=${baseSource} err=${msg}`);
+        return { pass: false, reason: `test command failed: ${msg} (cwd: ${execCwd}, source: ${baseSource})` };
       }
     }
 
@@ -662,11 +746,13 @@ async function evaluateStructuredAcceptance(
         const schema = JSON.parse(ac.value);
         // Simple structural check: verify all required keys exist
         const missingKeys = Object.keys(schema).filter(k => !(k in parsed));
-        return missingKeys.length === 0
-          ? { pass: true, reason: '' }
-          : { pass: false, reason: `missing keys: ${missingKeys.join(', ')}` };
-      } catch {
-        return { pass: false, reason: 'output is not valid JSON or schema parse error' };
+        if (missingKeys.length === 0) return { pass: true, reason: '' };
+        console.error(`[acceptance] schema_match FAIL missingKeys=${missingKeys.join(',')} outputLen=${output.length}`);
+        return { pass: false, reason: `missing keys: ${missingKeys.join(', ')}` };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[acceptance] schema_match PARSE-ERROR err=${msg} outputLen=${output.length} outputPreview=${output.slice(0, 120).replace(/\n/g, '\\n')}`);
+        return { pass: false, reason: `output is not valid JSON or schema parse error: ${msg}` };
       }
     }
 

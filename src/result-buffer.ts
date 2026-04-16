@@ -94,7 +94,7 @@ export class ResultBuffer {
   }
 
   /** Submit a new task (task is pass-through — any format) */
-  submit(opts: { id?: string; planId?: string; worker: string; task: unknown; label?: string; caller?: string }): string {
+  submit(opts: { id?: string; planId?: string; worker: string; task: unknown; label?: string; caller?: string; metadata?: Record<string, unknown> }): string {
     const id = opts.id ?? this.nextId();
     const record: TaskRecord = {
       id,
@@ -105,6 +105,7 @@ export class ResultBuffer {
       status: 'pending',
       submittedAt: new Date(),
       caller: opts.caller,
+      metadata: opts.metadata,
     };
     this.tasks.set(id, record);
     this.emit({ type: 'task.submitted', task: record, timestamp: new Date() });

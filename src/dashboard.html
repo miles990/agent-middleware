@@ -340,6 +340,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
     <div class="d-section"><div class="d-label">Dependencies</div><div class="d-val" id="dDe"></div></div>
     <div class="d-section"><div class="d-label">Task Prompt</div><pre class="d-pre" id="dTk"></pre></div>
     <div class="d-section"><div class="d-label">Result</div><pre class="d-pre" id="dR" style="max-height:360px"></pre></div>
+    <div id="dActions" style="display:none;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn" id="dRetryBtn" onclick="retryT()" style="border-color:var(--amber);color:var(--amber);font-weight:600" title="Re-run this failed task">&#x21BB; Retry</button>
+    </div>
   </div>
 </div>
 
@@ -536,6 +539,7 @@ function renderP(){
         <div class="pipe-badge">
           <span class="g">${done} done</span><span class="b">${run} running</span>${fail?`<span class="r">${fail} failed</span>`:''}
           <span>${pct}%</span>
+          ${fail>0&&!run?`<button class="btn-replay" onclick="event.stopPropagation();retryPlanFailed('${esc(id)}')" title="Retry all failed/timeout steps">&#x21BB; Retry Failed</button>`:''}
           ${canCancel?`<button class="btn-cancel" onclick="event.stopPropagation();cancelPlan('${esc(id)}')" title="Cancel plan">&#x25A0; Stop</button>`:''}
         </div>
       </div>
@@ -598,9 +602,35 @@ function showD(tid,pid){
   $('dDe').textContent=(step?.dependsOn||[]).join(', ')||'none (parallel)';
   $('dTk').textContent=typeof t.task==='string'?t.task:JSON.stringify(t.task,null,2);
   $('dR').textContent=t.result?(typeof t.result==='string'?t.result:JSON.stringify(t.result,null,2)):t.error||'Pending...';
+  // Retry button — only for failed/timeout/cancelled tasks (steps retried via plan-level button)
+  const retryable=!step&&['failed','timeout','cancelled'].includes(t.status);
+  $('dActions').style.display=retryable?'flex':'none';
+  $('dActions').dataset.taskId=retryable?tid:'';
   $('ov').classList.add('on');
 }
 function closeD(){$('ov').classList.remove('on')}
+
+// ═══ Retry ═══
+async function retryT(){
+  const tid=$('dActions').dataset.taskId;
+  if(!tid) return;
+  if(!confirm(`Retry task ${tid}?\n\nThis re-runs with the same worker + task + cwd.`)) return;
+  try{
+    const r=await(await fetch(`${API}/task/${tid}/retry`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    if(r.error){toast(`✗ Retry failed: ${r.error}`,'fail');return}
+    toast(`&#x21BB; Retrying → ${r.taskId}`,'info');
+    closeD();setTimeout(loadT,500);
+  }catch(e){toast(`✗ Retry error: ${e}`,'fail')}
+}
+async function retryPlanFailed(planId){
+  if(!confirm(`Retry all failed/timeout steps of plan ${planId}?`)) return;
+  try{
+    const r=await(await fetch(`${API}/plan/${planId}/retry-failed`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    if(r.error){toast(`✗ Retry failed: ${r.error}`,'fail');return}
+    toast(`&#x21BB; Retrying ${r.retried.length} step(s)${r.skipped.length?` · ${r.skipped.length} skipped`:''}`,'info');
+    setTimeout(()=>{loadT();loadP()},500);
+  }catch(e){toast(`✗ Retry error: ${e}`,'fail')}
+}
 
 // ═══ Dispatch ═══
 async function fire(){

@@ -249,6 +249,10 @@ export function createMiddleware(config?: MiddlewareConfig) {
             return execSync(structured.command, execOpts) as string;
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
+            const e = err as { stdout?: Buffer|string; stderr?: Buffer|string; status?: number; signal?: string };
+            const stderr = e.stderr ? String(e.stderr).slice(0, 500) : '';
+            const stdout = e.stdout ? String(e.stdout).slice(0, 200) : '';
+            console.error(`[worker:shell-structured] FAIL worker=${worker} cwd=${scratchDir} timeoutMs=${timeoutMs} cmd=${structured.command.slice(0, 200)} status=${e.status ?? '-'} signal=${e.signal ?? '-'} stderr=${stderr} stdout=${stdout} err=${msg.slice(0, 200)}`);
             throw new Error(`Shell error (structured): ${msg.slice(0, 500)}`);
           } finally {
             // Always clean up scratch dir
@@ -279,6 +283,11 @@ export function createMiddleware(config?: MiddlewareConfig) {
           return execSync(shellCmd, { cwd: execCwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024, shell: '/bin/bash' });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+          const e = err as { stdout?: Buffer|string; stderr?: Buffer|string; status?: number; signal?: string };
+          const stderr = e.stderr ? String(e.stderr).slice(0, 500) : '';
+          const stdout = e.stdout ? String(e.stdout).slice(0, 200) : '';
+          const cmdPreview = (typeof task === 'string' ? task : JSON.stringify(task)).slice(0, 200);
+          console.error(`[worker:shell] FAIL worker=${worker} cwd=${execCwd} timeoutMs=${timeoutMs} status=${e.status ?? '-'} signal=${e.signal ?? '-'} stderr=${stderr} stdout=${stdout} cmd=${cmdPreview} err=${msg.slice(0, 200)}`);
           throw new Error(`Shell error: ${msg.slice(0, 500)}`);
         }
       }
@@ -328,7 +337,12 @@ export function createMiddleware(config?: MiddlewareConfig) {
           const resolved = sandbox.result;
           return typeof resolved === 'string' ? resolved : JSON.stringify(resolved);
         } catch (err) {
-          throw new Error(`Logic error: ${err instanceof Error ? err.message : String(err)}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
+          const fnPreview = fn.slice(0, 200).replace(/\n/g, '\\n');
+          const inputPreview = taskStr.slice(0, 200).replace(/\n/g, '\\n');
+          console.error(`[worker:logic] FAIL worker=${worker} timeoutMs=${timeoutMs} fnPreview=${fnPreview} inputPreview=${inputPreview} err=${msg}${stack ? `\n${stack}` : ''}`);
+          throw new Error(`Logic error: ${msg}`);
         }
       }
       case 'middleware': {
@@ -364,6 +378,10 @@ export function createMiddleware(config?: MiddlewareConfig) {
 
   // Plan engine with event callbacks
   const planEngine = new PlanEngine(executeWorker, {
+    // Middleware cwd — threaded so structured acceptance path resolution and
+    // dispatch-time convergence injection use middleware cwd (not process.cwd())
+    // as the fallback base for relative paths.
+    cwd,
     // Let plan engine use worker-specific timeouts instead of hardcoded 120s
     getWorkerTimeoutSeconds: (workerName) => allWorkers()[workerName]?.defaultTimeoutSeconds ?? 120,
     // Bridge ALL plan events to result buffer → SSE stream
@@ -931,7 +949,14 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const def = allW[body.worker];
     const timeoutMs = (body.timeout ?? def.defaultTimeoutSeconds) * 1000;
     const taskDesc = typeof body.task === 'string' ? body.task : `[multimodal: ${body.task.length} blocks]`;
-    const taskId = mw.buffer.submit({ worker: body.worker, task: taskDesc, caller: body.caller });
+    // Persist dispatch context (cwd, timeoutMs, raw task) in metadata so the
+    // task is retryable without the caller needing to remember any of it.
+    const taskId = mw.buffer.submit({
+      worker: body.worker,
+      task: taskDesc,
+      caller: body.caller,
+      metadata: { cwd: body.cwd, timeoutMs, rawTask: body.task },
+    });
     mw.buffer.start(taskId);
 
     const cb = body.callback;
@@ -944,6 +969,9 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       })
       .catch(err => {
         const msg = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
+        const taskPreview = (typeof body.task === 'string' ? body.task : JSON.stringify(body.task)).slice(0, 200).replace(/\n/g, '\\n');
+        console.error(`[api:dispatch] FAIL taskId=${taskId} worker=${body.worker} cwd=${body.cwd ?? '-'} timeoutMs=${timeoutMs} taskPreview=${taskPreview} err=${msg}${stack ? `\n${stack}` : ''}`);
         mw.buffer.fail(taskId, msg);
         if (cb) sendCallback(cb, cbFrom, { type: 'task.failed', id: taskId, status: 'failed', error: msg });
         throw err;
@@ -1063,8 +1091,13 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           })),
         });
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
+        const stepsSoFar = mw.buffer.list({ planId });
+        const stepsSummary = stepsSoFar.map(s => `${s.id}:${s.status}`).join(',');
+        console.error(`[api:plan] FAIL planId=${planId} totalSteps=${plan.steps.length} stepsSoFar=${stepsSummary} err=${msg}${stack ? `\n${stack}` : ''}`);
         mw.markPlanCompleted(planId);
-        return c.json({ planId, status: 'failed', error: err instanceof Error ? err.message : String(err) }, 500);
+        return c.json({ planId, status: 'failed', error: msg }, 500);
       }
     }
 
@@ -1510,6 +1543,107 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.delete('/task/:id', (c) => {
     const ok = mw.buffer.cancel(c.req.param('id'));
     return ok ? c.json({ ok: true }) : c.json({ error: 'cannot cancel' }, 400);
+  });
+
+  // POST /task/:id/retry — manual retry of a failed/timeout/cancelled task.
+  // Reuses worker + rawTask + cwd + timeoutMs from the original TaskRecord
+  // metadata; caller may override cwd/timeout via body. Returns new taskId.
+  app.post('/task/:id/retry', async (c) => {
+    const origId = c.req.param('id');
+    const original = mw.buffer.get(origId);
+    if (!original) return c.json({ error: `task not found: ${origId}` }, 404);
+    if (!['failed', 'timeout', 'cancelled'].includes(original.status)) {
+      return c.json({ error: `cannot retry task in status: ${original.status}`, status: original.status }, 400);
+    }
+
+    const body = await c.req.json<{ cwd?: string; timeout?: number; caller?: string }>().catch(() => ({} as { cwd?: string; timeout?: number; caller?: string }));
+    const meta = (original.metadata ?? {}) as { cwd?: string; timeoutMs?: number; rawTask?: unknown };
+    const rawTask = meta.rawTask ?? original.task;
+    const cwdOverride = body.cwd ?? meta.cwd;
+    const cwdErr = cwdOverride !== undefined ? validateTaskCwd(cwdOverride) : null;
+    if (cwdErr) return c.json({ error: cwdErr }, 400);
+
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const def = allW[original.worker];
+    if (!def) return c.json({ error: `worker no longer exists: ${original.worker}` }, 400);
+    const timeoutMs = body.timeout !== undefined
+      ? body.timeout * 1000
+      : (meta.timeoutMs ?? def.defaultTimeoutSeconds * 1000);
+
+    const taskDesc = typeof rawTask === 'string' ? rawTask : `[multimodal: retry of ${origId}]`;
+    const newId = mw.buffer.submit({
+      worker: original.worker,
+      task: taskDesc,
+      caller: body.caller ?? `retry:${origId}`,
+      metadata: { cwd: cwdOverride, timeoutMs, rawTask, retryOf: origId },
+    });
+    mw.buffer.start(newId);
+
+    console.log(`[api:retry] taskId=${newId} retryOf=${origId} worker=${original.worker} cwd=${cwdOverride ?? '-'} timeoutMs=${timeoutMs}`);
+
+    mw.executeWorker(original.worker, rawTask as string | import('./llm-provider.js').ContentBlock[], timeoutMs, cwdOverride ? { cwd: cwdOverride } : undefined)
+      .then(result => {
+        mw.buffer.complete(newId, result);
+      })
+      .catch(err => {
+        const msg = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
+        console.error(`[api:retry] FAIL taskId=${newId} retryOf=${origId} worker=${original.worker} err=${msg}${stack ? `\n${stack}` : ''}`);
+        mw.buffer.fail(newId, msg);
+      });
+
+    return c.json({ taskId: newId, retryOf: origId, status: 'running', worker: original.worker });
+  });
+
+  // POST /plan/:planId/retry-failed — retry all failed/timeout steps of a plan
+  // as independent dispatches (not a full plan replay). Useful when most of a
+  // plan succeeded and only a few steps need a second chance. Each failed step
+  // becomes a new task. Returns { retried: [{ origId, newId }], skipped: [...] }.
+  app.post('/plan/:planId/retry-failed', async (c) => {
+    const planId = c.req.param('planId');
+    const steps = mw.buffer.list({ planId });
+    if (steps.length === 0) return c.json({ error: `plan not found or has no steps: ${planId}` }, 404);
+
+    const retryable = steps.filter(s => ['failed', 'timeout'].includes(s.status));
+    if (retryable.length === 0) {
+      return c.json({ error: 'no failed or timeout steps to retry', total: steps.length }, 400);
+    }
+
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const retried: Array<{ origId: string; newId: string; worker: string }> = [];
+    const skipped: Array<{ origId: string; reason: string }> = [];
+
+    for (const step of retryable) {
+      const def = allW[step.worker];
+      if (!def) {
+        skipped.push({ origId: step.id, reason: `worker no longer exists: ${step.worker}` });
+        continue;
+      }
+      const meta = (step.metadata ?? {}) as { cwd?: string; timeoutMs?: number; rawTask?: unknown };
+      const rawTask = meta.rawTask ?? step.task;
+      const timeoutMs = meta.timeoutMs ?? def.defaultTimeoutSeconds * 1000;
+      const taskDesc = typeof rawTask === 'string' ? rawTask : `[multimodal: retry of ${step.id}]`;
+      const newId = mw.buffer.submit({
+        worker: step.worker,
+        task: taskDesc,
+        caller: `retry-failed:${planId}`,
+        metadata: { cwd: meta.cwd, timeoutMs, rawTask, retryOf: step.id },
+      });
+      mw.buffer.start(newId);
+      console.log(`[api:retry-failed] taskId=${newId} retryOf=${step.id} planId=${planId} worker=${step.worker}`);
+
+      mw.executeWorker(step.worker, rawTask as string | import('./llm-provider.js').ContentBlock[], timeoutMs, meta.cwd ? { cwd: meta.cwd } : undefined)
+        .then(result => { mw.buffer.complete(newId, result); })
+        .catch(err => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[api:retry-failed] FAIL taskId=${newId} retryOf=${step.id} planId=${planId} err=${msg}`);
+          mw.buffer.fail(newId, msg);
+        });
+
+      retried.push({ origId: step.id, newId, worker: step.worker });
+    }
+
+    return c.json({ planId, retried, skipped, total: retryable.length });
   });
 
   // GET /pool — worker pool + ACP gateway status
