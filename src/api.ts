@@ -1804,7 +1804,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         mw.commitments.patch(c.id, { status: 'cancelled', resolution: { kind: 'cancel', evidence: 'lifecycle-gc: auto-expired active > 7d' } });
       }
       if (stale.length > 0) console.log(`[lifecycle] expired ${stale.length} stale commitments`);
-    } catch { /* fail-open — commitment GC is best-effort */ }
+    } catch (e) { console.warn('[lifecycle] commitment GC error (fail-open):', e); }
   }, 60_000);
   // Graceful shutdown: clear interval
   process.on('SIGTERM', () => clearInterval(cleanupTimer));
