@@ -664,7 +664,7 @@ async function loadCmt(){
     const f=$('cmtFilter').value;
     const q=f?`?status=${f}`:'';
     const r=await(await fetch(`${API}/commits${q}`)).json();
-    CMT=r.commitments||r||[];
+    CMT=r.items||r.commitments||[];
     if(Array.isArray(CMT))CMT.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     const active=CMT.filter(c=>c.status==='active').length;
     $('mCmts').textContent=CMT.length;
