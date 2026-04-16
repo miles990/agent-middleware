@@ -1471,7 +1471,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const entry = mw.plans.get(planId);
     if (!entry) return c.json({ error: 'not found' }, 404);
 
-    const runtimeSteps = mw.buffer.list({ planId });
+    const runtimeSteps = mw.buffer.list({ planId, includeArchived: true });
     const completed = runtimeSteps.filter(s => s.status === 'completed').length;
     const failed = runtimeSteps.filter(s => s.status === 'failed').length;
     const running = runtimeSteps.filter(s => s.status === 'running').length;
@@ -1976,7 +1976,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // Historical plan uses LOGICAL step IDs (pre-prefix). Runtime buffer uses
     // prefixed IDs (`{planId}_{stepId}`). Match by constructing the expected
     // runtime ID from logical + planId.
-    const runtimeSteps = mw.buffer.list({ planId });
+    const runtimeSteps = mw.buffer.list({ planId, includeArchived: true });
     const mergedSteps = record.plan.steps.map(ps => {
       const runtimeId = `${planId}_${ps.id}`;
       const runtime = runtimeSteps.find(r => r.id === runtimeId);

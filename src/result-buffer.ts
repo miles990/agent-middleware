@@ -161,8 +161,9 @@ export class ResultBuffer {
   }
 
   /** List tasks with optional filter */
-  list(filter?: { planId?: string; status?: TaskStatus; caller?: string; limit?: number }): TaskRecord[] {
+  list(filter?: { planId?: string; status?: TaskStatus; caller?: string; limit?: number; includeArchived?: boolean }): TaskRecord[] {
     let records = [...this.tasks.values()];
+    if (filter?.includeArchived) records.push(...this.archived.values());
     if (filter?.planId) records = records.filter(r => r.planId === filter.planId);
     if (filter?.status) records = records.filter(r => r.status === filter.status);
     if (filter?.caller) records = records.filter(r => r.caller === filter.caller);
