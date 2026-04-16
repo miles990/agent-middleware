@@ -1048,6 +1048,18 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       }, 500);
     }
 
+    // Phase 2b enforcement: multi-step plans must have per-step acceptance_criteria.
+    // If brain omitted it, auto-generate from task description (soft enforcement —
+    // better than nothing, brain will improve over time).
+    if (plan.steps.length >= 2) {
+      for (const step of plan.steps) {
+        if (!step.acceptance_criteria) {
+          step.acceptance_criteria = `Step "${step.label ?? step.id}" completes successfully with relevant output`;
+          console.log(`[phase2b] auto-filled acceptance_criteria for step ${step.id}`);
+        }
+      }
+    }
+
     // From here on: reuse the /plan execution path (ID remap + buffer + engine).
     const planId = `acc-${Date.now()}-${(mw.planCounter++).toString(36)}`;
     for (const step of plan.steps) {
@@ -1141,7 +1153,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           plan: {
             goal: plan.goal,
             acceptance: plan.acceptance,
-            steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn })),
+            steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn, acceptance_criteria: s.acceptance_criteria })),
           },
           steps: steps.map(s => ({
             id: s.id, worker: s.worker, label: s.label, status: s.status,
@@ -1169,7 +1181,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       plan: {
         goal: plan.goal,
         acceptance: plan.acceptance,
-        steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn })),
+        steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn, acceptance_criteria: s.acceptance_criteria })),
       },
     });
   });

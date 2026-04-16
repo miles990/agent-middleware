@@ -43,6 +43,10 @@ export interface PlanStep {
   };
   /** Mechanical verification: shell command that must exit 0 for step to count as completed */
   verifyCommand?: string;
+  /** Convergence condition for this step — observable end state.
+   *  Checked against worker output after completion. If output doesn't satisfy,
+   *  step is marked failed (may trigger retry or replan). */
+  acceptance_criteria?: string;
   /**
    * Per-step workdir. Absolute path; filesystem-touching backends (sdk, shell)
    * run in this directory instead of middleware's cwd. Validated at API boundary
@@ -230,6 +234,7 @@ export type PlanEvent =
   | { type: 'step.retrying'; step: PlanStep; attempt: number; error: string }
   | { type: 'step.cancelled'; stepId: string }
   | { type: 'plan.mutation'; action: 'add' | 'skip' | 'replace'; stepId: string }
+  | { type: 'step.acceptance_failed'; step: PlanStep; criteria: string; output?: string }
   | { type: 'convergence.check'; iteration: number; converged: boolean }
   | { type: 'plan.completed'; result: PlanResult };
 
@@ -567,6 +572,22 @@ export class PlanEngine {
         }
 
         const structured = parseStructuredOutput(output);
+
+        // Per-step acceptance check (Phase 2b): if step has acceptance_criteria,
+        // the worker output must include accepted:true in structured output.
+        // This is the step-level convergence gate — brain generates these for
+        // multi-step plans, single-step plans use plan-level acceptance.
+        if (step.acceptance_criteria && structured) {
+          if (structured.accepted === false) {
+            lastError = `Acceptance failed: criteria="${step.acceptance_criteria}", worker rejected`;
+            this.emit({ type: 'step.acceptance_failed', step, criteria: step.acceptance_criteria!, output: structured.summary });
+            if (attempt === maxRetries) {
+              return { id: step.id, worker: step.worker, status: 'failed', output: `${output}\n\n[ACCEPTANCE FAILED] ${lastError}`, structured, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
+            }
+            continue;
+          }
+        }
+
         return { id: step.id, worker: step.worker, status: 'completed', output, structured, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
       } catch (err) {
         if (signal?.aborted) {

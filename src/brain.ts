@@ -36,6 +36,7 @@ OUTPUT FORMAT: Return a JSON action plan inside \`\`\`json ... \`\`\` block:
       "task": "具體任務描述 — 可以引用前序結果 {{stepId.result}} 或 {{stepId.summary}}",
       "label": "給人看的摘要 < 30 字",
       "dependsOn": ["dependency-ids"],
+      "acceptance_criteria": "這步完成的收斂條件 — 可觀察的終態（多步計劃必填）",
       "retry": { "maxRetries": 2, "onExhausted": "skip" }
     }
   ]
@@ -48,6 +49,10 @@ CRITICAL RULES:
 - Steps with empty dependsOn run in parallel
 - Use {{stepId.result}} or {{stepId.summary}} to pass data between steps
 - Keep steps at "independently verifiable work unit" granularity
+- For multi-step plans (≥2 steps): EVERY step MUST have "acceptance_criteria" field (observable end state). Plans without per-step acceptance_criteria are INVALID.
+- For single-step plans: acceptance_criteria is optional (plan-level acceptance suffices)
+- acceptance_criteria describes WHAT to verify, not HOW — convergence condition, not prescription
+- Example acceptance_criteria: "File exists at output.txt with >0 bytes", "Test suite passes with 0 failures", "Summary contains top 3 files with line counts"
 - Add retry for unreliable steps (web fetch, API calls): { "maxRetries": 2, "onExhausted": "skip" }
 - DO NOT execute tools yourself — only produce the plan
 
