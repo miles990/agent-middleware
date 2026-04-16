@@ -176,7 +176,11 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
 .hist-badge.completed{background:var(--cyan-a);color:var(--cyan)}
 .hist-badge.failed{background:var(--red-a);color:var(--red)}
 .hist-badge.running{background:var(--blue-a);color:var(--blue)}
+.hist-badge.partial{background:var(--amber-a);color:var(--amber)}
 .hist-badge.unknown{background:var(--s3);color:var(--t4)}
+.hist-wrap{margin-bottom:6px}
+.hist-detail{animation:fadeIn .2s ease-out}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 .btn-replay{font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:4px;border:1px solid var(--purple);background:transparent;color:var(--purple);cursor:pointer;transition:.15s;letter-spacing:.3px}
 .btn-replay:hover{background:var(--purple);color:var(--bg)}
 
@@ -247,6 +251,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
       <select id="dW"></select>
       <input id="dT" placeholder="Task description..." onkeydown="if(event.key==='Enter')fire()">
       <button class="btn btn-p" onclick="fire()">Dispatch</button>
+      <button class="btn" onclick="openAM()" style="border-color:var(--purple);color:var(--purple);font-weight:600" title="Submit a goal — brain auto-plans the DAG">&#x2726; Accomplish</button>
     </div>
   </div>
   <div class="section" id="sHistory">
@@ -286,7 +291,22 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
     <div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-bottom:12px;letter-spacing:.5px">Auto-archived after 1h, removed after 7d</div>
     <div id="achL"></div>
   </div>
-  <div class="section" id="sEvents"><div id="evL" style="max-height:calc(100vh - 200px);overflow-y:auto"></div></div>
+  <div class="section" id="sEvents">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--t4);letter-spacing:.5px">Real-time events + persisted history</div>
+      <div style="display:flex;gap:6px">
+        <select id="evFilter" style="padding:4px 8px;background:var(--s2);border:1px solid var(--b1);border-radius:4px;color:var(--t2);font-family:var(--mono);font-size:10px" onchange="filterEv()">
+          <option value="">All Events</option>
+          <option value="task.submitted">Submitted</option>
+          <option value="task.started">Started</option>
+          <option value="task.completed">Completed</option>
+          <option value="task.failed">Failed</option>
+        </select>
+        <button class="btn" onclick="loadEvHistory()" style="font-size:9px;padding:4px 8px">Load History</button>
+      </div>
+    </div>
+    <div id="evL" style="max-height:calc(100vh - 240px);overflow-y:auto"></div>
+  </div>
 </div>
 
 <!-- Detail panel -->
@@ -374,6 +394,35 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
   </div>
 </div>
 
+<!-- Accomplish Modal -->
+<div class="modal-bg" id="mAM">
+  <div class="modal" style="width:520px">
+    <h2 style="color:var(--purple)">&#x2726; Accomplish Goal</h2>
+    <p style="font-size:11px;color:var(--t3);margin-bottom:14px;line-height:1.5">Describe what you want to achieve. Brain will auto-generate a DAG plan and route to the best workers.</p>
+    <div class="fg"><label>Goal</label><textarea id="amG" rows="3" placeholder="e.g. Research the latest Rust async patterns and summarize key findings"></textarea></div>
+    <div class="fg"><label>Success Criteria (optional)</label><textarea id="amS" rows="2" placeholder="e.g. At least 3 sources cited, comparison table included"></textarea></div>
+    <details class="fg-adv" style="display:block">
+      <summary>Constraints &amp; Context</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <div class="fg"><label>Max Cost (USD)</label><input id="amCost" type="number" step="0.5" placeholder="5"></div>
+        <div class="fg"><label>Caller</label><input id="amCaller" placeholder="dashboard"></div>
+      </div>
+      <div class="fg"><label>Must Use Workers (csv)</label><input id="amMust" placeholder="researcher, coder"></div>
+      <div class="fg"><label>Extra Context</label><textarea id="amCtx" rows="2" placeholder="Additional context for planning..."></textarea></div>
+    </details>
+    <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
+      <label style="font-family:var(--mono);font-size:10px;color:var(--t3);display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="amWait" style="accent-color:var(--purple)"> Wait for result (synchronous)
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeM('mAM')">Cancel</button>
+      <button class="btn btn-p" onclick="submitAccomplish()" style="background:var(--purple);border-color:var(--purple)">&#x2726; Submit Goal</button>
+    </div>
+    <div id="amStatus" style="display:none;margin-top:10px;padding:10px;border-radius:6px;font-family:var(--mono);font-size:11px;background:var(--s2);border:1px solid var(--b1)"></div>
+  </div>
+</div>
+
 <script>
 const API=location.origin;
 let W={},T=[],P=[],GW=null,editW=null;
@@ -394,6 +443,7 @@ async function init(){
     if(t.dataset.t==='achieved')loadAch();
     if(t.dataset.t==='history')loadH();
     if(t.dataset.t==='commitments')loadCmt();
+    if(t.dataset.t==='events'&&!$('evL').children.length)loadEvHistory();
   });
 }
 
@@ -558,9 +608,36 @@ function addEv(type,data){
   el.innerHTML=`<span class="ts">${ts}</span> <span class="et ${short}">${short}</span> ${esc(info)}`;
   $('evL').prepend(el);if($('evL').children.length>300)$('evL').lastChild.remove();
 }
+function filterEv(){
+  const f=$('evFilter').value;
+  document.querySelectorAll('#evL .ev').forEach(el=>{
+    if(!f){el.style.display='';return}
+    const short=f.replace('task.','');
+    el.style.display=el.querySelector('.et.'+short)?'':'none';
+  });
+}
+async function loadEvHistory(){
+  try{
+    const f=$('evFilter').value;
+    const q=f?`?type=${f}&limit=200`:'?limit=200';
+    const r=await(await fetch(`${API}/events/history${q}`)).json();
+    const events=r.events||[];
+    if(!events.length)return;
+    events.reverse().forEach(e=>{
+      const ts=new Date(e.timestamp).toLocaleTimeString('en',{hour12:false});
+      const short=(e.type||'').replace('task.','');
+      const info=`${e.worker||''} ${(e.label||e.taskId||'').slice(0,50)}`;
+      const dur=e.durationMs?` (${(e.durationMs/1000).toFixed(1)}s)`:'';
+      const el=document.createElement('div');el.className='ev';
+      el.innerHTML=`<span class="ts">${ts}</span> <span class="et ${short}">${short}</span> ${esc(info)}${dur}`;
+      el.style.opacity='.6';
+      $('evL').appendChild(el);
+    });
+  }catch{}
+}
 
 // ═══ Gateway ═══
-async function loadGW(){try{GW=await(await fetch(`${API}/gateway`)).json();renderGW();$('mBack').textContent=GW.backends.length}catch{}}
+async function loadGW(){try{GW=await(await fetch(`${API}/gateway`)).json();renderGW()}catch{}}
 function renderGW(){
   if(!GW)return;$('gwStat').innerHTML=`Dispatched: <b style="color:var(--t1)">${GW.totalDispatched}</b>`;
   const c=$('gwL');if(!GW.backends.length){c.innerHTML='<div class="empty"><div class="empty-icon">&#x2B21;</div><div class="empty-text">No backends</div></div>';return}
@@ -635,17 +712,85 @@ function renderH(){
   c.innerHTML=H.map(p=>{
     const date=new Date(p.createdAt).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
     const steps=`${p.completed}/${p.totalSteps}`;
-    return `<div class="hist" onclick="window.open('${API}/plans/history/${esc(p.planId)}','_blank')">
-      <div class="hist-goal">${esc(p.goal||p.planId)}</div>
-      <div class="hist-meta">
-        ${p.caller?`<span style="color:var(--blue)">${esc(p.caller)}</span>`:''}
-        <span>${steps} steps</span>
-        <span>${date}</span>
-        <span class="hist-badge ${p.status}">${p.status}</span>
-        <button class="btn-replay" onclick="event.stopPropagation();replayPlan('${esc(p.planId)}')" title="Replay this plan">&#x21BB; Replay</button>
+    return `<div class="hist-wrap" id="hw_${esc(p.planId)}">
+      <div class="hist" onclick="toggleHistDetail('${esc(p.planId)}')">
+        <div class="hist-goal">${esc(p.goal||p.planId)}</div>
+        <div class="hist-meta">
+          ${p.caller?`<span style="color:var(--blue)">${esc(p.caller)}</span>`:''}
+          <span>${steps} steps</span>
+          <span>${date}</span>
+          <span class="hist-badge ${p.status}">${p.status}</span>
+          <button class="btn-replay" onclick="event.stopPropagation();replayPlan('${esc(p.planId)}')" title="Replay this plan">&#x21BB; Replay</button>
+        </div>
       </div>
+      <div class="hist-detail" id="hd_${esc(p.planId)}" style="display:none"></div>
     </div>`;
   }).join('');
+}
+let histDetailCache={};
+async function toggleHistDetail(planId){
+  const el=$('hd_'+planId);
+  if(!el)return;
+  if(el.style.display!=='none'){el.style.display='none';return}
+  el.style.display='block';
+  if(histDetailCache[planId]){el.innerHTML=histDetailCache[planId];return}
+  el.innerHTML='<div style="padding:16px;font-family:var(--mono);font-size:11px;color:var(--t3)">Loading plan detail...</div>';
+  try{
+    const r=await(await fetch(`${API}/plans/history/${planId}`)).json();
+    if(r.error){el.innerHTML=`<div style="padding:12px;color:var(--red)">${esc(r.error)}</div>`;return}
+    const html=renderHistDAG(r);
+    histDetailCache[planId]=html;
+    el.innerHTML=html;
+  }catch(e){el.innerHTML=`<div style="padding:12px;color:var(--red)">Failed: ${esc(String(e))}</div>`}
+}
+function renderHistDAG(r){
+  const steps=r.steps||[];if(!steps.length)return '<div style="padding:12px;color:var(--t4)">No steps</div>';
+  // Compute wave depths (same logic as active DAG)
+  const dm=new Map();
+  const dep=s=>{if(dm.has(s.id))return dm.get(s.id);const ds=steps.filter(d=>(s.dependsOn||[]).includes(d.id));const d=ds.length?Math.max(...ds.map(dep))+1:0;dm.set(s.id,d);return d};
+  steps.forEach(dep);
+  const maxD=Math.max(0,...dm.values());
+  // Build flow
+  let flowHtml='';
+  for(let d=0;d<=maxD;d++){
+    const ls=steps.filter(s=>dm.get(s.id)===d);
+    const waveLabel=d===0?'Start':d===maxD&&maxD>0?'End':`W${d}`;
+    const nodesHtml=ls.map(s=>{
+      const st=s.status||'unknown';
+      const dur=s.durationMs?`${(s.durationMs/1000).toFixed(1)}s`:'';
+      const resultPreview=s.result?(typeof s.result==='string'?s.result:JSON.stringify(s.result)).slice(0,120):'';
+      return `<div class="node ${st}" onclick="event.stopPropagation();showHistStep(${JSON.stringify(s).replace(/"/g,'&quot;')})" style="cursor:pointer" title="${esc(resultPreview)}">
+        <div class="node-top"><div class="node-dot"></div><div class="node-name">${esc(s.label||s.id)}</div></div>
+        <div class="node-worker">${s.worker}</div>
+        ${dur?`<div class="node-time">${dur}</div>`:''}
+        ${s.error?`<div style="font-family:var(--mono);font-size:9px;color:var(--red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">${esc(s.error.slice(0,50))}</div>`:''}
+      </div>`;
+    }).join('');
+    if(d>0) flowHtml+=`<div class="wave-arrow"><svg viewBox="0 0 32 20"><line x1="2" y1="10" x2="26" y2="10"/><polygon points="26,6 32,10 26,14"/></svg></div>`;
+    flowHtml+=`<div class="wave"><div class="wave-tag">${waveLabel}</div>${nodesHtml}</div>`;
+  }
+  // Summary bar
+  const done=steps.filter(s=>s.status==='completed').length;
+  const fail=steps.filter(s=>s.status==='failed'||s.status==='timeout').length;
+  const totalDur=steps.reduce((a,s)=>a+(s.durationMs||0),0);
+  const summaryHtml=`<div style="display:flex;gap:12px;padding:8px 18px;font-family:var(--mono);font-size:10px;color:var(--t3);border-bottom:1px solid var(--b1)">
+    <span>${r.goal?'Goal: '+esc(r.goal.slice(0,60)):r.planId}</span>
+    <span style="margin-left:auto;color:var(--cyan)">${done} done</span>
+    ${fail?`<span style="color:var(--red)">${fail} failed</span>`:''}
+    <span>${(totalDur/1000).toFixed(1)}s total</span>
+    ${r.acceptance?`<span style="color:var(--t4)" title="${esc(r.acceptance)}">&#x2691;</span>`:''}
+  </div>`;
+  return `<div style="background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);margin-top:4px;overflow:hidden">${summaryHtml}<div class="dag"><div class="dag-flow">${flowHtml}</div></div></div>`;
+}
+function showHistStep(s){
+  const sc={completed:'var(--cyan)',running:'var(--blue)',failed:'var(--red)',timeout:'var(--amber)',pending:'var(--t3)'};
+  $('dN').textContent=s.label||s.id;
+  $('dI').textContent=s.id;$('dS').textContent=s.status||'unknown';$('dS').style.color=sc[s.status]||'var(--t4)';
+  $('dW2').textContent=s.worker;$('dDu').textContent=s.durationMs?`${(s.durationMs/1000).toFixed(1)}s`:'n/a';
+  $('dDe').textContent=(s.dependsOn||[]).join(', ')||'none';
+  $('dTk').textContent=typeof s.task==='string'?s.task:JSON.stringify(s.task,null,2);
+  $('dR').textContent=s.result?(typeof s.result==='string'?s.result:JSON.stringify(s.result,null,2)):s.error||'No result';
+  $('ov').classList.add('on');
 }
 async function replayPlan(planId){
   if(!confirm('Replay this plan with original parameters?'))return;
@@ -695,6 +840,46 @@ function renderCmt(){
       </div>
     </div>`;
   }).join('');
+}
+
+// ═══ Accomplish ═══
+function openAM(){['amG','amS','amCost','amCaller','amMust','amCtx'].forEach(id=>$(id).value='');$('amWait').checked=false;$('amStatus').style.display='none';$('amCaller').value='dashboard';$('mAM').classList.add('on');setTimeout(()=>$('amG').focus(),100)}
+async function submitAccomplish(){
+  const goal=$('amG').value.trim();if(!goal){$('amG').focus();return}
+  const body={goal,caller:$('amCaller').value.trim()||'dashboard'};
+  const sc=$('amS').value.trim();if(sc)body.success_criteria=sc;
+  const cost=parseFloat($('amCost').value);
+  const must=$('amMust').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const ctx=$('amCtx').value.trim();
+  if(!isNaN(cost)||must.length)body.constraints={};
+  if(!isNaN(cost))body.constraints.max_cost_usd=cost;
+  if(must.length)body.constraints.must_use=must;
+  if(ctx)body.context={extra:ctx};
+  const wait=$('amWait').checked;if(wait)body.wait=true;
+  const st=$('amStatus');
+  st.style.display='block';st.style.borderColor='var(--blue)';
+  st.innerHTML=wait?'<span style="color:var(--blue)">&#x23F3; Submitting goal + waiting for result...</span>':'<span style="color:var(--blue)">&#x23F3; Submitting goal to brain...</span>';
+  try{
+    const r=await(await fetch(`${API}/accomplish`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+    if(r.error||r.status==='planning_failed'){
+      st.style.borderColor='var(--red)';
+      st.innerHTML=`<span style="color:var(--red)">&#x2717; ${esc(r.error||'Planning failed')}</span>${r.raw_response?`<pre class="d-pre" style="margin-top:6px;max-height:120px">${esc(r.raw_response.slice(0,500))}</pre>`:''}`;
+      return;
+    }
+    st.style.borderColor='var(--cyan)';
+    const pid=r.planId||r.id||'';
+    if(wait&&r.result){
+      const res=r.result;
+      st.innerHTML=`<span style="color:var(--cyan)">&#x2713; Goal ${res.accepted?'accepted':'completed'}</span> <span style="color:var(--t3)">${pid}</span><pre class="d-pre" style="margin-top:6px;max-height:160px">${esc(JSON.stringify(res,null,2).slice(0,1000))}</pre>`;
+    }else{
+      st.innerHTML=`<span style="color:var(--cyan)">&#x2713; Plan created: ${esc(pid)}</span> <span style="color:var(--t3)">(${r.steps||'?'} steps)</span>`;
+    }
+    loadT().then(()=>{loadP();loadH()});
+    if(!wait)setTimeout(()=>closeM('mAM'),1500);
+  }catch(e){
+    st.style.borderColor='var(--red)';
+    st.innerHTML=`<span style="color:var(--red)">&#x2717; ${esc(String(e))}</span>`;
+  }
 }
 
 // ═══ Utils ═══

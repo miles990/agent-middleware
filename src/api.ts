@@ -1549,6 +1549,16 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     });
   });
 
+  // GET /events/history — persisted event log (survives restarts)
+  // Query params: ?since=ISO&type=task.completed&limit=200
+  app.get('/events/history', (c) => {
+    const since = c.req.query('since') || undefined;
+    const type = c.req.query('type') || undefined;
+    const limit = Math.min(parseInt(c.req.query('limit') ?? '200', 10), 1000);
+    const events = mw.buffer.queryEvents({ since, type, limit });
+    return c.json({ events, total: events.length });
+  });
+
   // GET /tasks — list recent tasks
   app.get('/tasks', (c) => {
     const status = c.req.query('status') as import('./result-buffer.js').TaskStatus | undefined;
@@ -2050,6 +2060,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     if (ph.removed > 0) console.log(`[lifecycle] compaction: plan-history removed ${ph.removed}, kept ${ph.kept}`);
     const cm = mw.commitments.compact();
     if (cm) console.log(`[lifecycle] compaction: commitments deduped to ${cm.after} records`);
+    const ev = mw.buffer.compactEvents(7);
+    if (ev.removed > 0) console.log(`[lifecycle] compaction: events removed ${ev.removed}, kept ${ev.kept}`);
   }, 6 * 3_600_000);
   // Graceful shutdown: clear intervals
   process.on('SIGTERM', () => { clearInterval(cleanupTimer); clearInterval(compactionTimer); });

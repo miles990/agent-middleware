@@ -49,10 +49,12 @@ export class ResultBuffer {
   private listeners = new Set<(event: TaskEvent) => void>();
   private counter = 0;
   private persistPath: string | null = null;
+  private eventsPath: string | null = null;
 
-  /** Enable JSONL persistence — results survive restarts */
+  /** Enable JSONL persistence — results + events survive restarts */
   enablePersistence(cwd: string): void {
     this.persistPath = path.join(cwd, 'results.jsonl');
+    this.eventsPath = path.join(cwd, 'events.jsonl');
     // Load existing results
     try {
       const lines = fs.readFileSync(this.persistPath, 'utf-8').split('\n').filter(Boolean);
@@ -242,11 +244,63 @@ export class ResultBuffer {
     return { archived: archivedCount, expired: expiredCount };
   }
 
-  /** Emit a task event to all subscribers */
+  /** Emit a task event to all subscribers + persist to events.jsonl */
   emit(event: TaskEvent): void {
     for (const listener of this.listeners) {
       try { listener(event); } catch { /* fire-and-forget */ }
     }
+    this.persistEvent(event);
+  }
+
+  /** Persist event to events.jsonl (fire-and-forget) */
+  private persistEvent(event: TaskEvent): void {
+    if (!this.eventsPath) return;
+    try {
+      const record = {
+        type: event.type,
+        taskId: event.task.id,
+        planId: event.task.planId,
+        worker: event.task.worker,
+        status: event.task.status,
+        label: event.task.label,
+        caller: event.task.caller,
+        durationMs: event.task.durationMs,
+        error: event.task.error,
+        timestamp: event.timestamp.toISOString(),
+      };
+      fs.appendFileSync(this.eventsPath, JSON.stringify(record) + '\n');
+    } catch { /* fail-open */ }
+  }
+
+  /** Query historical events from events.jsonl */
+  queryEvents(opts?: { since?: string; type?: string; limit?: number }): Array<Record<string, unknown>> {
+    if (!this.eventsPath) return [];
+    try {
+      const raw = fs.readFileSync(this.eventsPath, 'utf-8');
+      let events = raw.split('\n').filter(Boolean).map(line => {
+        try { return JSON.parse(line); } catch { return null; }
+      }).filter(Boolean) as Array<Record<string, unknown>>;
+      if (opts?.since) events = events.filter(e => (e.timestamp as string) >= opts.since!);
+      if (opts?.type) events = events.filter(e => (e.type as string) === opts.type);
+      events.sort((a, b) => ((b.timestamp as string) || '').localeCompare((a.timestamp as string) || ''));
+      if (opts?.limit) events = events.slice(0, opts.limit);
+      return events;
+    } catch { return []; }
+  }
+
+  /** Compact events.jsonl — keep only last N days */
+  compactEvents(maxAgeDays = 7): { removed: number; kept: number } {
+    if (!this.eventsPath) return { removed: 0, kept: 0 };
+    try {
+      const raw = fs.readFileSync(this.eventsPath, 'utf-8');
+      const lines = raw.split('\n').filter(Boolean);
+      const cutoff = new Date(Date.now() - maxAgeDays * 86400000).toISOString();
+      const kept = lines.filter(line => {
+        try { const e = JSON.parse(line); return (e.timestamp || '') >= cutoff; } catch { return false; }
+      });
+      fs.writeFileSync(this.eventsPath, kept.join('\n') + (kept.length ? '\n' : ''), 'utf-8');
+      return { removed: lines.length - kept.length, kept: kept.length };
+    } catch { return { removed: 0, kept: 0 }; }
   }
 
   /** Broadcast a raw event (for plan-level events like retry, convergence, mutation) */
