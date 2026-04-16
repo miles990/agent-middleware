@@ -36,7 +36,7 @@ OUTPUT FORMAT: Return a JSON action plan inside \`\`\`json ... \`\`\` block:
       "task": "具體任務描述 — 可以引用前序結果 {{stepId.result}} 或 {{stepId.summary}}",
       "label": "給人看的摘要 < 30 字",
       "dependsOn": ["dependency-ids"],
-      "acceptance_criteria": "這步完成的收斂條件 — 可觀察的終態（多步計劃必填）",
+      "acceptance_criteria": "string OR {type,value} — 收斂條件（多步計劃必填）",
       "retry": { "maxRetries": 2, "onExhausted": "skip" }
     }
   ]
@@ -52,7 +52,12 @@ CRITICAL RULES:
 - For multi-step plans (≥2 steps): EVERY step MUST have "acceptance_criteria" field (observable end state). Plans without per-step acceptance_criteria are INVALID.
 - For single-step plans: acceptance_criteria is optional (plan-level acceptance suffices)
 - acceptance_criteria describes WHAT to verify, not HOW — convergence condition, not prescription
-- Example acceptance_criteria: "File exists at output.txt with >0 bytes", "Test suite passes with 0 failures", "Summary contains top 3 files with line counts"
+- acceptance_criteria can be a string (semantic, checked by worker) OR structured for mechanical verification:
+  - {"type":"output_contains","value":"SUCCESS"} — output must contain substring
+  - {"type":"file_exists","value":"path/to/file"} — file must exist after step
+  - {"type":"test_passes","value":"npm test"} — shell command must exit 0
+  - {"type":"schema_match","value":"{\"key1\":\"\",\"key2\":\"\"}"} — output JSON must have these keys
+- Use structured types when the check is mechanical; use string when it needs judgment
 - Add retry for unreliable steps (web fetch, API calls): { "maxRetries": 2, "onExhausted": "skip" }
 - DO NOT execute tools yourself — only produce the plan
 

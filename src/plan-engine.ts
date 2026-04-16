@@ -19,6 +19,15 @@
 // Types
 // =============================================================================
 
+/** Structured acceptance — mechanically verifiable without LLM evaluation */
+export type StructuredAcceptanceType = 'output_contains' | 'file_exists' | 'test_passes' | 'schema_match';
+export interface StructuredAcceptance {
+  type: StructuredAcceptanceType;
+  /** What to check: substring for output_contains, path for file_exists,
+   *  shell command for test_passes, JSON schema string for schema_match */
+  value: string;
+}
+
 export interface PlanStep {
   id: string;
   worker: string;
@@ -44,9 +53,9 @@ export interface PlanStep {
   /** Mechanical verification: shell command that must exit 0 for step to count as completed */
   verifyCommand?: string;
   /** Convergence condition for this step — observable end state.
-   *  Checked against worker output after completion. If output doesn't satisfy,
-   *  step is marked failed (may trigger retry or replan). */
-  acceptance_criteria?: string;
+   *  String = semantic (checked via worker's structured accepted field).
+   *  Structured = mechanical (evaluated by plan-engine without LLM). */
+  acceptance_criteria?: string | StructuredAcceptance;
   /**
    * Per-step workdir. Absolute path; filesystem-touching backends (sdk, shell)
    * run in this directory instead of middleware's cwd. Validated at API boundary
@@ -234,7 +243,7 @@ export type PlanEvent =
   | { type: 'step.retrying'; step: PlanStep; attempt: number; error: string }
   | { type: 'step.cancelled'; stepId: string }
   | { type: 'plan.mutation'; action: 'add' | 'skip' | 'replace'; stepId: string }
-  | { type: 'step.acceptance_failed'; step: PlanStep; criteria: string; output?: string }
+  | { type: 'step.acceptance_failed'; step: PlanStep; criteria: string | StructuredAcceptance; output?: string }
   | { type: 'convergence.check'; iteration: number; converged: boolean }
   | { type: 'plan.completed'; result: PlanResult };
 
@@ -573,14 +582,19 @@ export class PlanEngine {
 
         const structured = parseStructuredOutput(output);
 
-        // Per-step acceptance check (Phase 2b): if step has acceptance_criteria,
-        // the worker output must include accepted:true in structured output.
-        // This is the step-level convergence gate — brain generates these for
-        // multi-step plans, single-step plans use plan-level acceptance.
-        if (step.acceptance_criteria && structured) {
-          if (structured.accepted === false) {
-            lastError = `Acceptance failed: criteria="${step.acceptance_criteria}", worker rejected`;
-            this.emit({ type: 'step.acceptance_failed', step, criteria: step.acceptance_criteria!, output: structured.summary });
+        // Per-step acceptance gate (Phase 2b/3):
+        // - Structured acceptance (Phase 3): mechanical evaluation without LLM
+        // - String acceptance (Phase 2b): checked via worker's structured accepted field
+        if (step.acceptance_criteria) {
+          const ac = step.acceptance_criteria;
+          const checkResult = typeof ac === 'object'
+            ? await evaluateStructuredAcceptance(ac, output, step.cwd)
+            : (structured?.accepted === false ? { pass: false, reason: 'worker rejected' } : { pass: true, reason: '' });
+
+          if (!checkResult.pass) {
+            const criteriaStr = typeof ac === 'string' ? ac : `${ac.type}:${ac.value}`;
+            lastError = `Acceptance failed: ${criteriaStr} — ${checkResult.reason}`;
+            this.emit({ type: 'step.acceptance_failed', step, criteria: criteriaStr, output: structured?.summary });
             if (attempt === maxRetries) {
               return { id: step.id, worker: step.worker, status: 'failed', output: `${output}\n\n[ACCEPTANCE FAILED] ${lastError}`, structured, durationMs: Date.now() - stepStart, dispatchOrder: order, retryCount: attempt };
             }
@@ -605,6 +619,59 @@ export class PlanEngine {
     }
 
     return { id: step.id, worker: step.worker, status: 'failed', output: lastError, durationMs: 0, dispatchOrder: order };
+  }
+}
+
+// =============================================================================
+// Structured Acceptance Evaluator (Phase 3)
+// =============================================================================
+
+async function evaluateStructuredAcceptance(
+  ac: StructuredAcceptance,
+  output: string,
+  cwd?: string,
+): Promise<{ pass: boolean; reason: string }> {
+  switch (ac.type) {
+    case 'output_contains':
+      return output.includes(ac.value)
+        ? { pass: true, reason: '' }
+        : { pass: false, reason: `output does not contain "${ac.value}"` };
+
+    case 'file_exists': {
+      const fs = await import('node:fs');
+      const target = ac.value.startsWith('/') ? ac.value : `${cwd ?? process.cwd()}/${ac.value}`;
+      return fs.existsSync(target)
+        ? { pass: true, reason: '' }
+        : { pass: false, reason: `file not found: ${target}` };
+    }
+
+    case 'test_passes': {
+      try {
+        const { exec } = await import('node:child_process');
+        const { promisify } = await import('node:util');
+        await promisify(exec)(ac.value, { timeout: 30_000, cwd: cwd ?? process.cwd() });
+        return { pass: true, reason: '' };
+      } catch (err) {
+        return { pass: false, reason: `test command failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
+
+    case 'schema_match': {
+      try {
+        const parsed = JSON.parse(output);
+        const schema = JSON.parse(ac.value);
+        // Simple structural check: verify all required keys exist
+        const missingKeys = Object.keys(schema).filter(k => !(k in parsed));
+        return missingKeys.length === 0
+          ? { pass: true, reason: '' }
+          : { pass: false, reason: `missing keys: ${missingKeys.join(', ')}` };
+      } catch {
+        return { pass: false, reason: 'output is not valid JSON or schema parse error' };
+      }
+    }
+
+    default:
+      return { pass: true, reason: 'unknown acceptance type — pass by default' };
   }
 }
 
