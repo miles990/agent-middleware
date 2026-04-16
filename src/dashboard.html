@@ -31,6 +31,16 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
 .conn{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--t3)}
 .conn-dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
 .conn-dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
+.conn-last{font-size:9px;color:var(--t4);margin-left:4px}
+
+/* ═══ Toast ═══ */
+.toast-container{position:fixed;top:56px;right:16px;z-index:200;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{font-family:var(--mono);font-size:11px;padding:8px 14px;border-radius:6px;background:var(--s2);border:1px solid var(--b1);color:var(--t2);animation:toastIn .3s ease-out,toastOut .4s ease-in 3s forwards;pointer-events:auto;max-width:360px;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.toast.ok{border-color:rgba(45,212,191,.3);background:linear-gradient(135deg,var(--s2),rgba(45,212,191,.05))}
+.toast.fail{border-color:rgba(248,113,113,.3);background:linear-gradient(135deg,var(--s2),rgba(248,113,113,.05))}
+.toast.info{border-color:rgba(96,165,250,.3);background:linear-gradient(135deg,var(--s2),rgba(96,165,250,.05))}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
 
 /* ═══ Metrics ═══ */
 .metrics{display:flex;border-bottom:1px solid var(--b1);background:var(--s1);flex-shrink:0}
@@ -196,6 +206,11 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
 .cmt-tag{font-family:var(--mono);font-size:8px;padding:2px 6px;border-radius:3px;letter-spacing:.3px}
 .cmt-tag.owner{background:var(--blue-a);color:var(--blue)}
 .cmt-tag.channel{background:var(--s3);color:var(--t3)}
+.cmt-acceptance{font-family:var(--mono);font-size:10px;color:var(--t3);background:var(--s2);border:1px solid var(--b1);border-radius:4px;padding:6px 10px;margin-top:6px;line-height:1.5;border-left:2px solid var(--purple)}
+.cmt-actions{display:flex;gap:4px;margin-left:8px;flex-shrink:0}
+.cmt-act{font-family:var(--mono);font-size:8px;padding:3px 8px;border-radius:4px;border:1px solid var(--b1);background:transparent;cursor:pointer;transition:.15s;letter-spacing:.3px}
+.cmt-act.fulfill{color:var(--cyan);border-color:rgba(45,212,191,.3)}.cmt-act.fulfill:hover{background:var(--cyan);color:var(--bg)}
+.cmt-act.cancel{color:var(--red);border-color:rgba(248,113,113,.3)}.cmt-act.cancel:hover{background:var(--red);color:var(--bg)}
 
 .modal-bg.on{display:grid}
 .modal{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:24px;width:460px;max-height:80vh;overflow-y:auto}
@@ -222,8 +237,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100
     <div class="brand-icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/></svg></div>
     <span class="brand-name">Agent Middleware</span>
   </div>
-  <div class="conn"><div class="conn-dot" id="cDot"></div><span id="cText">connecting</span></div>
+  <div class="conn"><div class="conn-dot" id="cDot"></div><span id="cText">connecting</span><span class="conn-last" id="cLast"></span></div>
 </div>
+<div class="toast-container" id="toasts"></div>
 
 <div class="metrics">
   <div class="metric">Plans<b id="mPlans">0</b></div>
@@ -594,16 +610,44 @@ async function fire(){
 }
 
 // ═══ SSE ═══
+let lastEvAt=0;
 function connectSSE(){
   const es=new EventSource(`${API}/events`);
   ['task.submitted','task.started','task.completed','task.failed','task.cancelled'].forEach(ev=>{
-    es.addEventListener(ev,e=>{addEv(ev,e.data);loadT().then(()=>{loadW();loadP()})});
-  });es.onerror=()=>off();es.onopen=()=>on();
+    es.addEventListener(ev,e=>{
+      addEv(ev,e.data);loadT().then(()=>{loadW();loadP()});
+      // Toast for completed/failed
+      const short=ev.replace('task.','');
+      if(short==='completed'||short==='failed'){
+        let label='';try{const d=JSON.parse(e.data);label=d.label||d.worker||''}catch{}
+        toast(short==='completed'?`✓ ${label}`:`✗ ${label}`,short==='completed'?'ok':'fail');
+      }
+      updateLastEv();
+    });
+  });
+  // Plan-level events
+  ['plan.created','plan.completed','plan.failed'].forEach(ev=>{
+    es.addEventListener(ev,e=>{
+      let label='';try{const d=JSON.parse(e.data);label=d.goal||d.planId||''}catch{}
+      const short=ev.replace('plan.','');
+      addEv(ev,e.data);
+      toast(short==='created'?`◇ Plan: ${label.slice(0,50)}`:short==='completed'?`✓ Plan done: ${label.slice(0,40)}`:`✗ Plan failed: ${label.slice(0,40)}`,short==='failed'?'fail':short==='completed'?'ok':'info');
+      loadT().then(()=>{loadP();loadH()});
+      updateLastEv();
+    });
+  });
+  es.onerror=()=>off();es.onopen=()=>{on();updateLastEv()};
+}
+function updateLastEv(){lastEvAt=Date.now();$('cLast').textContent=`· ${new Date().toLocaleTimeString('en',{hour12:false})}`}
+function toast(msg,cls){
+  const el=document.createElement('div');el.className='toast '+(cls||'');
+  el.textContent=msg;$('toasts').appendChild(el);
+  setTimeout(()=>el.remove(),3600);
 }
 function addEv(type,data){
   const ts=new Date().toLocaleTimeString('en',{hour12:false});
-  const short=type.replace('task.','');
-  let info='';try{const d=JSON.parse(data);info=`${d.worker||''} ${(typeof d.task==='string'?d.task:'').slice(0,60)}`}catch{info=data.slice(0,60)}
+  const short=type.replace('task.','').replace('plan.','');
+  let info='';try{const d=JSON.parse(data);info=`${d.worker||''} ${(d.label||d.goal||(typeof d.task==='string'?d.task:'')).slice(0,60)}`}catch{info=data.slice(0,60)}
   const el=document.createElement('div');el.className='ev';
   el.innerHTML=`<span class="ts">${ts}</span> <span class="et ${short}">${short}</span> ${esc(info)}`;
   $('evL').prepend(el);if($('evL').children.length>300)$('evL').lastChild.remove();
@@ -823,23 +867,41 @@ function renderCmt(){
   c.innerHTML=CMT.map(cm=>{
     const date=new Date(cm.created_at).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
     const resolved=cm.resolved_at?new Date(cm.resolved_at).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
-    const resBadge=cm.resolution?`<span style="color:var(--cyan)">${cm.resolution.kind}</span>`:'';
+    const resBadge=cm.resolution?`<span style="color:var(--cyan)">${cm.resolution.kind}: ${esc(cm.resolution.evidence?.slice(0,60)||'')}</span>`:'';
+    const actions=cm.status==='active'?`<div class="cmt-actions"><button class="cmt-act fulfill" onclick="fulfillCmt('${esc(cm.id)}')">✓ Fulfill</button><button class="cmt-act cancel" onclick="cancelCmt('${esc(cm.id)}')">✗ Cancel</button></div>`:'';
+    const age=cm.status==='active'?(() => {const h=Math.floor((Date.now()-new Date(cm.created_at).getTime())/3600000);return h>24?`<span style="color:var(--amber)">${Math.floor(h/24)}d old</span>`:h>0?`<span style="color:var(--t4)">${h}h old</span>`:''})():'';
     return `<div class="cmt ${cm.status}">
       <div class="cmt-top">
         <div class="cmt-text"><span class="cmt-action">${esc(cm.parsed?.action||'')}</span> ${esc(cm.text||'')}</div>
+        ${actions}
         <span class="hist-badge ${cm.status==='active'?'running':cm.status==='fulfilled'?'completed':cm.status}">${cm.status}</span>
       </div>
+      ${cm.acceptance?`<div class="cmt-acceptance">⚑ ${esc(cm.acceptance)}</div>`:''}
       <div class="cmt-bottom">
         ${cm.owner?`<span class="cmt-tag owner">${esc(cm.owner)}</span>`:''}
         <span class="cmt-tag channel">${cm.source?.channel||'?'}</span>
         <span>${date}</span>
+        ${age}
         ${resolved?`<span>resolved ${resolved}</span>`:''}
         ${resBadge}
         ${cm.linked_dag_id?`<span style="color:var(--blue)">plan:${esc(cm.linked_dag_id.slice(-8))}</span>`:''}
-        ${cm.acceptance?`<span style="color:var(--t3)" title="${esc(cm.acceptance)}">&#x2691; acceptance</span>`:''}
       </div>
     </div>`;
   }).join('');
+}
+async function fulfillCmt(id){
+  const evidence=prompt('Evidence for fulfillment:');if(!evidence)return;
+  try{
+    await fetch(`${API}/commit/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'fulfilled',resolution:{kind:'commit',evidence}})});
+    toast(`✓ Commitment fulfilled`,'ok');loadCmt();
+  }catch(e){toast('Fulfill failed: '+e,'fail')}
+}
+async function cancelCmt(id){
+  const reason=prompt('Cancellation reason:');if(!reason)return;
+  try{
+    await fetch(`${API}/commit/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'cancelled',resolution:{kind:'cancel',evidence:reason}})});
+    toast(`Commitment cancelled`,'info');loadCmt();
+  }catch(e){toast('Cancel failed: '+e,'fail')}
 }
 
 // ═══ Accomplish ═══

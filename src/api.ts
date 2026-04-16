@@ -1527,10 +1527,14 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   // GET /events — SSE stream
   app.get('/events', (c) => {
     return streamSSE(c, async (stream) => {
-      const unsubscribe = mw.buffer.subscribe((event: TaskEvent) => {
+      const unsubscribe = mw.buffer.subscribe((event: TaskEvent & { planData?: unknown }) => {
+        // Plan-level events carry planData; task events carry task record
+        const data = event.planData
+          ? JSON.stringify({ ...(typeof event.planData === 'object' ? event.planData as Record<string, unknown> : {}), worker: 'brain' })
+          : JSON.stringify(event.task);
         stream.writeSSE({
           event: event.type,
-          data: JSON.stringify(event.task),
+          data,
         }).catch(() => {});
       });
 
