@@ -21,7 +21,7 @@ import { streamSSE } from 'hono/streaming';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PlanEngine, parsePlan, type ActionPlan } from './plan-engine.js';
+import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-engine.js';
 import { ResultBuffer, type TaskEvent } from './result-buffer.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
@@ -31,7 +31,7 @@ import { createGateway, type ACPGateway, type CLIBackend } from './acp-gateway.j
 import type { LLMProvider } from './llm-provider.js';
 import { PLAN_TEMPLATES } from './templates.js';
 import { execSync, execFileSync } from 'node:child_process';
-import { brainPlan, type WorkerInfo } from './brain.js';
+import { brainPlan, brainDigest, type WorkerInfo } from './brain.js';
 import { openStore as openCommitmentStore, validateInput as validateCommitmentInput, type CommitmentStatus, type CommitmentChannel, type CommitmentOwner, type CommitmentPatch } from './commitment-ledger.js';
 import * as forgeClient from './forge-client.js';
 import { ForgeError } from './forge-client.js';
@@ -57,7 +57,14 @@ export interface PlanHistoryRecord {
   planId: string;
   createdAt: string;
   caller?: string;
-  plan: ActionPlan;
+  plan?: ActionPlan;
+  event?: 'created' | 'completed' | 'failed';
+  /** Terminal events: result summary */
+  summary?: { completed: number; failed: number; skipped: number };
+  /** Terminal events: overall acceptance status */
+  accepted?: boolean | null;
+  convergenceIterations?: number;
+  durationMs?: number;
 }
 
 export interface RecoveryOption {
@@ -542,6 +549,103 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     if (orphaned > 0) console.log(`[lifecycle] startup: cancelled ${orphaned} orphaned tasks`);
   }
 
+  // Startup plan recovery: resume non-terminal plans from last session.
+  // Recovery = normal execution starting from the middle (Akari pattern).
+  {
+    const history = mw.readPlanHistory();
+    const planEvents = new Map<string, PlanHistoryRecord[]>();
+    for (const r of history) {
+      const arr = planEvents.get(r.planId) ?? [];
+      arr.push(r);
+      planEvents.set(r.planId, arr);
+    }
+
+    const RECOVERY_WINDOW_MS = 3_600_000; // Only recover plans < 1h old
+    const now = Date.now();
+    let recovered = 0;
+
+    for (const [planId, events] of planEvents) {
+      const hasTerminal = events.some(e => e.event === 'completed' || e.event === 'failed');
+      if (hasTerminal) continue;
+
+      const created = events.find(e => e.plan);
+      if (!created?.plan) continue;
+
+      const age = now - new Date(created.createdAt).getTime();
+      if (age > RECOVERY_WINDOW_MS) {
+        // Too old — mark as failed instead of recovering
+        mw.persistPlanHistory({ planId, createdAt: created.createdAt, event: 'failed' });
+        continue;
+      }
+
+      // Rebuild exec plan with prefixed IDs (same transform as POST /plan)
+      const plan = created.plan;
+      const idMap = new Map(plan.steps.map(s => [s.id, `${planId}_${s.id}`]));
+      const remapTemplates = (task: string) => {
+        let t = task;
+        for (const [orig, prefixed] of idMap) t = t.replaceAll(`{{${orig}.`, `{{${prefixed}.`);
+        return t;
+      };
+      const execPlan: ActionPlan = {
+        ...plan,
+        steps: plan.steps.map(s => ({
+          ...s,
+          id: idMap.get(s.id)!,
+          task: remapTemplates(s.task),
+          dependsOn: (s.dependsOn ?? []).map(d => idMap.get(d) ?? d),
+        })),
+      };
+
+      // Rebuild initialResults from ResultBuffer (completed steps survive restart)
+      const existingTasks = mw.buffer.list({ planId });
+      const initialResults = new Map<string, StepResult>();
+      for (const task of existingTasks) {
+        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+          initialResults.set(task.id, {
+            id: task.id,
+            worker: task.worker,
+            status: task.status === 'cancelled' ? 'skipped' : task.status as 'completed' | 'failed',
+            output: typeof task.result === 'string' ? task.result : (task.error ?? ''),
+            durationMs: task.durationMs ?? 0,
+            dispatchOrder: 0,
+          });
+        }
+      }
+
+      // All steps already have results — plan was complete, just missing terminal event
+      if (initialResults.size >= execPlan.steps.length) {
+        mw.persistPlanHistory({ planId, createdAt: created.createdAt, event: 'completed' });
+        continue;
+      }
+
+      // Re-submit pending steps to buffer (so dashboard shows them)
+      for (const step of execPlan.steps) {
+        if (!initialResults.has(step.id) && !mw.buffer.get(step.id)) {
+          mw.buffer.submit({ id: step.id, planId, worker: step.worker, task: step.task, label: step.label, caller: created.caller });
+        }
+      }
+
+      // Resume execution with existing results
+      const resultPromise = mw.planEngine.execute(execPlan, initialResults);
+      mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt: created.createdAt });
+      resultPromise.then(result => {
+        mw.markPlanCompleted(planId);
+        (mw.plans.get(planId) as Record<string, unknown>).result = result;
+        mw.persistPlanHistory({ planId, createdAt: created.createdAt, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
+        setTimeout(() => mw.plans.delete(planId), 3_600_000);
+      }).catch(() => {
+        mw.markPlanCompleted(planId);
+        mw.persistPlanHistory({ planId, createdAt: created.createdAt, event: 'failed' });
+        setTimeout(() => mw.plans.delete(planId), 3_600_000);
+      });
+
+      recovered++;
+      console.log(`[lifecycle] recovered plan ${planId} (${initialResults.size}/${execPlan.steps.length} steps already complete)`);
+    }
+
+    if (recovered > 0) console.log(`[lifecycle] startup: recovered ${recovered} interrupted plans`);
+  }
+
   // Global error handler — uncaught exceptions in routes return structured JSON
   // instead of bare "Internal Server Error" text. This matters for AI callers:
   // a 21-byte text crash is opaque; a JSON body with error+message is debuggable.
@@ -885,7 +989,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // execPlan would leak planId prefixes into step.id, dependsOn, condition.stepId,
     // and {{template.result}} references — making replay require complex stripping.
     // Storing logical means replay just re-runs the same POST /plan flow.
-    mw.persistPlanHistory({ planId, createdAt, caller: body.caller, plan });
+    mw.persistPlanHistory({ planId, createdAt, caller: body.caller, plan, event: 'created' });
 
     // Cleanup after completion + evict plan after 1h + webhook callback
     const planCb = body.callback;
@@ -898,6 +1002,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       }
       mw.markPlanCompleted(planId);
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
+      mw.persistPlanHistory({ planId, createdAt, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
       // Webhook callback on plan completion
       if (planCb) {
@@ -908,6 +1013,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       }
     }).catch(() => {
       mw.markPlanCompleted(planId);
+      mw.persistPlanHistory({ planId, createdAt, event: 'failed' });
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
       if (planCb) sendCallback(planCb, planCbFrom, { type: 'plan.failed', id: planId, status: 'failed', error: 'Plan execution error' });
     });
@@ -1090,7 +1196,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt });
     mw.evictOldPlans();
     // Persist logical plan + original goal for audit/replay
-    mw.persistPlanHistory({ planId, createdAt, caller: body.caller, plan });
+    mw.persistPlanHistory({ planId, createdAt, caller: body.caller, plan, event: 'created' });
 
     const planCb = body.callback;
     const planCbFrom = body.callbackFrom ?? 'middleware';
@@ -1102,6 +1208,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       }
       mw.markPlanCompleted(planId);
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
+      mw.persistPlanHistory({ planId, createdAt, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
       if (planCb) {
         const completed = result.steps.filter(s => s.status === 'completed').length;
@@ -1115,6 +1222,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     }).catch(() => {
       mw.markPlanCompleted(planId);
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
+      mw.persistPlanHistory({ planId, createdAt, event: 'failed' });
       if (planCb) sendCallback(planCb, planCbFrom, {
         type: 'accomplish.failed',
         id: planId,
@@ -1125,41 +1233,124 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     if (waitMode) {
       try {
-        const result = await resultPromise;
-        mw.markPlanCompleted(planId);
-        (mw.plans.get(planId) as Record<string, unknown>).result = result;
-        const steps = mw.buffer.list({ planId });
+        const MAX_REPLAN_ROUNDS = 3;
+        let currentResult = await resultPromise;
+        let currentPlanId = planId;
+        let currentPlan = plan;
+        let replanRound = 0;
+        const replanHistory: Array<{ planId: string; round: number; summary: { completed: number; failed: number; skipped: number } }> = [];
 
-        // On partial failure, ask critic for actionable recovery options.
-        // This converts raw stack traces into AI-actionable alternatives
-        // (Constraint Texture: error is a convergence signal, not a debug dump).
+        // Mark initial plan
+        mw.markPlanCompleted(planId);
+        (mw.plans.get(planId) as Record<string, unknown>).result = currentResult;
+
+        // Brain feedback loop: on failure, ask brain to replan (max 3 rounds).
+        // Brain sees full context (completed + failed steps) and decides:
+        // - prose response → done (goal achieved or unrecoverable)
+        // - new plan → re-execute
+        while (
+          replanRound < MAX_REPLAN_ROUNDS &&
+          !currentResult.accepted &&
+          currentResult.summary.failed > 0
+        ) {
+          replanRound++;
+          replanHistory.push({ planId: currentPlanId, round: replanRound - 1, summary: currentResult.summary });
+          console.log(`[replan] round ${replanRound}/${MAX_REPLAN_ROUNDS} for goal: ${body.goal}`);
+
+          let digestResponse: string;
+          try {
+            digestResponse = await brainDigest(mw.getBrain(), body.goal, currentResult, {
+              additionalContext: body.success_criteria ? `Success criteria: ${body.success_criteria}` : undefined,
+              replanRound,
+              maxReplanRounds: MAX_REPLAN_ROUNDS,
+            });
+          } catch (err) {
+            console.warn(`[replan] brainDigest failed: ${err instanceof Error ? err.message : err}`);
+            break;
+          }
+
+          const newPlan = parsePlan(digestResponse);
+          if (!newPlan) break; // Brain returned prose — done
+
+          const valErrors = mw.planEngine.validate(newPlan, new Set(mergedWorkerNames()));
+          if (valErrors.length > 0) {
+            console.warn(`[replan] round ${replanRound} invalid plan: ${valErrors.join(', ')}`);
+            break;
+          }
+
+          // Phase 2b enforcement on replan
+          if (newPlan.steps.length >= 2) {
+            for (const step of newPlan.steps) {
+              if (!step.acceptance_criteria) {
+                step.acceptance_criteria = `Step "${step.label ?? step.id}" completes successfully with relevant output`;
+              }
+            }
+          }
+
+          // Execute new plan
+          const newPlanId = `acc-${Date.now()}-${(mw.planCounter++).toString(36)}`;
+          for (const step of newPlan.steps) {
+            mw.buffer.submit({ id: `${newPlanId}_${step.id}`, planId: newPlanId, worker: step.worker, task: step.task, label: step.label, caller: body.caller });
+          }
+          const newIdMap = new Map(newPlan.steps.map(s => [s.id, `${newPlanId}_${s.id}`]));
+          const newRemap = (task: string) => {
+            let t = task;
+            for (const [orig, prefixed] of newIdMap) t = t.replaceAll(`{{${orig}.`, `{{${prefixed}.`);
+            return t;
+          };
+          const newExecPlan: ActionPlan = {
+            ...newPlan,
+            steps: newPlan.steps.map(s => ({
+              ...s,
+              id: newIdMap.get(s.id)!,
+              task: newRemap(s.task),
+              dependsOn: (s.dependsOn ?? []).map(d => newIdMap.get(d) ?? d),
+            })),
+          };
+
+          const newCreatedAt = new Date().toISOString();
+          mw.persistPlanHistory({ planId: newPlanId, createdAt: newCreatedAt, caller: body.caller, plan: newPlan, event: 'created' });
+          const newResultPromise = mw.planEngine.execute(newExecPlan);
+          mw.plans.set(newPlanId, { plan: newExecPlan, resultPromise: newResultPromise, createdAt: newCreatedAt });
+
+          currentResult = await newResultPromise;
+          currentPlanId = newPlanId;
+          currentPlan = newPlan;
+
+          mw.markPlanCompleted(currentPlanId);
+          (mw.plans.get(currentPlanId) as Record<string, unknown>).result = currentResult;
+          const termEvent = currentResult.accepted ? 'completed' as const : 'failed' as const;
+          mw.persistPlanHistory({ planId: currentPlanId, createdAt: newCreatedAt, event: termEvent, summary: currentResult.summary, accepted: currentResult.accepted, convergenceIterations: currentResult.convergenceIterations, durationMs: currentResult.totalDurationMs });
+          setTimeout(() => mw.plans.delete(currentPlanId), 3_600_000);
+        }
+
+        const finalSteps = mw.buffer.list({ planId: currentPlanId });
+
+        // Recovery options for remaining failures after replan exhausted
         let recovery: Awaited<ReturnType<typeof mw.generateRecoveryOptions>> = null;
-        const failedStepDetails = result.steps
-          .filter(s => s.status === 'failed' || s.status === 'timeout')
-          .map(s => ({ id: s.id, worker: s.worker, error: s.output }));
-        if (!result.accepted && failedStepDetails.length > 0) {
-          recovery = await mw.generateRecoveryOptions(
-            body.goal,
-            failedStepDetails,
-            result.digestContext,
-          );
+        if (!currentResult.accepted && currentResult.summary.failed > 0) {
+          const failedDetails = currentResult.steps
+            .filter(s => s.status === 'failed' || s.status === 'timeout')
+            .map(s => ({ id: s.id, worker: s.worker, error: s.output }));
+          recovery = await mw.generateRecoveryOptions(body.goal, failedDetails, currentResult.digestContext);
         }
 
         return c.json({
-          planId,
-          status: result.accepted ? 'completed' : 'partial',
+          planId: currentPlanId,
+          status: currentResult.accepted ? 'completed' : (replanRound >= MAX_REPLAN_ROUNDS ? 'plan_exhausted' : 'partial'),
           goal: body.goal,
           success_criteria: body.success_criteria,
           plan: {
-            goal: plan.goal,
-            acceptance: plan.acceptance,
-            steps: plan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn, acceptance_criteria: s.acceptance_criteria })),
+            goal: currentPlan.goal,
+            acceptance: currentPlan.acceptance,
+            steps: currentPlan.steps.map(s => ({ id: s.id, worker: s.worker, label: s.label, dependsOn: s.dependsOn, acceptance_criteria: s.acceptance_criteria })),
           },
-          steps: steps.map(s => ({
+          steps: finalSteps.map(s => ({
             id: s.id, worker: s.worker, label: s.label, status: s.status,
             result: s.result, error: s.error, durationMs: s.durationMs,
           })),
-          summary: result.summary,
+          summary: currentResult.summary,
+          ...(replanRound > 0 && { replan: { rounds: replanRound, history: replanHistory } }),
           ...(recovery && { recovery_options: recovery.options, semantic_diagnosis: recovery.semantic_diagnosis }),
         });
       } catch (err) {
@@ -1538,12 +1729,12 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const offset = parseInt(c.req.query('offset') ?? '0', 10);
 
     // Enrich each record with current runtime state from buffer
-    const enriched = records.map(r => {
+    const enriched = records.filter(r => r.plan).map(r => {
       const runtimeSteps = mw.buffer.list({ planId: r.planId });
       const completed = runtimeSteps.filter(s => s.status === 'completed').length;
       const failed = runtimeSteps.filter(s => s.status === 'failed' || s.status === 'timeout').length;
       const running = runtimeSteps.filter(s => s.status === 'running').length;
-      const total = r.plan.steps.length;
+      const total = r.plan!.steps.length;
       const planStatus =
         running > 0 ? 'running'
         : failed > 0 ? 'failed'
@@ -1554,7 +1745,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         planId: r.planId,
         createdAt: r.createdAt,
         caller: r.caller,
-        goal: r.plan.goal,
+        goal: r.plan!.goal,
         totalSteps: total,
         completed, failed, running,
         status: planStatus,
@@ -1582,8 +1773,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.get('/plans/history/:planId', (c) => {
     const planId = c.req.param('planId');
     const records = mw.readPlanHistory();
-    const record = records.find(r => r.planId === planId);
-    if (!record) return c.json({ error: 'not found in history' }, 404);
+    const record = records.find(r => r.planId === planId && r.plan);
+    if (!record || !record.plan) return c.json({ error: 'not found in history' }, 404);
     // Historical plan uses LOGICAL step IDs (pre-prefix). Runtime buffer uses
     // prefixed IDs (`{planId}_{stepId}`). Match by constructing the expected
     // runtime ID from logical + planId.
@@ -1627,8 +1818,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   app.post('/plans/history/:planId/replay', async (c) => {
     const originalId = c.req.param('planId');
     const records = mw.readPlanHistory();
-    const record = records.find(r => r.planId === originalId);
-    if (!record) return c.json({ error: 'not found in history' }, 404);
+    const record = records.find(r => r.planId === originalId && r.plan);
+    if (!record || !record.plan) return c.json({ error: 'not found in history' }, 404);
 
     // Logical plan from history — all IDs/dependsOn/condition.stepId/templates
     // are in their pre-prefix form. This is structurally identical to what
@@ -1669,7 +1860,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     mw.plans.set(newPlanId, { plan: execPlan, resultPromise, createdAt });
     mw.evictOldPlans();
     // Persist the LOGICAL plan (not execPlan) — matches POST /plan behavior
-    mw.persistPlanHistory({ planId: newPlanId, createdAt, caller: replayCaller, plan: logicalPlan });
+    mw.persistPlanHistory({ planId: newPlanId, createdAt, caller: replayCaller, plan: logicalPlan, event: 'created' });
 
     // Match POST /plan lifecycle: mark completed + 1h cleanup after completion
     resultPromise.then(result => {
@@ -1678,9 +1869,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       }
       mw.markPlanCompleted(newPlanId);
       (mw.plans.get(newPlanId) as Record<string, unknown>).result = result;
+      mw.persistPlanHistory({ planId: newPlanId, createdAt, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
       setTimeout(() => mw.plans.delete(newPlanId), 3_600_000);
     }).catch(() => {
       mw.markPlanCompleted(newPlanId);
+      mw.persistPlanHistory({ planId: newPlanId, createdAt, event: 'failed' });
       setTimeout(() => mw.plans.delete(newPlanId), 3_600_000);
     });
 
@@ -1777,13 +1970,15 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     mw.plans.set(planId, { plan: execPlan, resultPromise, createdAt });
     mw.evictOldPlans();
     // Persist LOGICAL plan (pre-prefix) for replay/audit
-    mw.persistPlanHistory({ planId, createdAt, plan });
+    mw.persistPlanHistory({ planId, createdAt, plan, event: 'created' });
     resultPromise.then(result => {
       mw.markPlanCompleted(planId);
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
+      mw.persistPlanHistory({ planId, createdAt, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
     }).catch(() => {
       mw.markPlanCompleted(planId);
+      mw.persistPlanHistory({ planId, createdAt, event: 'failed' });
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
     });
 

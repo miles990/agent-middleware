@@ -381,7 +381,7 @@ export class PlanEngine {
 
   // ─── Execute ───
 
-  async execute(plan: ActionPlan): Promise<PlanResult> {
+  async execute(plan: ActionPlan, initialResults?: Map<string, StepResult>): Promise<PlanResult> {
     // Confirmation gate
     if (this.opts.confirmationGate) {
       const risks = plan.steps.map(step => ({ step, risk: classifyStepRisk(step) }));
@@ -397,7 +397,7 @@ export class PlanEngine {
     }
 
     const start = Date.now();
-    const results = new Map<string, StepResult>();
+    const results = new Map<string, StepResult>(initialResults ?? []);
     const running = new Set<string>();
     const retryCounts = new Map<string, number>();
     let dispatchOrder = 0;
