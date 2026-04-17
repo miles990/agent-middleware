@@ -244,6 +244,30 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     defaultTimeoutSeconds: 300,
   },
 
+  // ─── Agent Brain (per brain-only-kuro-v2 Layer C, 2026-04-17) ───
+  // Bare Claude Opus passthrough — accepts caller's full prompt as-is, no
+  // middleware system prompt override. Used when agent (e.g. Kuro) wants to
+  // offload cycle LLM iteration from its own event loop: agent POSTs prompt
+  // to /dispatch, polls /status, and only receives final result — zero
+  // for-await iteration in agent's main thread.
+  //
+  // Trade-off: adds ~100ms network round-trip for dispatch + polling overhead,
+  // but completely decouples agent event loop from SDK subprocess iteration.
+  // Solves 160s loop-lag catastrophe observed when SDK runs in-process.
+
+  'agent-brain': {
+    agent: {
+      description: 'Bare Claude Opus passthrough. Accepts caller-supplied full prompt as-is (no middleware system prompt override, no tool scope override). For agent cycle LLM calls where the caller owns the prompt and only wants to offload the iteration overhead.',
+      tools: [],
+      prompt: '',
+      model: 'claude-opus-4-7',
+      maxTurns: 30,
+    },
+    backend: 'sdk',
+    maxConcurrency: 2,
+    defaultTimeoutSeconds: 1500,
+  },
+
   // ─── CI Trigger (per brain-only-kuro-v2 Phase F T22) ───
   // Bridges agent DAG and GitHub Actions. Input is JSON string with workflow + inputs.
   // Auth via local `gh` CLI (keyring token) — no API key env needed on middleware host.
