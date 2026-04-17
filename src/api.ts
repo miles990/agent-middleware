@@ -2479,6 +2479,121 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     }
   });
 
+  // T4: Needs-attention filter — Tactical Board + scorer + rubric combined.
+  // Per brain-only-kuro-v2 Phase C. Agent posts rubric inline; endpoint collects
+  // tactics (in-flight + recent history), scores via T3, returns items whose
+  // severity matches audit-worthy set (critical | anomaly | blocked).
+  //
+  // Design: rubric 透過 body 傳 (Kuro-side ownership of taste file location).
+  // Middleware 不直接讀 mini-agent filesystem — 保持 cross-agent 中立性.
+  const NEEDS_ATTENTION_SEVERITIES = new Set(['critical', 'anomaly', 'blocked']);
+  const NEEDS_ATTENTION_OUTPUT_SHAPE = {
+    filtered: [{ task_id: '', severity: 'critical|anomaly|blocked|routine', confidence: 0, rationale: '' }],
+  };
+
+  app.post('/api/tactics/needs-attention', async (c) => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+    if (!body || typeof body !== 'object') return c.json({ error: 'body must be object' }, 400);
+    const b = body as { agent?: unknown; rubric?: unknown; window?: unknown; max_items?: unknown };
+
+    if (typeof b.rubric !== 'string' || !b.rubric.trim()) {
+      return c.json({
+        error: 'rubric_missing',
+        hint: 'POST body must include non-empty "rubric" string. This is the agent\'s taste source (品味不外包)—middleware will not fabricate defaults.',
+      }, 400);
+    }
+    const agent = typeof b.agent === 'string' ? b.agent : undefined;
+    const windowStr = typeof b.window === 'string' ? b.window : '24h';
+    const windowSec = parseWindow(windowStr);
+    if (windowSec == null) {
+      return c.json({ error: 'invalid_window', accepted: 'e.g. "24h", "7d", "1200s", "30m"' }, 400);
+    }
+    const maxItems = typeof b.max_items === 'number' && b.max_items > 0 ? Math.min(b.max_items, 200) : 50;
+
+    // Collect in-flight + recent history → unified TacticRecord[]
+    const items: TacticRecord[] = [];
+    for (const status of ACTIVE_STATUSES) {
+      for (const t of mw.buffer.list({ caller: agent, status })) {
+        items.push(taskToTactic(t));
+      }
+    }
+    const cutoff = Date.now() - windowSec * 1000;
+    for (const status of TERMINAL_STATUSES) {
+      for (const t of mw.buffer.list({ caller: agent, status, limit: 500, includeArchived: true })) {
+        const endTs = t.completedAt instanceof Date ? t.completedAt.getTime()
+          : t.submittedAt instanceof Date ? t.submittedAt.getTime()
+          : 0;
+        if (endTs >= cutoff) items.push(taskToTactic(t));
+      }
+    }
+
+    // Cap input to avoid runaway scoring cost. Agent can adjust max_items.
+    const truncated = items.length > maxItems;
+    const itemsToScore = truncated ? items.slice(0, maxItems) : items;
+
+    if (itemsToScore.length === 0) {
+      return c.json({ count: 0, total_assessed: 0, agent: agent ?? null, truncated: false, items: [] });
+    }
+
+    // Build scorer task — rubric + items + strict output shape
+    const task = [
+      '# Rubric (agent-provided — apply mechanically, never override)',
+      b.rubric.trim(),
+      '',
+      '# Items (JSON array of TacticRecord)',
+      JSON.stringify(itemsToScore, null, 2),
+      '',
+      '# Output shape (strict)',
+      'Return strict JSON. Include ALL items in `filtered` array (never drop silently — endpoint will filter).',
+      JSON.stringify(NEEDS_ATTENTION_OUTPUT_SHAPE, null, 2),
+      '',
+      'Return ONLY the JSON — no prose, no markdown fences.',
+    ].join('\n');
+
+    let scoredRaw: string;
+    try {
+      scoredRaw = await mw.executeWorker('scorer', task, 120_000);
+    } catch (e) {
+      return c.json({ error: 'scorer_failed', message: e instanceof Error ? e.message.slice(0, 300) : String(e) }, 500);
+    }
+
+    // Parse with fallback extract
+    let scored: unknown = null;
+    try { scored = JSON.parse(scoredRaw.trim()); } catch {
+      const m = scoredRaw.trim().match(/\{[\s\S]*\}/);
+      if (m) { try { scored = JSON.parse(m[0]); } catch { /* noop */ } }
+    }
+
+    const scoredArr = (scored && typeof scored === 'object' && Array.isArray((scored as { filtered?: unknown }).filtered))
+      ? (scored as { filtered: Array<Record<string, unknown>> }).filtered
+      : null;
+
+    if (!scoredArr) {
+      return c.json({
+        error: 'scorer_output_invalid',
+        hint: 'Expected {filtered: [...]} — scorer may have leaked prose or deviated from output_shape',
+        raw: scoredRaw.slice(0, 500),
+      }, 502);
+    }
+
+    // Filter: only severities in the audit-worthy set
+    const attentionItems = scoredArr.filter((x) => {
+      const sev = typeof x.severity === 'string' ? x.severity : '';
+      return NEEDS_ATTENTION_SEVERITIES.has(sev);
+    });
+
+    return c.json({
+      count: attentionItems.length,
+      total_assessed: itemsToScore.length,
+      total_seen: items.length,
+      truncated,
+      agent: agent ?? null,
+      window_seconds: windowSec,
+      items: attentionItems,
+    });
+  });
+
   app.get('/api/tactics/history', (c) => {
     const agent = c.req.query('agent');
     const windowStr = c.req.query('window') ?? '24h';
