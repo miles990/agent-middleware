@@ -25,6 +25,7 @@ import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-
 import { ResultBuffer, classifyEventSeverity, type TaskEvent, type TaskRecord, type TaskStatus, type EventSeverity } from './result-buffer.js';
 import { HookRegistry, WebhookDispatcher, type HookEventPattern, type HookInput } from './webhook-dispatcher.js';
 import { triggerAndWait as ciTriggerAndWait } from './ci-trigger.js';
+import { execShellWithProgress } from './progress-timeout.js';
 import { WORKERS, getWorkerNames, allWorkers, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
@@ -272,32 +273,37 @@ export function createMiddleware(config?: MiddlewareConfig) {
 
         // Legacy string mode — preserved for backward compatibility.
         // taskCwd overrides middleware root cwd (validated at dispatch boundary).
+        // Two-tier timeout (per 2026-04-17 Alex framing): progress (stall-kill)
+        // + hard (wall-clock). See src/progress-timeout.ts.
         const execCwd = taskCwd ?? cwd;
-        try {
-          const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
-          if (def.shellAllowlist?.length) {
-            const parts = shellCmd.trim().split(/\s+/);
-            const cmdBase = parts[0];
-            if (!def.shellAllowlist.some(a => cmdBase === a || cmdBase.endsWith(`/${a}`))) {
-              throw new Error(`Shell command "${cmdBase}" not in allowlist: ${def.shellAllowlist.join(', ')}`);
-            }
-            return execFileSync(cmdBase, parts.slice(1), { cwd: execCwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
+        const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
+        if (def.shellAllowlist?.length) {
+          const parts = shellCmd.trim().split(/\s+/);
+          const cmdBase = parts[0];
+          if (!def.shellAllowlist.some(a => cmdBase === a || cmdBase.endsWith(`/${a}`))) {
+            throw new Error(`Shell command "${cmdBase}" not in allowlist: ${def.shellAllowlist.join(', ')}`);
           }
-          // No allowlist → trusted agent, full shell features
-          // Explicit `shell: '/bin/bash'` — more forgiving than default /bin/sh for
-          // glob patterns, compound commands, heredocs, process substitution, arrays.
-          // Agents construct commands idiomatically (bash-style); sh-strict mode rejects
-          // common patterns (e.g. `[[ ]]`, `<(...)`) that agents assume work.
-          // Store FULL result — no truncation. Template substitution caps at 4K for LLM safety.
-          // Agent can access full result via GET /status/:stepId
-          return execSync(shellCmd, { cwd: execCwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024, shell: '/bin/bash' });
+          // Allowlist mode keeps execFileSync (no shell features needed).
+          try {
+            return execFileSync(cmdBase, parts.slice(1), { cwd: execCwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`Shell error (allowlist): ${msg.slice(0, 500)}`);
+          }
+        }
+        // No allowlist → trusted agent, full shell features via progress-timeout helper.
+        // progressMs from worker config (default 60s if not set; undefined disables stall-kill).
+        const progressMs = (def.progressTimeoutSeconds ?? 60) * 1000;
+        try {
+          return await execShellWithProgress(shellCmd, {
+            cwd: execCwd,
+            progressMs,
+            hardMs: timeoutMs,
+          });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          const e = err as { stdout?: Buffer|string; stderr?: Buffer|string; status?: number; signal?: string };
-          const stderr = e.stderr ? String(e.stderr).slice(0, 500) : '';
-          const stdout = e.stdout ? String(e.stdout).slice(0, 200) : '';
-          const cmdPreview = (typeof task === 'string' ? task : JSON.stringify(task)).slice(0, 200);
-          console.error(`[worker:shell] FAIL worker=${worker} cwd=${execCwd} timeoutMs=${timeoutMs} status=${e.status ?? '-'} signal=${e.signal ?? '-'} stderr=${stderr} stdout=${stdout} cmd=${cmdPreview} err=${msg.slice(0, 200)}`);
+          const cmdPreview = shellCmd.slice(0, 200);
+          console.error(`[worker:shell] FAIL worker=${worker} cwd=${execCwd} progressMs=${progressMs} hardMs=${timeoutMs} cmd=${cmdPreview} err=${msg.slice(0, 300)}`);
           throw new Error(`Shell error: ${msg.slice(0, 500)}`);
         }
       }
@@ -1010,6 +1016,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         return c.json({ taskId, status: 'failed', error: err instanceof Error ? err.message : String(err) }, 500);
       }
     }
+
+    // Non-wait mode: nobody awaits execPromise, so the .catch re-throw at L1007
+    // becomes an unhandled rejection and crashes the process. Silence here —
+    // errors are already recorded via buffer.fail + callback.
+    execPromise.catch(() => { /* swallowed — state captured in ResultBuffer + callback */ });
 
     return c.json({ taskId, status: 'running' });
   });

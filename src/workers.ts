@@ -40,6 +40,14 @@ export interface WorkerDefinition {
   maxConcurrency?: number;
   /** Fallback timeout for non-plan dispatch. For SDK workers in plans, actual timeout = max(this, maxTurns * 120s) */
   defaultTimeoutSeconds: number;
+  /**
+   * Progress-based timeout (2026-04-17): max idle time with no observable
+   * activity before stall-kill. Independent from defaultTimeoutSeconds (the
+   * absolute wall-clock cap). A worker is "alive" if it produces any signal
+   * (stdout/stderr write, SDK message, etc.) within this window.
+   * Undefined → progress monitoring disabled for this worker.
+   */
+  progressTimeoutSeconds?: number;
   /** Budget per task in USD (for SDK backend). Default: 5 */
   maxBudgetUsd?: number;
   /** Shell backend: optional command allowlist. Empty = allow all (default). */
@@ -97,13 +105,14 @@ export const WORKERS: Record<string, WorkerDefinition> = {
 
   shell: {
     agent: {
-      description: 'Execute shell commands. For: tests, git ops, curl, file queries.',
+      description: 'Execute shell commands. For: tests, git ops, curl, file queries. Typical duration: <30s for quick queries, 1-5min for scripts (pnpm tsx, npm run). Progress-monitored (60s no stdout = stall-kill); hard cap 10min. Set explicit timeoutSeconds in plan step if wrapping long-running build/train tasks.',
       tools: [],
       prompt: '',
     },
     backend: 'shell',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 30,
+    defaultTimeoutSeconds: 600, // hard cap 10min (was 30s — too strict for scripts)
+    progressTimeoutSeconds: 60, // stall-kill if no stdout for 60s
     healthCheck: 'echo ok',
   },
 
