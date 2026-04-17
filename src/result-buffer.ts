@@ -40,6 +40,34 @@ export type TaskEvent = {
   timestamp: Date;
 };
 
+// ─── Event Severity (T11) ───
+// Static classification used for SSE filter + JSONL persistence.
+// Per brain-only-kuro-v2 Phase D — agent consumers (Kuro) filter by severity
+// to decide preempt vs routine-pickup. Rubric-driven dynamic severity lives
+// at T4 needs-attention layer (more expensive LLM call); this is the cheap
+// always-on classification.
+
+export type EventSeverity = 'critical' | 'anomaly' | 'info' | 'routine';
+
+export function classifyEventSeverity(event: TaskEvent): EventSeverity {
+  switch (event.type) {
+    case 'task.failed':
+      // Failed task = critical if blocking (has error or timeout status)
+      return 'critical';
+    case 'task.cancelled':
+      // Cancellation is anomaly — not routine, but not necessarily failure
+      return 'anomaly';
+    case 'task.completed':
+      // Completed successfully — routine signal
+      return 'routine';
+    case 'task.started':
+    case 'task.submitted':
+      return 'info';
+    default:
+      return 'info';
+  }
+}
+
 // =============================================================================
 // Result Buffer
 // =============================================================================
@@ -260,6 +288,7 @@ export class ResultBuffer {
     try {
       const record = {
         type: event.type,
+        severity: classifyEventSeverity(event),
         taskId: event.task.id,
         planId: event.task.planId,
         worker: event.task.worker,

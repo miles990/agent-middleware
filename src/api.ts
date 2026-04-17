@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-engine.js';
-import { ResultBuffer, type TaskEvent, type TaskRecord, type TaskStatus } from './result-buffer.js';
+import { ResultBuffer, classifyEventSeverity, type TaskEvent, type TaskRecord, type TaskStatus, type EventSeverity } from './result-buffer.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
@@ -1660,12 +1660,26 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
   // GET /events — SSE stream
   app.get('/events', (c) => {
+    // T11: optional severity filter via ?severity=critical,anomaly
+    const severityFilterRaw = c.req.query('severity');
+    const severityFilter = severityFilterRaw
+      ? new Set(severityFilterRaw.split(',').map(s => s.trim()).filter(Boolean) as EventSeverity[])
+      : null;
+
     return streamSSE(c, async (stream) => {
       const unsubscribe = mw.buffer.subscribe((event: TaskEvent & { planData?: unknown }) => {
+        const severity = event.planData ? 'info' : classifyEventSeverity(event);
+        // Apply severity filter if caller specified one
+        if (severityFilter && !severityFilter.has(severity)) return;
         // Plan-level events carry planData; task events carry task record
-        const data = event.planData
-          ? JSON.stringify({ ...(typeof event.planData === 'object' ? event.planData as Record<string, unknown> : {}), worker: 'brain' })
-          : JSON.stringify(event.task);
+        const base = event.planData
+          ? (typeof event.planData === 'object' ? event.planData as Record<string, unknown> : {})
+          : (event.task as unknown as Record<string, unknown>);
+        const data = JSON.stringify({
+          ...base,
+          severity,
+          ...(event.planData ? { worker: 'brain' } : {}),
+        });
         stream.writeSSE({
           event: event.type,
           data,
