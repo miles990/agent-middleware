@@ -25,7 +25,7 @@ import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-
 import { ResultBuffer, classifyEventSeverity, type TaskEvent, type TaskRecord, type TaskStatus, type EventSeverity } from './result-buffer.js';
 import { HookRegistry, WebhookDispatcher, type HookEventPattern, type HookInput } from './webhook-dispatcher.js';
 import { triggerAndWait as ciTriggerAndWait } from './ci-trigger.js';
-import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
+import { WORKERS, getWorkerNames, allWorkers, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
 import { PresetManager } from './presets.js';
@@ -2454,6 +2454,31 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // Sort ascending by submitted_at (oldest first = earliest waiting)
     items.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
     return c.json({ count: items.length, agent: agent ?? null, items });
+  });
+
+  // ─── Worker Capabilities / Service Discovery ───
+  // Per Alex 2026-04-17 "中台的 worker 服務發現問題". Agents query this to
+  // learn what workers are available + how to invoke — prevents mis-invocation
+  // (e.g. shell worker receiving natural language instead of valid bash cmd).
+  //
+  // Output: compact list suitable for prompt injection. Bad/good examples
+  // live in worker.agent.description (updated as we observe failure patterns).
+  app.get('/api/workers/capabilities', (c) => {
+    const workers = allWorkers();
+    const capabilities = Object.entries(workers).map(([name, rawDef]) => {
+      const def = rawDef as WorkerDefinition;
+      return {
+        name,
+        description: def.agent?.description ?? '',
+        backend: def.backend,
+        model: def.agent?.model,
+        maxTurns: def.agent?.maxTurns,
+        tools: (def.agent?.tools ?? []) as unknown[],
+        maxConcurrency: def.maxConcurrency,
+        defaultTimeoutSeconds: def.defaultTimeoutSeconds,
+      };
+    });
+    return c.json({ count: capabilities.length, workers: capabilities });
   });
 
   // ─── Webhook Hook Registry (T16) + DLQ read (T17) ───
