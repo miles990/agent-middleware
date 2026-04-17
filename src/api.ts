@@ -25,7 +25,7 @@ import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-
 import { ResultBuffer, classifyEventSeverity, type TaskEvent, type TaskRecord, type TaskStatus, type EventSeverity } from './result-buffer.js';
 import { HookRegistry, WebhookDispatcher, type HookEventPattern, type HookInput } from './webhook-dispatcher.js';
 import { triggerAndWait as ciTriggerAndWait } from './ci-trigger.js';
-import { execShellWithProgress } from './progress-timeout.js';
+import { execShellWithProgress, withProgressTimeout } from './progress-timeout.js';
 import { WORKERS, getWorkerNames, allWorkers, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
@@ -171,16 +171,21 @@ export function createMiddleware(config?: MiddlewareConfig) {
       case 'sdk': {
         const provider = workerProviders.get(worker);
         if (!provider) throw new Error(`No SDK provider for worker: ${worker}`);
-        // SDK workers: maxTurns is the real scope control.
-        // Timeout is a safety net — derived from maxTurns (2min per turn) or caller's explicit timeout, whichever is larger.
+        // SDK workers: two-tier timeout (2026-04-17 per Alex framing).
+        //   - hard cap: max(caller's timeoutMs, maxTurns * 120s) — absolute wall-clock
+        //   - progress cap: worker.progressTimeoutSeconds or default 120s — stall detect
+        //     (each SDK yielded message resets the stall timer via onActivity)
         const maxTurns = def.agent.maxTurns ?? 10;
-        const safetyTimeout = Math.max(timeoutMs, maxTurns * 120_000);
-        return Promise.race([
-          provider.think(task, composePrompt(def), taskCwd ? { cwd: taskCwd } : undefined),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Worker ${worker} timeout after ${safetyTimeout}ms (maxTurns=${maxTurns})`)), safetyTimeout),
-          ),
-        ]);
+        const hardMs = Math.max(timeoutMs, maxTurns * 120_000);
+        const progressMs = (def.progressTimeoutSeconds ?? 120) * 1000;
+        return withProgressTimeout(
+          (signal, markActive) => provider.think(task, composePrompt(def), {
+            cwd: taskCwd,
+            signal,
+            onActivity: markActive,
+          }),
+          { progressMs, hardMs },
+        );
       }
       case 'shell': {
         // Two input formats supported (Constraint Texture: shell = POSIX process, not LLM prompt):

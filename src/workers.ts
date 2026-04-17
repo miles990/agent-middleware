@@ -260,7 +260,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
 
   summarizer: {
     agent: {
-      description: 'Text summarizer. Input: arbitrary text (log, chat, document, perception output). Output JSON: {summary, key_points[], confidence}. Keeps summaries 1-3 sentences. Use for: perception summarization (externalize from local oMLX), conversation digest, delegate result summary. NOT for: code analysis (use reviewer), deep research (use learn).',
+      description: 'Text summarizer. Input: arbitrary text (log, chat, document, perception output). Output JSON: {summary, key_points[], confidence}. Keeps summaries 1-3 sentences. Typical duration: 5-20s. Use for: perception summarization (externalize from local oMLX), conversation digest, delegate result summary. NOT for: code analysis (use reviewer), deep research (use learn).',
       tools: [],
       prompt: 'You are a text summarizer. Produce JSON matching {summary: string (1-3 sentences), key_points: string[] (3-7 bullet items), confidence: 0-1}. Be faithful to source — no hallucination. Return ONLY JSON, no prose.',
       model: 'haiku',
@@ -269,6 +269,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'sdk',
     maxConcurrency: 6,
     defaultTimeoutSeconds: 60,
+    progressTimeoutSeconds: 45,
   },
 
   classifier: {
@@ -282,6 +283,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'sdk',
     maxConcurrency: 6,
     defaultTimeoutSeconds: 60,
+    progressTimeoutSeconds: 45,
   },
 
   extractor: {
@@ -295,6 +297,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'sdk',
     maxConcurrency: 4,
     defaultTimeoutSeconds: 60,
+    progressTimeoutSeconds: 45,
   },
 
   // ─── Agent Brain (per brain-only-kuro-v2 Layer C, 2026-04-17) ───
@@ -310,7 +313,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
 
   'agent-brain': {
     agent: {
-      description: 'Bare Claude Opus passthrough. Accepts caller-supplied full prompt as-is (no middleware system prompt override, no tool scope override). For agent cycle LLM calls where the caller owns the prompt and only wants to offload the iteration overhead.',
+      description: 'Bare Claude Opus passthrough. Accepts caller-supplied full prompt as-is (no middleware system prompt override, no tool scope override). Typical duration: 30s-3min depending on reasoning depth + tool use. Progress-monitored (180s no message = stall). For agent cycle LLM calls where the caller owns the prompt and only wants to offload the iteration overhead.',
       tools: [],
       prompt: '',
       model: 'claude-opus-4-7',
@@ -319,6 +322,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'sdk',
     maxConcurrency: 2,
     defaultTimeoutSeconds: 1500,
+    progressTimeoutSeconds: 180,
   },
 
   // ─── CI Trigger (per brain-only-kuro-v2 Phase F T22) ───

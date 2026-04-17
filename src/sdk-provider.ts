@@ -39,11 +39,20 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
 
       let result = '';
 
+      // Progress-based timeout wiring: onActivity fired on every yielded
+      // message so stall detector resets. signal lets caller abort mid-iteration.
+      const abortController = new AbortController();
+      if (runtimeOpts?.signal) {
+        if (runtimeOpts.signal.aborted) throw new Error('aborted before start');
+        runtimeOpts.signal.addEventListener('abort', () => abortController.abort());
+      }
+
       for await (const msg of query({
         prompt: promptStr,
         options: {
           // Precedence: per-call runtimeOpts.cwd > provider-baked opts.cwd > process.cwd()
           cwd: runtimeOpts?.cwd ?? opts?.cwd ?? process.cwd(),
+          abortController,
           allowedTools: opts?.allowedTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
           disallowedTools: opts?.disallowedTools,
           maxTurns: opts?.maxTurns,
@@ -56,6 +65,7 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
           ...(opts?.mcpServers ? { mcpServers: opts.mcpServers } : {}),
         },
       })) {
+        runtimeOpts?.onActivity?.();
         if ('result' in msg && typeof msg.result === 'string') {
           result = msg.result;
         }

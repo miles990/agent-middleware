@@ -83,6 +83,10 @@ export interface StructuredResponse {
 export interface RuntimeOptions {
   /** Absolute workdir for this call. Validated at dispatch boundary (must exist + be directory). */
   cwd?: string;
+  /** Abort signal — provider stops iteration + returns if aborted. */
+  signal?: AbortSignal;
+  /** Called on each observable activity (e.g. SDK message yield) for progress-based timeout. */
+  onActivity?: () => void;
 }
 
 export interface LLMProvider {
