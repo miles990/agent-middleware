@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-engine.js';
 import { ResultBuffer, classifyEventSeverity, type TaskEvent, type TaskRecord, type TaskStatus, type EventSeverity } from './result-buffer.js';
 import { HookRegistry, WebhookDispatcher, type HookEventPattern, type HookInput } from './webhook-dispatcher.js';
+import { triggerAndWait as ciTriggerAndWait } from './ci-trigger.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
@@ -379,6 +380,20 @@ export function createMiddleware(config?: MiddlewareConfig) {
         // Cancel upstream task on timeout — prevent resource leak
         fetch(`${url}/task/${taskId}`, { method: 'DELETE' }).catch(() => {});
         throw new Error(`Upstream middleware timeout after ${timeoutMs}ms (cancel sent)`);
+      }
+      case 'ci-trigger': {
+        // T22: Trigger GitHub Actions workflow via local gh CLI, poll for completion.
+        // Task is JSON string (see ci-trigger.ts for schema).
+        const rawTask = typeof task === 'string'
+          ? task
+          : (task.find(b => b.type === 'text') as { text: string } | undefined)?.text ?? '';
+        if (!rawTask) throw new Error(`ci-trigger: task must be non-empty JSON string`);
+        return Promise.race([
+          ciTriggerAndWait(rawTask),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`ci-trigger timeout after ${timeoutMs}ms`)), timeoutMs),
+          ),
+        ]);
       }
       default:
         throw new Error(`Unknown backend: ${def.backend}`);

@@ -11,7 +11,7 @@
 
 import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 
-export type WorkerBackend = 'sdk' | 'acp' | 'shell' | 'middleware' | 'webhook' | 'logic';
+export type WorkerBackend = 'sdk' | 'acp' | 'shell' | 'middleware' | 'webhook' | 'logic' | 'ci-trigger';
 
 export interface WorkerDefinition {
   agent: AgentDefinition;
@@ -242,6 +242,23 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'sdk',
     maxConcurrency: 4,
     defaultTimeoutSeconds: 300,
+  },
+
+  // ─── CI Trigger (per brain-only-kuro-v2 Phase F T22) ───
+  // Bridges agent DAG and GitHub Actions. Input is JSON string with workflow + inputs.
+  // Auth via local `gh` CLI (keyring token) — no API key env needed on middleware host.
+
+  'ci-trigger': {
+    agent: {
+      description: 'Trigger GitHub Actions workflow and wait for result. Input (JSON string): {workflow: "deploy.yml", ref?: "main", inputs?: {key:"value"}, repo?: "owner/name", poll_timeout_sec?: 1200, poll_interval_sec?: 10}. Output (JSON string): {ok, run_id, status, conclusion, html_url, elapsed_sec, error?}. Use when DAG step needs to trigger CI/CD workflow and synchronize on its outcome.',
+      tools: [],
+      prompt: '',
+    },
+    backend: 'ci-trigger',
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 1500, // 25min — workflow + polling upper bound
+    healthCheck: 'gh auth status > /dev/null 2>&1',
+    healthFix: 'gh auth login',
   },
 
   // ─── Judgment Workers (rubric-driven, per brain-only-kuro-v2 Phase C T3) ───
