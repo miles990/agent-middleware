@@ -23,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-engine.js';
 import { ResultBuffer, classifyEventSeverity, type TaskEvent, type TaskRecord, type TaskStatus, type EventSeverity } from './result-buffer.js';
+import { HookRegistry, WebhookDispatcher, type HookEventPattern, type HookInput } from './webhook-dispatcher.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
@@ -79,6 +80,14 @@ export function createMiddleware(config?: MiddlewareConfig) {
   const cwd = config?.cwd ?? process.cwd();
   const buffer = new ResultBuffer();
   buffer.enablePersistence(cwd);
+
+  // T16/T17/T18: webhook dispatcher — outbound event hooks with registry,
+  // HMAC signing, retry + DLQ, batching. Subscribes to buffer events.
+  const hookRegistry = new HookRegistry();
+  const webhookDispatcher = new WebhookDispatcher(hookRegistry);
+  webhookDispatcher.enablePersistence(cwd);
+  buffer.subscribe((event) => { webhookDispatcher.onTaskEvent(event); });
+  webhookDispatcher.start();
   const customWorkers = new Map<string, WorkerDefinition>();
 
   // Load persisted custom workers
@@ -562,7 +571,7 @@ RULES:
   // Commitments ledger — cross-cycle "I will do X" promises (proposal §5)
   const commitments = openCommitmentStore(cwd);
 
-  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory, compactPlanHistory, getBrain, brainWorkerInfo, generateRecoveryOptions, commitments };
+  return { buffer, planEngine, executeWorker, workerProviders, customWorkers, persistCustomWorkers, acpGateway, presetManager, plans, planCounter, evictOldPlans, markPlanCompleted, persistPlanHistory, readPlanHistory, compactPlanHistory, getBrain, brainWorkerInfo, generateRecoveryOptions, commitments, hookRegistry, webhookDispatcher };
 }
 
 // =============================================================================
@@ -2430,6 +2439,51 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // Sort ascending by submitted_at (oldest first = earliest waiting)
     items.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
     return c.json({ count: items.length, agent: agent ?? null, items });
+  });
+
+  // ─── Webhook Hook Registry (T16) + DLQ read (T17) ───
+  // Per brain-only-kuro-v2 Phase E. Outbound event notification to third parties.
+  app.post('/api/hooks', async (c) => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+    if (!body || typeof body !== 'object') return c.json({ error: 'body must be object' }, 400);
+    const b = body as { url?: unknown; event_pattern?: unknown; severity_filter?: unknown; secret?: unknown };
+    if (typeof b.url !== 'string' || !b.url.trim()) return c.json({ error: 'url required' }, 400);
+    if (typeof b.event_pattern !== 'string') return c.json({ error: 'event_pattern required' }, 400);
+    const validPatterns: HookEventPattern[] = ['*', 'task.*', 'task.submitted', 'task.started', 'task.completed', 'task.failed', 'task.cancelled'];
+    if (!validPatterns.includes(b.event_pattern as HookEventPattern)) {
+      return c.json({ error: 'invalid_event_pattern', accepted: validPatterns }, 400);
+    }
+    const input: HookInput = {
+      url: b.url,
+      event_pattern: b.event_pattern as HookEventPattern,
+    };
+    if (Array.isArray(b.severity_filter)) input.severity_filter = b.severity_filter as EventSeverity[];
+    if (typeof b.secret === 'string' && b.secret.length > 0) input.secret = b.secret;
+    const hook = mw.hookRegistry.create(input);
+    // Don't echo secret back
+    const { secret: _s, ...safe } = hook;
+    return c.json(safe);
+  });
+
+  app.get('/api/hooks', (c) => {
+    const items = mw.hookRegistry.list().map(h => {
+      const { secret: _s, ...safe } = h;
+      return safe;
+    });
+    return c.json({ count: items.length, items });
+  });
+
+  app.delete('/api/hooks/:id', (c) => {
+    const ok = mw.hookRegistry.delete(c.req.param('id'));
+    if (!ok) return c.json({ error: 'not_found' }, 404);
+    return c.json({ ok: true });
+  });
+
+  app.get('/api/hooks/dlq', (c) => {
+    const limit = Math.min(parseInt(c.req.query('limit') ?? '100', 10), 500);
+    const entries = mw.webhookDispatcher.readDLQ(limit);
+    return c.json({ count: entries.length, entries });
   });
 
   // T9: Tactics amend — runtime modification of in-flight plans.
