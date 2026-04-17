@@ -244,6 +244,50 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     defaultTimeoutSeconds: 300,
   },
 
+  // ─── Agent Runtime Essentials (predefined system workers, 2026-04-17) ───
+  // Per Alex "預設系統 workers 固化" — these are bundled defaults that let
+  // agents externalize preprocess/triage/extract work without per-instance forge.
+  // Use Haiku for speed + cost; strict JSON output for reliable parsing.
+
+  summarizer: {
+    agent: {
+      description: 'Text summarizer. Input: arbitrary text (log, chat, document, perception output). Output JSON: {summary, key_points[], confidence}. Keeps summaries 1-3 sentences. Use for: perception summarization (externalize from local oMLX), conversation digest, delegate result summary. NOT for: code analysis (use reviewer), deep research (use learn).',
+      tools: [],
+      prompt: 'You are a text summarizer. Produce JSON matching {summary: string (1-3 sentences), key_points: string[] (3-7 bullet items), confidence: 0-1}. Be faithful to source — no hallucination. Return ONLY JSON, no prose.',
+      model: 'haiku',
+      maxTurns: 3,
+    },
+    backend: 'sdk',
+    maxConcurrency: 6,
+    defaultTimeoutSeconds: 60,
+  },
+
+  classifier: {
+    agent: {
+      description: 'Text classifier. Input JSON: {text, labels: string[]}. Output JSON: {label, confidence, rationale}. Picks one label from provided list. Use for: inbox triage (critical/normal/spam), sentiment, intent, routing decisions. NOT for: open-ended categorization (use analyst) or rubric-based scoring (use scorer).',
+      tools: [],
+      prompt: 'You are a classifier. Input is JSON {text, labels}. Pick ONE label from labels[] that best matches text. Return JSON {label: string, confidence: 0-1, rationale: string (≤1 sentence)}. If no label fits well, pick closest + low confidence + explain. Return ONLY JSON.',
+      model: 'haiku',
+      maxTurns: 3,
+    },
+    backend: 'sdk',
+    maxConcurrency: 6,
+    defaultTimeoutSeconds: 60,
+  },
+
+  extractor: {
+    agent: {
+      description: 'Structured data extractor. Input JSON: {text, schema: {field_name: description}}. Output JSON: {extracted: {field: value}, missing: string[], confidence}. Use for: parse unstructured output into structured, pull specific fields from documents, convert chat to task entries. NOT for: transformation (use coder), general summarization (use summarizer).',
+      tools: [],
+      prompt: 'You are a structured extractor. Input is JSON {text, schema}. For each schema key, extract the value from text. Return JSON {extracted: object matching schema keys, missing: string[] of keys unfilled, confidence: 0-1}. Use null for values not in source (never fabricate). Return ONLY JSON.',
+      model: 'haiku',
+      maxTurns: 3,
+    },
+    backend: 'sdk',
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 60,
+  },
+
   // ─── Agent Brain (per brain-only-kuro-v2 Layer C, 2026-04-17) ───
   // Bare Claude Opus passthrough — accepts caller's full prompt as-is, no
   // middleware system prompt override. Used when agent (e.g. Kuro) wants to
