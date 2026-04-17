@@ -2418,6 +2418,77 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ count: items.length, agent: agent ?? null, items });
   });
 
+  // T9: Tactics amend — runtime modification of in-flight plans.
+  // Per brain-only-kuro-v2 Phase C. MVP scope: cancel_step + cancel_plan.
+  // insert_step / modify_step require DAG state rewire — return 501 with hint.
+  app.post('/api/tactics/amend', async (c) => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+    if (!body || typeof body !== 'object') return c.json({ error: 'body must be object' }, 400);
+    const b = body as { operation?: unknown; plan_id?: unknown; step_id?: unknown };
+    const operation = typeof b.operation === 'string' ? b.operation : null;
+    if (!operation) {
+      return c.json({
+        error: 'operation_required',
+        accepted: ['cancel_step', 'cancel_plan', 'insert_step (not impl)', 'modify_step (not impl)'],
+      }, 400);
+    }
+
+    interface AmendDiffEntry {
+      op: string;
+      step_id: string;
+      ok: boolean;
+      reason?: string;
+    }
+
+    if (operation === 'cancel_step') {
+      const stepId = typeof b.step_id === 'string' ? b.step_id : null;
+      if (!stepId) return c.json({ error: 'step_id_required', operation }, 400);
+      const ok = mw.planEngine.cancelStep(stepId);
+      const diff: AmendDiffEntry[] = [
+        { op: 'cancel_step', step_id: stepId, ok, reason: ok ? undefined : 'step not running or unknown' },
+      ];
+      return c.json({ operation, applied: ok ? 1 : 0, diff });
+    }
+
+    if (operation === 'cancel_plan') {
+      const planId = typeof b.plan_id === 'string' ? b.plan_id : null;
+      if (!planId) return c.json({ error: 'plan_id_required', operation }, 400);
+      const planEntry = mw.plans.get(planId) as { plan?: { steps?: Array<{ id?: string }> } } | undefined;
+      if (!planEntry) return c.json({ error: 'plan_not_found', plan_id: planId }, 404);
+      const steps = planEntry.plan?.steps ?? [];
+      const diff: AmendDiffEntry[] = [];
+      let applied = 0;
+      for (const step of steps) {
+        if (!step.id) continue;
+        const ok = mw.planEngine.cancelStep(step.id);
+        diff.push({ op: 'cancel_step', step_id: step.id, ok });
+        if (ok) applied++;
+      }
+      return c.json({
+        operation,
+        plan_id: planId,
+        applied,
+        total_steps: steps.length,
+        diff,
+      });
+    }
+
+    if (operation === 'insert_step' || operation === 'modify_step') {
+      return c.json({
+        error: 'operation_not_implemented',
+        operation,
+        hint: 'T9 MVP implements cancel_step + cancel_plan. insert/modify require DAG state rewire — defer to v1.x. Use /dispatch for ad-hoc task additions; re-submit new /plan for whole-plan modifications.',
+      }, 501);
+    }
+
+    return c.json({
+      error: 'unknown_operation',
+      operation,
+      accepted: ['cancel_step', 'cancel_plan'],
+    }, 400);
+  });
+
   // T3: Scorer endpoint — wraps rubric + items into a worker-ready prompt.
   // Per brain-only-kuro-v2 Phase C. Input: {items:[], rubric:string, output_shape:object, timeout_ms?:number}
   // Downstream uses: T4 needs-attention filter, KG bridge, webhook severity, DAG improvement scoring.
