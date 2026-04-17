@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PlanEngine, parsePlan, type ActionPlan, type StepResult } from './plan-engine.js';
-import { ResultBuffer, type TaskEvent } from './result-buffer.js';
+import { ResultBuffer, type TaskEvent, type TaskRecord, type TaskStatus } from './result-buffer.js';
 import { WORKERS, getWorkerNames, type WorkerDefinition } from './workers.js';
 import { createSdkProvider } from './sdk-provider.js';
 import { createProvider, type Vendor } from './provider-registry.js';
@@ -2359,6 +2359,85 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const status = c.req.query('status') as CommitmentStatus | undefined;
     const items = mw.commitments.stale({ older_than_seconds, status });
     return c.json({ count: items.length, older_than_seconds, items });
+  });
+
+  // ─── Tactical Command Board (T1/T2/T4) ───
+  // Per brain-only-kuro-v2 proposal §7 Phase C — unified view of in-flight /
+  // historical tasks, keyed on agent (caller). Data source: ResultBuffer.
+  // T4 (needs-attention) = T1 piped through scorer-worker + Kuro rubric.
+  const ACTIVE_STATUSES: TaskStatus[] = ['pending', 'running'];
+  const TERMINAL_STATUSES: TaskStatus[] = ['completed', 'failed', 'timeout', 'cancelled'];
+
+  interface TacticRecord {
+    task_id: string;
+    plan_id?: string;
+    worker: string;
+    label?: string;
+    status: TaskStatus;
+    caller?: string;
+    submitted_at: string;
+    started_at?: string;
+    completed_at?: string;
+    duration_ms?: number;
+    error?: string;
+  }
+
+  const taskToTactic = (t: TaskRecord): TacticRecord => ({
+    task_id: t.id,
+    plan_id: t.planId,
+    worker: t.worker,
+    label: t.label,
+    status: t.status,
+    caller: t.caller,
+    submitted_at: t.submittedAt instanceof Date ? t.submittedAt.toISOString() : String(t.submittedAt),
+    started_at: t.startedAt instanceof Date ? t.startedAt.toISOString() : t.startedAt as string | undefined,
+    completed_at: t.completedAt instanceof Date ? t.completedAt.toISOString() : t.completedAt as string | undefined,
+    duration_ms: t.durationMs,
+    error: t.error,
+  });
+
+  // Parse window like "24h", "7d", "1200s", "30m" → seconds
+  const parseWindow = (s: string): number | null => {
+    const m = s.match(/^(\d+)(s|m|h|d)$/);
+    if (!m) return null;
+    const n = Number.parseInt(m[1], 10);
+    const mult = ({ s: 1, m: 60, h: 3600, d: 86400 } as const)[m[2] as 's' | 'm' | 'h' | 'd'];
+    return n * mult;
+  };
+
+  app.get('/api/tactics/in-flight', (c) => {
+    const agent = c.req.query('agent');
+    const items: TacticRecord[] = [];
+    for (const status of ACTIVE_STATUSES) {
+      for (const t of mw.buffer.list({ caller: agent, status })) {
+        items.push(taskToTactic(t));
+      }
+    }
+    // Sort ascending by submitted_at (oldest first = earliest waiting)
+    items.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
+    return c.json({ count: items.length, agent: agent ?? null, items });
+  });
+
+  app.get('/api/tactics/history', (c) => {
+    const agent = c.req.query('agent');
+    const windowStr = c.req.query('window') ?? '24h';
+    const windowSec = parseWindow(windowStr);
+    if (windowSec == null) {
+      return c.json({ error: 'invalid_window', accepted: 'e.g. "24h", "7d", "1200s", "30m"' }, 400);
+    }
+    const cutoff = Date.now() - windowSec * 1000;
+    const items: TacticRecord[] = [];
+    for (const status of TERMINAL_STATUSES) {
+      for (const t of mw.buffer.list({ caller: agent, status, limit: 500, includeArchived: true })) {
+        const endTs = t.completedAt instanceof Date ? t.completedAt.getTime()
+          : t.submittedAt instanceof Date ? t.submittedAt.getTime()
+          : 0;
+        if (endTs >= cutoff) items.push(taskToTactic(t));
+      }
+    }
+    // Sort descending by completion (most recent first)
+    items.sort((a, b) => (b.completed_at ?? b.submitted_at).localeCompare(a.completed_at ?? a.submitted_at));
+    return c.json({ count: items.length, agent: agent ?? null, window_seconds: windowSec, items });
   });
 
   // ─── Forge worktree endpoints (W7) ───
