@@ -244,6 +244,24 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     defaultTimeoutSeconds: 300,
   },
 
+  // ─── Judgment Workers (rubric-driven, per brain-only-kuro-v2 Phase C T3) ───
+  // Agent provides the rubric (taste source); scorer applies mechanically.
+  // Used by: needs-attention filter (T4), KG bridge judgment, webhook severity,
+  //          audit-worthiness assessment, DAG improvement digest scoring.
+
+  scorer: {
+    agent: {
+      description: 'Rubric-driven scorer. Accept {items, rubric, output_shape} and apply the rubric to score/rank/filter items mechanically. Return strict JSON matching output_shape. Use when agent needs rubric-based sorting/filtering/judging without hard-coded thresholds. NEVER override the rubric — it is the agent\'s taste, your job is pure application.',
+      tools: ['Read'],
+      prompt: 'You are a scorer. Apply the provided rubric to the items and return strict JSON matching the specified output_shape. Principles: (1) The rubric IS the truth — never override, infer, or second-guess it. (2) Be conservative — unsure cases get confidence < 0.7 with rationale. (3) Preserve item identity — never drop items silently; use {keep:false, reason:"..."} instead. (4) Return ONLY JSON matching output_shape — no prose, no markdown fences, no explanations outside structured output. (5) If rubric is ambiguous for a specific item, include with confidence < 0.5 and explain the ambiguity in the rationale field.',
+      model: 'haiku',
+      maxTurns: 3,
+    },
+    backend: 'sdk',
+    maxConcurrency: 4,
+    defaultTimeoutSeconds: 60,
+  },
+
   // ─── Auth Workers ───
 
   'google-oauth': {

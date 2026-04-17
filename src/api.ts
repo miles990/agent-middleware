@@ -2418,6 +2418,67 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ count: items.length, agent: agent ?? null, items });
   });
 
+  // T3: Scorer endpoint — wraps rubric + items into a worker-ready prompt.
+  // Per brain-only-kuro-v2 Phase C. Input: {items:[], rubric:string, output_shape:object, timeout_ms?:number}
+  // Downstream uses: T4 needs-attention filter, KG bridge, webhook severity, DAG improvement scoring.
+  app.post('/api/workers/scorer/run', async (c) => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+    if (!body || typeof body !== 'object') return c.json({ error: 'body must be object' }, 400);
+    const b = body as { items?: unknown; rubric?: unknown; output_shape?: unknown; timeout_ms?: unknown };
+    if (!Array.isArray(b.items)) return c.json({ error: 'items must be array' }, 400);
+    if (typeof b.rubric !== 'string' || !b.rubric.trim()) {
+      return c.json({ error: 'rubric must be non-empty string' }, 400);
+    }
+    const outputShape = (b.output_shape && typeof b.output_shape === 'object')
+      ? b.output_shape as Record<string, unknown>
+      : { ranked: [], confidence: 0 };
+    const timeoutMs = typeof b.timeout_ms === 'number' && b.timeout_ms > 0
+      ? Math.min(b.timeout_ms, 180_000) // hard cap 3 min — rubric scoring should be fast
+      : 60_000;
+
+    const task = [
+      '# Rubric (agent-provided taste — apply mechanically)',
+      b.rubric.trim(),
+      '',
+      '# Items (JSON array)',
+      JSON.stringify(b.items, null, 2),
+      '',
+      '# Required output shape',
+      'Return strict JSON matching this structure. Do not add extra fields. Do not drop items silently.',
+      JSON.stringify(outputShape, null, 2),
+      '',
+      'Return ONLY the JSON. No prose. No markdown code fences.',
+    ].join('\n');
+
+    try {
+      const raw = await mw.executeWorker('scorer', task, timeoutMs);
+      // Try to parse strict JSON; if scorer leaked prose, extract first {...} block.
+      let parsed: unknown = null;
+      let parseError: string | null = null;
+      const trimmed = raw.trim();
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        const match = trimmed.match(/\{[\s\S]*\}/);
+        if (match) {
+          try { parsed = JSON.parse(match[0]); } catch (e) {
+            parseError = e instanceof Error ? e.message : String(e);
+          }
+        } else {
+          parseError = 'no JSON object in scorer output';
+        }
+      }
+      if (parsed != null) {
+        return c.json({ ok: true, result: parsed });
+      }
+      return c.json({ ok: false, error: 'scorer_output_not_json', parse_error: parseError, raw: raw.slice(0, 500) }, 502);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return c.json({ ok: false, error: 'scorer_failed', message: msg.slice(0, 300) }, 500);
+    }
+  });
+
   app.get('/api/tactics/history', (c) => {
     const agent = c.req.query('agent');
     const windowStr = c.req.query('window') ?? '24h';
