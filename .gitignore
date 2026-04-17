@@ -10,3 +10,17 @@ results.jsonl
 _output.md
 _outline.json
 .claude/logs/
+
+# Runtime persistence (written at runtime, not build-time artifacts)
+commitments.jsonl
+events.jsonl
+hooks.json
+webhook-dlq.jsonl
+workers.json
+
+# IDE / local settings
+.claude/
+
+# Python skill venv + cache
+**/.venv/
+**/__pycache__/
