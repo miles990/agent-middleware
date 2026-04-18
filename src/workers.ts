@@ -74,7 +74,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 8,
-    defaultTimeoutSeconds: 300,
+    defaultTimeoutSeconds: 1800,
   },
 
   coder: {
@@ -87,7 +87,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 2,
-    defaultTimeoutSeconds: 300,
+    defaultTimeoutSeconds: 1800,
   },
 
   reviewer: {
@@ -100,7 +100,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 6,
-    defaultTimeoutSeconds: 120,
+    defaultTimeoutSeconds: 1800,
   },
 
   shell: {
@@ -111,7 +111,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'shell',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 600, // hard cap 10min (was 30s — too strict for scripts)
+    defaultTimeoutSeconds: 1800,
     progressTimeoutSeconds: 60, // stall-kill if no stdout for 60s
     healthCheck: 'echo ok',
   },
@@ -126,7 +126,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 300,
+    defaultTimeoutSeconds: 1800,
   },
 
   explorer: {
@@ -139,7 +139,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 8,
-    defaultTimeoutSeconds: 120,
+    defaultTimeoutSeconds: 1800,
   },
 
   'cloud-agent': {
@@ -151,7 +151,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'sdk',
     vendor: 'anthropic-managed',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 300,
+    defaultTimeoutSeconds: 1800,
   },
 
   // ─── Web Workers (L0/L1/L2 per Kuro's CDP experience) ───
@@ -164,7 +164,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'shell',
     maxConcurrency: 8,
-    defaultTimeoutSeconds: 30,
+    defaultTimeoutSeconds: 1800,
     healthCheck: 'curl -sf --max-time 5 https://httpbin.org/get > /dev/null',
     healthFix: 'echo "Check network connection and DNS resolution"',
   },
@@ -179,7 +179,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 2,  // shared Chrome — limit concurrency
-    defaultTimeoutSeconds: 120,
+    defaultTimeoutSeconds: 1800,
     healthCheck: 'curl -sf --max-time 3 http://localhost:9222/json/version > /dev/null',
     healthFix: 'open -a "Google Chrome" --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check',
   },
@@ -192,7 +192,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'shell',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 30,
+    defaultTimeoutSeconds: 1800,
     healthCheck: 'curl -sf --max-time 3 http://localhost:9222/json/version > /dev/null',
     healthFix: 'open -a "Google Chrome" --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check',
   },
@@ -211,7 +211,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 300,
+    defaultTimeoutSeconds: 1800,
   },
 
   create: {
@@ -224,7 +224,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 3,
-    defaultTimeoutSeconds: 480,
+    defaultTimeoutSeconds: 1800,
   },
 
   planner: {
@@ -237,7 +237,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 240,
+    defaultTimeoutSeconds: 1800,
   },
 
   debugger: {
@@ -250,7 +250,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 300,
+    defaultTimeoutSeconds: 1800,
   },
 
   // ─── Agent Runtime Essentials (predefined system workers, 2026-04-17) ───
@@ -268,7 +268,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 6,
-    defaultTimeoutSeconds: 60,
+    defaultTimeoutSeconds: 1800,
     progressTimeoutSeconds: 45,
   },
 
@@ -282,7 +282,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 6,
-    defaultTimeoutSeconds: 60,
+    defaultTimeoutSeconds: 1800,
     progressTimeoutSeconds: 45,
   },
 
@@ -296,7 +296,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 60,
+    defaultTimeoutSeconds: 1800,
     progressTimeoutSeconds: 45,
   },
 
@@ -321,7 +321,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 2,
-    defaultTimeoutSeconds: 1500,
+    defaultTimeoutSeconds: 1800,
     progressTimeoutSeconds: 180,
   },
 
@@ -337,7 +337,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'ci-trigger',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 1500, // 25min — workflow + polling upper bound
+    defaultTimeoutSeconds: 1800,
     healthCheck: 'gh auth status > /dev/null 2>&1',
     healthFix: 'gh auth login',
   },
@@ -357,7 +357,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'sdk',
     maxConcurrency: 4,
-    defaultTimeoutSeconds: 60,
+    defaultTimeoutSeconds: 1800,
   },
 
   // ─── Auth Workers ───
@@ -370,7 +370,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     },
     backend: 'shell',
     maxConcurrency: 1,  // shared Chrome — only one auth flow at a time
-    defaultTimeoutSeconds: 60,
+    defaultTimeoutSeconds: 1800,
     healthCheck: 'curl -sf --max-time 3 http://localhost:9222/json/version > /dev/null',
     healthFix: 'open -a "Google Chrome" --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check --user-data-dir=$HOME/.mini-agent/chrome-cdp-profile',
   },
