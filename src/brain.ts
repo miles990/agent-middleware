@@ -78,7 +78,57 @@ SHELL EXIT-CODE CONVENTIONS (shell worker only):
   (Otherwise "no TODO found" incorrectly fails the step + cascades as "Dependency failed"
   to all downstream steps.)
 - If a shell step depends on grep/diff/test for conditional logic, ALWAYS set
-  acceptableExitCodes. Don't rely on "|| true" workarounds.`;
+  acceptableExitCodes. Don't rely on "|| true" workarounds.
+
+PHASED PLANNING (for goals with unverified preconditions):
+
+When achieving the goal depends on environment state you cannot verify from
+prompt alone, DO NOT invent execute steps built on assumptions. Instead, split
+into two phases. You generate Phase 1 now; after it runs, the system will
+re-invoke you with actual observations to generate Phase 2.
+
+Phase 1 — Probe (what you emit NOW for uncertain-precondition goals):
+{
+  "phase": "probe",
+  "goal": "...",
+  "steps": [
+    /* read-only discovery steps — no side effects */
+    /* LAST step aggregates findings as structured JSON via analyst or
+       similar worker, output shape:
+       { "accepted": bool, "summary": "...", "findings": {...concrete facts...} } */
+  ]
+}
+
+Phase 2 — Execute (system will ask you for this AFTER Phase 1 runs,
+providing "Probe results: ..." in prompt):
+{
+  "phase": "execute",
+  "goal": "...",
+  "steps": [/* execute steps GROUNDED in probe observations, not assumptions */]
+}
+
+WHEN to use phased planning:
+- Credentials might be in .env OR keychain OR missing entirely
+- Remote API might be reachable OR in maintenance OR rate-limited
+- File might have expected schema OR different schema OR not exist
+- OAuth token might be valid OR expired OR revoked
+- Any precondition you would "assume" rather than verify
+
+WHEN NOT to use:
+- All preconditions explicit and verifiable from the goal text alone
+  (e.g., "run tests in ./src" — the directory is given and readable)
+- Pure analysis / research plans (no side effects regardless of state)
+- Single-step plans
+- Goals where failure is cheap to retry (low stakes)
+- Idempotent operations where retry is safe (e.g., "set config X=Y",
+  "CREATE IF NOT EXISTS") — probe adds latency without safety benefit
+
+RATIONALE — do not plan beyond your verification horizon: you cannot plan
+reliably for state you have not observed. Emit probe, let the system observe,
+then plan execution grounded in facts — not happy-path assumptions. The
+2026-04-18 Gmail cascade (1 failed + 7 skipped) happened because Phase 1
+(credential probe) was followed by 6 execute steps built on "credentials
+exist" assumption. All 6 cascaded when the assumption was wrong.`;
 
 const DIGEST_SYSTEM = `You are the digest brain of an AI agent system. Workers have completed their tasks.
 
@@ -109,7 +159,19 @@ export interface WorkerInfo {
   maxConcurrency?: number;
 }
 
-export async function brainPlan(brain: LLMProvider, goal: string, opts?: { context?: string; availableWorkers?: WorkerInfo[]; convergenceIteration?: number }): Promise<string> {
+export async function brainPlan(
+  brain: LLMProvider,
+  goal: string,
+  opts?: {
+    context?: string;
+    availableWorkers?: WorkerInfo[];
+    convergenceIteration?: number;
+    /** Phase 2 request signal — tells brain to emit execute steps based on probe findings. */
+    phase?: 'probe' | 'execute';
+    /** Structured findings from Phase 1, stringified. Brain grounds Phase 2 plan on this. */
+    probeResults?: string;
+  },
+): Promise<string> {
   const parts: string[] = [];
   if (opts?.context) parts.push(`Context:\n${opts.context}\n`);
   if (opts?.availableWorkers?.length) {
@@ -117,6 +179,12 @@ export async function brainPlan(brain: LLMProvider, goal: string, opts?: { conte
   }
   if (opts?.convergenceIteration) {
     parts.push(`⚠ This is convergence iteration ${opts.convergenceIteration}. Refine the plan based on previous results.\n`);
+  }
+  if (opts?.phase === 'execute' && opts?.probeResults) {
+    parts.push(
+      `⚠ PHASE 2 REQUEST — probe phase completed. Generate the execute plan grounded in these ACTUAL observations (not assumptions). Emit "phase": "execute" on the plan.\n\n` +
+      `Probe findings:\n${opts.probeResults}\n`,
+    );
   }
   parts.push(`Goal: ${goal}`);
   return brain.think(parts.join('\n'), PLANNING_SYSTEM);

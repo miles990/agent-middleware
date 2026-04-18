@@ -1306,51 +1306,167 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     const planCb = body.callback;
     const planCbFrom = body.callbackFrom ?? 'middleware';
-    resultPromise.then(result => {
+
+    // Shared post-processing for any completed phase's result — used once per phase.
+    const postProcessPhase = (result: typeof plan extends never ? never : Awaited<ReturnType<typeof mw.planEngine.execute>>, pid: string, createdAtStr: string) => {
       for (const step of result.steps) {
-        if (step.status === 'skipped' || step.status === 'condition_skipped') {
-          mw.buffer.skip(step.id, step.output);
-        } else if (step.status !== 'completed') {
-          mw.buffer.fail(step.id, step.output);
-        }
+        if (step.status === 'skipped' || step.status === 'condition_skipped') mw.buffer.skip(step.id, step.output);
+        else if (step.status !== 'completed') mw.buffer.fail(step.id, step.output);
       }
-      mw.markPlanCompleted(planId);
-      (mw.plans.get(planId) as Record<string, unknown>).result = result;
-      mw.persistPlanHistory({ planId, createdAt, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
-      setTimeout(() => mw.plans.delete(planId), 3_600_000);
-      if (planCb) {
+      mw.markPlanCompleted(pid);
+      (mw.plans.get(pid) as Record<string, unknown>).result = result;
+      mw.persistPlanHistory({ planId: pid, createdAt: createdAtStr, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
+      setTimeout(() => mw.plans.delete(pid), 3_600_000);
+    };
+
+    // ── Chain: Phase 1 → (optional) Phase 2 → final result ──
+    // Both waitMode and async-callback paths await THIS promise, so Phase 2
+    // is guaranteed to be run exactly once, and both paths see the final
+    // (post-Phase-2 if applicable) result. Akari review (2026-04-18): fixes
+    // P0 "wait mode returns Phase 1 probe result, Phase 2 runs invisible".
+    type PhaseResult = { result: Awaited<ReturnType<typeof mw.planEngine.execute>>; planId: string; plan: ActionPlan; createdAt: string };
+    const finalResultPromise: Promise<PhaseResult> = resultPromise.then(async phase1Result => {
+      postProcessPhase(phase1Result, planId, createdAt);
+
+      // Gate: Phase 2 only if probe completed cleanly. `condition_skipped` is
+      // tracked separately (plan-engine buildResult L863-864) and doesn't
+      // block — intentional branch-not-taken is valid observation data.
+      if (plan.phase !== 'probe') return { result: phase1Result, planId, plan, createdAt };
+      if (phase1Result.summary.failed !== 0 || phase1Result.summary.skipped !== 0) {
+        console.log(`[phased] ${planId} probe had failures/skips (${phase1Result.summary.failed}F/${phase1Result.summary.skipped}S) — NOT invoking phase 2`);
+        return { result: phase1Result, planId, plan, createdAt };
+      }
+
+      // Extract probe findings — prefer last step's structured output; fallback to text.
+      // Known limitation (Akari P2): brittle if brain emits multiple parallel
+      // aggregator steps. v0: rely on PLANNING_SYSTEM prompt mandating single
+      // last aggregator. TODO: promote to explicit marker.
+      try {
+        const lastStep = phase1Result.steps[phase1Result.steps.length - 1];
+        const probeResults = lastStep.structured
+          ? JSON.stringify(lastStep.structured, null, 2)
+          : (lastStep.output ?? '').slice(0, 4000);
+        console.log(`[phased] probe completed for ${planId}, invoking brain for phase 2`);
+
+        const phase2Raw = await brainPlan(mw.getBrain(), fullGoal, {
+          context: brainContext,
+          availableWorkers: mw.brainWorkerInfo(),
+          phase: 'execute',
+          probeResults,
+        });
+        const phase2Plan = parsePlan(phase2Raw);
+        if (!phase2Plan) {
+          console.warn(`[phased] ${planId} phase 2 brain response did not parse — falling back to phase 1 result`);
+          return { result: phase1Result, planId, plan, createdAt };
+        }
+        phase2Plan.phase = 'execute'; // enforce marker for audit trail
+
+        // Akari P1: validate Phase 2 plan (was skipped in v0)
+        const valErrors = mw.planEngine.validate(phase2Plan, new Set(mergedWorkerNames()));
+        if (valErrors.length > 0) {
+          console.warn(`[phased] ${planId} phase 2 invalid plan: ${valErrors.join(', ')} — falling back to phase 1 result`);
+          return { result: phase1Result, planId, plan, createdAt };
+        }
+        // Akari P1: auto-fill acceptance_criteria for multi-step phase 2 (matches phase 1 behavior)
+        if (phase2Plan.steps.length >= 2) {
+          for (const step of phase2Plan.steps) {
+            if (!step.acceptance_criteria) step.acceptance_criteria = `Step "${step.label ?? step.id}" completes successfully with relevant output`;
+          }
+        }
+
+        const phase2PlanId = `${planId}-phase2`;
+        for (const step of phase2Plan.steps) {
+          const uid = `${phase2PlanId}_${step.id}`;
+          mw.buffer.submit({ id: uid, planId: phase2PlanId, worker: step.worker, task: step.task, label: step.label, caller: body.caller, metadata: { parentPlanId: planId } });
+        }
+        const idMap2 = new Map(phase2Plan.steps.map(s => [s.id, `${phase2PlanId}_${s.id}`]));
+        const remap2 = (task: string) => {
+          let t = task;
+          for (const [orig, prefixed] of idMap2) t = t.replaceAll(`{{${orig}.`, `{{${prefixed}.`);
+          return t;
+        };
+        const execPlan2: ActionPlan = {
+          ...phase2Plan,
+          steps: phase2Plan.steps.map(s => ({
+            ...s,
+            id: idMap2.get(s.id)!,
+            task: remap2(s.task),
+            dependsOn: (s.dependsOn ?? []).map(d => idMap2.get(d) ?? d),
+          })),
+        };
+        const phase2Promise = mw.planEngine.execute(execPlan2);
+        const phase2CreatedAt = new Date().toISOString();
+        const phase2Entry = { plan: execPlan2, resultPromise: phase2Promise, createdAt: phase2CreatedAt } as Parameters<typeof mw.plans.set>[1] & { parentPlanId?: string };
+        phase2Entry.parentPlanId = planId;
+        mw.plans.set(phase2PlanId, phase2Entry);
+        mw.persistPlanHistory({ planId: phase2PlanId, createdAt: phase2CreatedAt, caller: body.caller, plan: phase2Plan, event: 'created' });
+        console.log(`[phased] ${planId} → ${phase2PlanId} (${phase2Plan.steps.length} steps)`);
+
+        try {
+          const phase2Result = await phase2Promise;
+          postProcessPhase(phase2Result, phase2PlanId, phase2CreatedAt);
+          return { result: phase2Result, planId: phase2PlanId, plan: phase2Plan, createdAt: phase2CreatedAt };
+        } catch (err) {
+          console.error(`[phased] ${phase2PlanId} execute failed:`, err);
+          // Akari P2 fix: clean up Phase 2 plan entry on failure — prevents
+          // memory leak in mw.plans Map + audit gap (created without terminal).
+          mw.markPlanCompleted(phase2PlanId);
+          mw.persistPlanHistory({ planId: phase2PlanId, createdAt: phase2CreatedAt, event: 'failed' });
+          setTimeout(() => mw.plans.delete(phase2PlanId), 3_600_000);
+          // TODO (Akari P1): no replan loop for phase 2 failures — add brainDigest→replan in future
+          return { result: phase1Result, planId, plan, createdAt };
+        }
+      } catch (err) {
+        console.warn(`[phased] ${planId} phase 2 invocation error:`, err);
+        return { result: phase1Result, planId, plan, createdAt };
+      }
+    });
+
+    // Akari P1 fix: suppress unhandled rejection when fire-and-forget (no wait, no callback).
+    // Persistence cleanup is handled by resultPromise.catch() below; this handler exists
+    // only to absorb the otherwise-unhandled rejection so Node doesn't warn/crash.
+    finalResultPromise.catch(() => { /* persistence handled elsewhere */ });
+
+    // Async-mode callback — fires on FINAL result (Phase 2 if phased, else Phase 1).
+    // Akari P0 fix: previously callback fired after Phase 1 only, leaving Phase 2 caller-invisible.
+    if (planCb && !waitMode) {
+      finalResultPromise.then(({ result, planId: finalId }) => {
         const completed = result.steps.filter(s => s.status === 'completed').length;
         sendCallback(planCb, planCbFrom, {
           type: 'accomplish.completed',
-          id: planId,
+          id: finalId,
           status: `${completed}/${result.steps.length} completed`,
           result: { goal: body.goal, accepted: result.accepted },
         });
-      }
-    }).catch(() => {
+      }).catch(() => {
+        sendCallback(planCb, planCbFrom, {
+          type: 'accomplish.failed',
+          id: planId,
+          status: 'failed',
+          error: `goal: ${body.goal}`,
+        });
+      });
+    }
+    // Plan-1-failure path (Phase 1 itself rejected) — still needs persistence cleanup
+    resultPromise.catch(() => {
       mw.markPlanCompleted(planId);
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
       mw.persistPlanHistory({ planId, createdAt, event: 'failed' });
-      if (planCb) sendCallback(planCb, planCbFrom, {
-        type: 'accomplish.failed',
-        id: planId,
-        status: 'failed',
-        error: `goal: ${body.goal}`,
-      });
     });
 
     if (waitMode) {
       try {
         const MAX_REPLAN_ROUNDS = 3;
-        let currentResult = await resultPromise;
-        let currentPlanId = planId;
-        let currentPlan = plan;
+        // Akari P0 fix: await finalResultPromise (not resultPromise) so we see
+        // Phase 2's result when plan was phased. finalResultPromise itself
+        // handles postProcessPhase for each phase, so buffer/persistence are
+        // already cleaned — don't re-mark.
+        const finalState = await finalResultPromise;
+        let currentResult = finalState.result;
+        let currentPlanId = finalState.planId;
+        let currentPlan = finalState.plan;
         let replanRound = 0;
         const replanHistory: Array<{ planId: string; round: number; summary: { completed: number; failed: number; skipped: number } }> = [];
-
-        // Mark initial plan
-        mw.markPlanCompleted(planId);
-        (mw.plans.get(planId) as Record<string, unknown>).result = currentResult;
 
         // Brain feedback loop: on failure, ask brain to replan (max 3 rounds).
         // Brain sees full context (completed + failed steps) and decides:

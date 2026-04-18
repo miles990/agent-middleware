@@ -83,6 +83,25 @@ export interface ActionPlan {
   goal: string;
   acceptance?: string;
   steps: PlanStep[];
+  /**
+   * Phase declaration for phased planning (Akari 2026-04-18 proposal).
+   *
+   * undefined  = single-phase plan (current behavior, all steps in one brain call)
+   * 'probe'    = Phase 1: read-only discovery. Last step MUST aggregate findings
+   *              as structured JSON. Caller will re-invoke brain with these
+   *              findings to produce Phase 2.
+   * 'execute'  = Phase 2: grounded in observed probe findings. Emitted only
+   *              after Phase 1 completed successfully.
+   *
+   * Rationale: brain cannot plan reliably for environment state it hasn't
+   * observed. Forcing it to plan both probe + execute in one call produces
+   * happy-path cascades (the 2026-04-18 Gmail/Mastodon incident: 1 failed +
+   * 7 skipped because Phase 1 failed and Phase 2 was built on assumptions).
+   *
+   * Convergence condition (not prescription): planning horizon should not
+   * exceed verification horizon.
+   */
+  phase?: 'probe' | 'execute';
   /** Convergence: re-evaluate after each complete wave. If returns new steps, add them. */
   convergence?: {
     /** Max iterations to prevent infinite loops */
