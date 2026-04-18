@@ -237,6 +237,30 @@ export class ResultBuffer {
   }
 
   /**
+   * Timeout tasks stuck in `running` longer than maxRunningMs. Worker process
+   * likely died without updating status (seen: analyst task stuck 6 days, 04-12).
+   * Returns count of tasks timed out.
+   */
+  timeoutStuckRunning(maxRunningMs: number = 3_600_000): number {
+    const now = Date.now();
+    let count = 0;
+    for (const [id, task] of this.tasks) {
+      if (task.status !== 'running' || !task.startedAt) continue;
+      const runningMs = now - task.startedAt.getTime();
+      if (runningMs > maxRunningMs) {
+        task.status = 'timeout';
+        task.error = `stuck in running ${Math.round(runningMs / 1000)}s > ${Math.round(maxRunningMs / 1000)}s (worker likely died)`;
+        task.completedAt = new Date();
+        task.durationMs = runningMs;
+        this.persist(task);
+        this.emit({ type: 'task.failed', task, timestamp: new Date() });
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
    * Archive completed tasks older than archiveAfterMs.
    * Remove archived tasks older than expireAfterMs.
    * Called periodically.
