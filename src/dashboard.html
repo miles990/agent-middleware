@@ -839,7 +839,7 @@ function renderHistDAG(r){
         <div class="node-top"><div class="node-dot"></div><div class="node-name">${esc(s.label||s.id)}</div></div>
         <div class="node-worker">${s.worker}</div>
         ${dur?`<div class="node-time">${dur}</div>`:''}
-        ${s.error?`<div style="font-family:var(--mono);font-size:9px;color:var(--red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">${esc(s.error.slice(0,50))}</div>`:''}
+        ${s.error?`<div style="font-family:var(--mono);font-size:9px;color:${(s.status==='skipped'||s.status==='condition_skipped'||s.status==='cancelled')?'var(--t4)':'var(--red)'};margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">${esc(s.error.slice(0,50))}</div>`:''}
       </div>`;
     }).join('');
     if(d>0) flowHtml+=`<div class="wave-arrow"><svg viewBox="0 0 32 20"><line x1="2" y1="10" x2="26" y2="10"/><polygon points="26,6 32,10 26,14"/></svg></div>`;
@@ -848,11 +848,13 @@ function renderHistDAG(r){
   // Summary bar
   const done=steps.filter(s=>s.status==='completed').length;
   const fail=steps.filter(s=>s.status==='failed'||s.status==='timeout').length;
+  const skip=steps.filter(s=>s.status==='skipped'||s.status==='condition_skipped'||s.status==='cancelled').length;
   const totalDur=steps.reduce((a,s)=>a+(s.durationMs||0),0);
   const summaryHtml=`<div style="display:flex;gap:12px;padding:8px 18px;font-family:var(--mono);font-size:10px;color:var(--t3);border-bottom:1px solid var(--b1)">
     <span>${r.goal?'Goal: '+esc(r.goal.slice(0,60)):r.planId}</span>
     <span style="margin-left:auto;color:var(--cyan)">${done} done</span>
     ${fail?`<span style="color:var(--red)">${fail} failed</span>`:''}
+    ${skip?`<span style="color:var(--t4)">${skip} skipped</span>`:''}
     <span>${(totalDur/1000).toFixed(1)}s total</span>
     ${r.acceptance?`<span style="color:var(--t4)" title="${esc(r.acceptance)}">&#x2691;</span>`:''}
   </div>`;

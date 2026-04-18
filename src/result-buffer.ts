@@ -11,7 +11,7 @@ import path from 'node:path';
 // Types
 // =============================================================================
 
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled';
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled' | 'skipped';
 
 export interface TaskRecord {
   id: string;
@@ -181,6 +181,23 @@ export class ResultBuffer {
     task.completedAt = new Date();
     this.emit({ type: 'task.cancelled', task, timestamp: new Date() });
     return true;
+  }
+
+  /**
+   * Mark a task as skipped — ran upstream that failed, so this one never executed.
+   * Distinct from `fail` (actually failed) so dashboards can visually separate
+   * "8 failed" (all real errors) from "1 failed + 7 skipped" (1 root cause + cascade).
+   * Reason is typically the string the plan-engine set as step.output, e.g. "Dependency failed".
+   */
+  skip(id: string, reason: string): void {
+    const task = this.tasks.get(id);
+    if (!task) return;
+    task.status = 'skipped';
+    task.error = reason;
+    task.completedAt = new Date();
+    task.durationMs = task.startedAt ? Date.now() - task.startedAt.getTime() : 0;
+    this.persist(task);
+    this.emit({ type: 'task.cancelled', task, timestamp: new Date() });
   }
 
   /** Get single task */

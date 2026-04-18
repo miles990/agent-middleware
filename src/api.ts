@@ -1095,7 +1095,9 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const planCbFrom = body.callbackFrom ?? 'middleware';
     resultPromise.then(result => {
       for (const step of result.steps) {
-        if (step.status !== 'completed') {
+        if (step.status === 'skipped' || step.status === 'condition_skipped') {
+          mw.buffer.skip(step.id, step.output);
+        } else if (step.status !== 'completed') {
           mw.buffer.fail(step.id, step.output);
         }
       }
@@ -1306,7 +1308,9 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const planCbFrom = body.callbackFrom ?? 'middleware';
     resultPromise.then(result => {
       for (const step of result.steps) {
-        if (step.status !== 'completed') {
+        if (step.status === 'skipped' || step.status === 'condition_skipped') {
+          mw.buffer.skip(step.id, step.output);
+        } else if (step.status !== 'completed') {
           mw.buffer.fail(step.id, step.output);
         }
       }
@@ -2118,7 +2122,11 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // Match POST /plan lifecycle: mark completed + 1h cleanup after completion
     resultPromise.then(result => {
       for (const step of result.steps) {
-        if (step.status !== 'completed') mw.buffer.fail(step.id, step.output);
+        if (step.status === 'skipped' || step.status === 'condition_skipped') {
+          mw.buffer.skip(step.id, step.output);
+        } else if (step.status !== 'completed') {
+          mw.buffer.fail(step.id, step.output);
+        }
       }
       mw.markPlanCompleted(newPlanId);
       (mw.plans.get(newPlanId) as Record<string, unknown>).result = result;
