@@ -29,9 +29,12 @@ module.exports = {
       max_memory_restart: '1G',
 
       // Environment
+      // PORT is hardcoded 3200 (not env-fallback) — 2026-04-18 incident: shell PORT
+      // env leaked as PORT=3001, collided with mini-agent Kuro daemon's port.
+      // pm2 --update-env doesn't persist across auto-restarts; hardcode is safer.
       env: {
         NODE_ENV: 'production',
-        PORT: process.env.PORT || 3200,
+        PORT: 3200,
       },
 
       // Logging
