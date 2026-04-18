@@ -38,6 +38,21 @@ export interface PlanStep {
   backend?: 'sdk' | 'acp' | 'shell' | 'middleware';
   timeoutSeconds?: number;
   maxConcurrency?: number;
+  /**
+   * Exit codes that count as SUCCESS (default: [0]).
+   *
+   * POSIX convention: many UNIX tools use non-zero exits as informational
+   * signals, not errors:
+   *   - grep: 1 = no match
+   *   - diff: 1 = files differ
+   *   - test: 1 = condition false
+   *   - cmp:  1 = inputs differ
+   *
+   * Specify acceptableExitCodes=[0, 1] to treat those as success. The step
+   * author knows the tool's contract; plan-engine shouldn't second-guess.
+   * Only applies to shell backend (SDK/ACP don't have exit codes).
+   */
+  acceptableExitCodes?: number[];
   /** Dynamic branching */
   condition?: {
     stepId: string;
@@ -142,7 +157,7 @@ export type WorkerExecutor = (
   worker: string,
   task: string | import('./llm-provider.js').ContentBlock[],
   timeoutMs: number,
-  opts?: { cwd?: string },
+  opts?: { cwd?: string; acceptableExitCodes?: number[] },
 ) => Promise<string>;
 
 // =============================================================================
@@ -611,7 +626,10 @@ export class PlanEngine {
 
       const stepStart = Date.now();
       try {
-        const output = await this.executor(step.worker, task, timeoutMs, step.cwd ? { cwd: step.cwd } : undefined);
+        const output = await this.executor(step.worker, task, timeoutMs, {
+          ...(step.cwd ? { cwd: step.cwd } : {}),
+          ...(step.acceptableExitCodes ? { acceptableExitCodes: step.acceptableExitCodes } : {}),
+        });
 
         // Mechanical verification: run verifyCommand if defined (async — won't block event loop)
         if (step.verifyCommand) {

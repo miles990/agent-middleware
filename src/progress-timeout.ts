@@ -77,9 +77,12 @@ export async function execShellWithProgress(
     progressMs: number;
     hardMs: number;
     maxBuffer?: number;
+    /** Exit codes counted as success (default [0]). See PlanStep.acceptableExitCodes. */
+    acceptableExitCodes?: number[];
   },
 ): Promise<string> {
   const maxBuffer = opts.maxBuffer ?? 4 * 1024 * 1024;
+  const okCodes = opts.acceptableExitCodes ?? [0];
 
   return withProgressTimeout(
     (signal, markActive) => new Promise<string>((resolve, reject) => {
@@ -123,7 +126,10 @@ export async function execShellWithProgress(
       child.on('close', (code, sig) => {
         const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
         const stderr = Buffer.concat(stderrChunks).toString('utf-8');
-        if (code === 0) {
+        // Success = process exited (not signaled) with code in acceptable set.
+        // Default okCodes=[0] preserves strict-exit-0 behavior; callers opt in
+        // to POSIX conventions (e.g. grep=[0,1]) via PlanStep.acceptableExitCodes.
+        if (code !== null && okCodes.includes(code)) {
           done(null, stdout);
         } else {
           const msg = `Command exited ${code ?? sig ?? 'unknown'}: ${stderr.slice(0, 500) || stdout.slice(0, 200)}`;

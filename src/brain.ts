@@ -64,7 +64,21 @@ CRITICAL RULES:
 WORKER-SPECIFIC TASK FORMAT:
 - shell: task MUST be a pure shell command, NO description. Example: "wc -l src/*.ts | sort -rn | head -3"
 - researcher/coder/reviewer/analyst/explorer: task is a natural language instruction
-- Use "label" field for human-readable description, "task" field for the actual work`;
+- Use "label" field for human-readable description, "task" field for the actual work
+
+SHELL EXIT-CODE CONVENTIONS (shell worker only):
+- Default: exit 0 = success, anything else = failure
+- POSIX tools use non-zero exits as INFORMATION, not errors. Set "acceptableExitCodes": [0, 1]
+  when the step uses one of these tools and exit 1 is a valid outcome:
+  * grep: 1 = no match found
+  * diff/cmp: 1 = files differ
+  * test / [: 1 = condition false
+  * find/xargs: specific non-zero codes for traversal
+- Example: "task": "grep -r 'TODO' src/", "acceptableExitCodes": [0, 1]
+  (Otherwise "no TODO found" incorrectly fails the step + cascades as "Dependency failed"
+  to all downstream steps.)
+- If a shell step depends on grep/diff/test for conditional logic, ALWAYS set
+  acceptableExitCodes. Don't rely on "|| true" workarounds.`;
 
 const DIGEST_SYSTEM = `You are the digest brain of an AI agent system. Workers have completed their tasks.
 

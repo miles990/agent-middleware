@@ -161,7 +161,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
     worker: string,
     task: string | import('./llm-provider.js').ContentBlock[],
     timeoutMs: number,
-    opts?: { cwd?: string },
+    opts?: { cwd?: string; acceptableExitCodes?: number[] },
   ): Promise<string> => {
     const def = allWorkers()[worker];
     if (!def) throw new Error(`Unknown worker: ${worker}`);
@@ -304,6 +304,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
             cwd: execCwd,
             progressMs,
             hardMs: timeoutMs,
+            ...(opts?.acceptableExitCodes ? { acceptableExitCodes: opts.acceptableExitCodes } : {}),
           });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
