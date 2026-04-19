@@ -335,10 +335,23 @@ export class PlanEngine {
   private opts: PlanEngineOptions;
   /** Abort controllers per running step — enables cancellation */
   private abortControllers = new Map<string, AbortController>();
+  /** Per-step timeout handlers — registered during execute(), called by notifyStepTimeout() */
+  private stepTimeoutHandlers = new Map<string, (error: string) => void>();
 
   constructor(executor: WorkerExecutor, opts?: PlanEngineOptions) {
     this.executor = executor;
     this.opts = opts ?? {};
+  }
+
+  /**
+   * Notify the plan engine that a step was timed out externally (e.g. by ResultBuffer).
+   * Injects a failed result into the running plan so dependent steps get skipped
+   * and the plan can complete instead of waiting forever.
+   */
+  notifyStepTimeout(stepId: string, error: string): boolean {
+    const handler = this.stepTimeoutHandlers.get(stepId);
+    if (handler) { handler(error); return true; }
+    return false;
   }
 
   private emit(event: PlanEvent): void {
@@ -520,6 +533,21 @@ export class PlanEngine {
           workerRunning.set(step.worker, currentConc + 1);
           const ac = new AbortController();
           this.abortControllers.set(step.id, ac);
+          // Register timeout handler so external timeouts (ResultBuffer) can
+          // inject a failed result into this plan's closure.
+          this.stepTimeoutHandlers.set(step.id, (error: string) => {
+            if (!running.has(step.id)) return; // already resolved
+            running.delete(step.id);
+            this.abortControllers.delete(step.id);
+            this.stepTimeoutHandlers.delete(step.id);
+            workerRunning.set(step.worker, (workerRunning.get(step.worker) ?? 1) - 1);
+            ac.abort(); // cancel the in-flight executor
+            const res: StepResult = { id: step.id, worker: step.worker, status: 'timeout', output: error, durationMs: 0, dispatchOrder: dispatchOrder++ };
+            results.set(step.id, res);
+            this.emit({ type: 'step.failed', result: res });
+            this.opts.onStepComplete?.(res);
+            setTimeout(tryDispatch, 0);
+          });
           let resolvedTask = resolveStepContext(step.task, results, step.worker);
           // Inject convergence condition — absolute path for file_exists acceptance.
           // Rationale: worker subprocess cwd is unreliable across SDK/CLI boundaries,
@@ -547,6 +575,7 @@ export class PlanEngine {
             .then(res => {
               running.delete(step.id);
               this.abortControllers.delete(step.id);
+              this.stepTimeoutHandlers.delete(step.id);
               workerRunning.set(step.worker, (workerRunning.get(step.worker) ?? 1) - 1);
               results.set(res.id, res);
 

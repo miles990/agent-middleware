@@ -2380,8 +2380,13 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     // Timeout stuck-running tasks (worker died without updating status).
     // Seen 2026-04-18: analyst task plan-1775966160998 stuck in running 6 days.
     // Threshold 1h > any legitimate worker timeout (max seen: 1500s = 25min).
-    const timedOut = mw.buffer.timeoutStuckRunning(3_600_000);
-    if (timedOut > 0) console.log(`[lifecycle] timed out ${timedOut} stuck-running tasks`);
+    const { count: timedOutCount, timedOutIds } = mw.buffer.timeoutStuckRunning(3_600_000);
+    if (timedOutCount > 0) {
+      console.log(`[lifecycle] timed out ${timedOutCount} stuck-running tasks`);
+      for (const taskId of timedOutIds) {
+        mw.planEngine.notifyStepTimeout(taskId, 'lifecycle: stuck-running > 1h');
+      }
+    }
 
     // Lifecycle sweep: cancel orphaned pending tasks (plan lost on restart/eviction)
     const activePlanIds = new Set(mw.plans.keys());

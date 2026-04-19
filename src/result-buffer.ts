@@ -124,6 +124,10 @@ export class ResultBuffer {
   /** Submit a new task (task is pass-through — any format) */
   submit(opts: { id?: string; planId?: string; worker: string; task: unknown; label?: string; caller?: string; metadata?: Record<string, unknown> }): string {
     const id = opts.id ?? this.nextId();
+    const existing = this.tasks.get(id);
+    if (existing && existing.status !== 'completed' && existing.status !== 'failed' && existing.status !== 'timeout') {
+      return id;
+    }
     const record: TaskRecord = {
       id,
       planId: opts.planId,
@@ -258,9 +262,10 @@ export class ResultBuffer {
    * likely died without updating status (seen: analyst task stuck 6 days, 04-12).
    * Returns count of tasks timed out.
    */
-  timeoutStuckRunning(maxRunningMs: number = 3_600_000): number {
+  timeoutStuckRunning(maxRunningMs: number = 3_600_000): { count: number; timedOutIds: string[] } {
     const now = Date.now();
     let count = 0;
+    const timedOutIds: string[] = [];
     for (const [id, task] of this.tasks) {
       if (task.status !== 'running' || !task.startedAt) continue;
       const runningMs = now - task.startedAt.getTime();
@@ -271,10 +276,11 @@ export class ResultBuffer {
         task.durationMs = runningMs;
         this.persist(task);
         this.emit({ type: 'task.failed', task, timestamp: new Date() });
+        timedOutIds.push(id);
         count++;
       }
     }
-    return count;
+    return { count, timedOutIds };
   }
 
   /**
