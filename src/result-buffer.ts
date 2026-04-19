@@ -83,22 +83,46 @@ export class ResultBuffer {
   enablePersistence(cwd: string): void {
     this.persistPath = path.join(cwd, 'results.jsonl');
     this.eventsPath = path.join(cwd, 'events.jsonl');
-    // Load existing results
+    const now = Date.now();
+    const ARCHIVE_AGE = 3_600_000;        // 1h → archived
+    const EXPIRE_AGE = 7 * 24 * 3_600_000; // 7d → discard
+    let loaded = 0, skipped = 0;
     try {
       const lines = fs.readFileSync(this.persistPath, 'utf-8').split('\n').filter(Boolean);
       for (const line of lines) {
         try {
           const record = JSON.parse(line) as TaskRecord;
-          if (record.id) {
-            // Restore dates
-            if (record.submittedAt) record.submittedAt = new Date(record.submittedAt);
-            if (record.startedAt) record.startedAt = new Date(record.startedAt);
-            if (record.completedAt) record.completedAt = new Date(record.completedAt);
+          if (!record.id) continue;
+          if (record.submittedAt) record.submittedAt = new Date(record.submittedAt);
+          if (record.startedAt) record.startedAt = new Date(record.startedAt);
+          if (record.completedAt) record.completedAt = new Date(record.completedAt);
+
+          const isTerminal = record.status === 'completed' || record.status === 'failed'
+            || record.status === 'cancelled' || record.status === 'skipped' || record.status === 'timeout';
+          const age = record.completedAt ? now - record.completedAt.getTime() : 0;
+
+          if (isTerminal && age > EXPIRE_AGE) {
+            skipped++;
+            continue;
+          }
+          if (isTerminal && age > ARCHIVE_AGE) {
+            record.task = undefined;
+            record.result = typeof record.result === 'string' && record.result.length > 500
+              ? (record.result as string).slice(0, 500) : record.result;
+            this.archived.set(record.id, record);
+          } else {
             this.tasks.set(record.id, record);
           }
+          loaded++;
         } catch { /* skip malformed lines */ }
       }
+      if (skipped > 0) {
+        this.persistAtomic([...this.tasks.values(), ...this.archived.values()]);
+      }
     } catch { /* no file yet — normal on first run */ }
+    if (loaded > 0 || skipped > 0) {
+      console.log(`[result-buffer] loaded ${loaded} tasks (${this.tasks.size} active, ${this.archived.size} archived, ${skipped} expired)`);
+    }
   }
 
   private persist(record: TaskRecord): void {
@@ -295,10 +319,12 @@ export class ResultBuffer {
     let archivedCount = 0;
     let expiredCount = 0;
 
-    // Archive: completed tasks older than archiveAfter → move from tasks to archived
+    // Archive: terminal tasks older than archiveAfter → move from tasks to archived
     for (const [id, task] of this.tasks) {
-      if ((task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled')
-        && task.completedAt && (now - task.completedAt.getTime()) > archiveAfter) {
+      const isTerminal = task.status === 'completed' || task.status === 'failed'
+        || task.status === 'cancelled' || task.status === 'skipped' || task.status === 'timeout';
+      if (isTerminal && task.completedAt && (now - task.completedAt.getTime()) > archiveAfter) {
+        task.task = undefined;
         this.archived.set(id, task);
         this.tasks.delete(id);
         archivedCount++;
