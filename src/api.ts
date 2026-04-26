@@ -785,6 +785,57 @@ export function createRouter(config?: MiddlewareConfig): Hono {
   };
 
   // Webhook callback — fire-and-forget POST to caller's endpoint on events
+  // KG episode push — fire-and-forget on plan completion
+  const KG_URL = process.env.KG_URL || 'http://localhost:3300';
+  const pushPlanEpisodeToKG = (planId: string, goal: string, result: import('./plan-engine.js').PlanResult) => {
+    const { summary, totalDurationMs, accepted, digestInput } = result;
+    const outcome = `${summary.completed}/${summary.completed + summary.failed + summary.skipped} completed` +
+      (accepted === true ? ', accepted' : accepted === false ? ', rejected' : '') +
+      ` (${(totalDurationMs / 1000).toFixed(1)}s)`;
+
+    const workers = [...new Set(result.steps.map(s => s.worker))];
+    const findings = digestInput.criticalFindings.slice(0, 10);
+    const artifacts = digestInput.completedSteps.flatMap(s => s.artifactRefs).filter(Boolean);
+
+    fetch(`${KG_URL}/api/episode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: `[plan] ${goal}`.slice(0, 200),
+        outcome,
+        source_agent: 'middleware',
+        confidence: accepted === true ? 0.85 : accepted === false ? 0.5 : 0.7,
+        context_envelope: { topic: goal.slice(0, 100) },
+        related_nodes: [],
+        properties: { planId, workers, findings, artifacts, steps: summary },
+      }),
+      signal: AbortSignal.timeout(5_000),
+    }).then(r => {
+      if (r.ok) console.log(`[kg] episode pushed for plan ${planId}`);
+      else console.error(`[kg] episode push failed: ${r.status}`);
+    }).catch(() => { /* KG down — silent */ });
+
+    if (findings.length > 0) {
+      const triples = findings.map(f => ({
+        subject: goal.slice(0, 100),
+        subject_type: 'plan',
+        predicate: 'produced_finding',
+        object: f.slice(0, 150),
+        object_type: 'observation',
+        source_agent: 'middleware',
+        confidence: 0.6,
+        namespace: 'middleware',
+        description: `Finding from plan: ${planId}`,
+      }));
+      fetch(`${KG_URL}/api/write/triples`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ triples }),
+        signal: AbortSignal.timeout(5_000),
+      }).catch(() => { /* KG down — silent */ });
+    }
+  };
+
   const sendCallback = (url: string, from: string, event: { type: string; id: string; status: string; result?: unknown; error?: string }) => {
     const text = event.type === 'task.completed'
       ? `Task ${event.id} completed: ${typeof event.result === 'string' ? event.result.slice(0, 2000) : JSON.stringify(event.result).slice(0, 2000)}`
@@ -1104,6 +1155,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       mw.markPlanCompleted(planId);
       (mw.plans.get(planId) as Record<string, unknown>).result = result;
       mw.persistPlanHistory({ planId, createdAt, event: 'completed', summary: result.summary, accepted: result.accepted, convergenceIterations: result.convergenceIterations, durationMs: result.totalDurationMs });
+      pushPlanEpisodeToKG(planId, execPlan.goal, result);
       setTimeout(() => mw.plans.delete(planId), 3_600_000);
       // Webhook callback on plan completion
       if (planCb) {
