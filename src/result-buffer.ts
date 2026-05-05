@@ -215,8 +215,13 @@ export class ResultBuffer {
 
   /** Mark task as completed (result is pass-through — any format) */
   complete(id: string, result: unknown): void {
+    const resultLen = typeof result === 'string' ? result.length : JSON.stringify(result ?? null).length;
     const task = this.tasks.get(id);
-    if (!task) return;
+    if (!task) {
+      console.log(`[CYCLE-TRACE] buffer.complete id=${id} resultLen=${resultLen} MISS (task not in buffer)`);
+      return;
+    }
+    console.log(`[CYCLE-TRACE] buffer.complete id=${id} resultLen=${resultLen} prevStatus=${task.status} worker=${task.worker}`);
     task.status = 'completed';
     task.result = result;
     task.completedAt = new Date();
