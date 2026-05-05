@@ -3,8 +3,26 @@
  * Reference: Tanren's createAgentSdkProvider (verified working).
  */
 
-import type { LLMProvider, Prompt, RuntimeOptions } from './llm-provider.js';
+import type { LLMProvider, Prompt, RuntimeOptions, ToolUseEvent } from './llm-provider.js';
 import { promptToText } from './content-adapter.js';
+
+/**
+ * Best-effort target extraction for common tools so consumers can render
+ * a compact `Read(/path/to/file)` summary without having to introspect input.
+ */
+function extractToolTarget(name: string, input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const o = input as Record<string, unknown>;
+  // Common shapes across Claude tools
+  const candidates = ['file_path', 'path', 'command', 'pattern', 'url', 'query', 'description'];
+  for (const k of candidates) {
+    const v = o[k];
+    if (typeof v === 'string' && v.length > 0) {
+      return v.length > 200 ? v.slice(0, 197) + '...' : v;
+    }
+  }
+  return undefined;
+}
 
 export interface SdkProviderOptions {
   model?: string;
@@ -47,6 +65,11 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
         runtimeOpts.signal.addEventListener('abort', () => abortController.abort());
       }
 
+      // tool_use accounting (issue #1): track in-flight tool_use ids so we can
+      // emit a second event with ok-status when the matching tool_result arrives.
+      const onToolUse = runtimeOpts?.onToolUse;
+      const inflightToolUses = new Map<string, ToolUseEvent>();
+
       for await (const msg of query({
         prompt: promptStr,
         options: {
@@ -66,6 +89,39 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
         },
       })) {
         runtimeOpts?.onActivity?.();
+        // Inspect message content for tool_use / tool_result blocks before
+        // checking for the final result. Agent SDK yields assistant messages
+        // with content arrays; user messages may carry tool_result blocks.
+        if (onToolUse) {
+          try {
+            const m = msg as { type?: string; message?: { content?: unknown } };
+            const content = m?.message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content as Array<Record<string, unknown>>) {
+                if (block?.type === 'tool_use' && typeof block.name === 'string') {
+                  const id = typeof block.id === 'string' ? block.id : undefined;
+                  const ev: ToolUseEvent = {
+                    name: block.name,
+                    target: extractToolTarget(block.name, block.input),
+                    id,
+                    ts: Date.now(),
+                  };
+                  if (id) inflightToolUses.set(id, ev);
+                  onToolUse(ev);
+                } else if (block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+                  const prior = inflightToolUses.get(block.tool_use_id);
+                  if (prior) {
+                    const ok = block.is_error !== true;
+                    onToolUse({ ...prior, ok, ts: Date.now() });
+                    inflightToolUses.delete(block.tool_use_id);
+                  }
+                }
+              }
+            }
+          } catch {
+            // Best-effort observability — never let instrumentation throw.
+          }
+        }
         if ('result' in msg && typeof msg.result === 'string') {
           result = msg.result;
         }

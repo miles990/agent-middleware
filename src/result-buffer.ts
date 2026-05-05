@@ -177,6 +177,42 @@ export class ResultBuffer {
     this.emit({ type: 'task.started', task, timestamp: new Date() });
   }
 
+  /**
+   * Append a tool_use event to a running task's metadata (issue #1).
+   * Appends to `metadata.toolUseSummary` (array, capped at 200 entries to
+   * bound memory) and increments `metadata.toolUseCount`. Idempotent for
+   * duplicate (same id, same ok) events: the second call replaces the first
+   * in-place when ids match (pending → ok-status update).
+   */
+  pushToolUse(id: string, event: { name: string; target?: string; ok?: boolean; id?: string; ts: number }): void {
+    const task = this.tasks.get(id);
+    if (!task) return;
+    const meta = (task.metadata ?? {}) as Record<string, unknown>;
+    const arr = Array.isArray(meta.toolUseSummary)
+      ? (meta.toolUseSummary as Array<Record<string, unknown>>)
+      : [];
+    // If this event has an id matching a prior pending entry, update in place
+    // (this is the tool_result follow-up populating ok-status).
+    let updated = false;
+    if (event.id) {
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i]?.id === event.id) {
+          arr[i] = { ...event };
+          updated = true;
+          break;
+        }
+      }
+    }
+    if (!updated) {
+      arr.push({ ...event });
+      // Cap to avoid runaway memory on long-running agents
+      if (arr.length > 200) arr.splice(0, arr.length - 200);
+    }
+    meta.toolUseSummary = arr;
+    meta.toolUseCount = arr.length;
+    task.metadata = meta;
+  }
+
   /** Mark task as completed (result is pass-through — any format) */
   complete(id: string, result: unknown): void {
     const task = this.tasks.get(id);

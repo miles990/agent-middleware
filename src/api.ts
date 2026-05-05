@@ -161,7 +161,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
     worker: string,
     task: string | import('./llm-provider.js').ContentBlock[],
     timeoutMs: number,
-    opts?: { cwd?: string; acceptableExitCodes?: number[] },
+    opts?: { cwd?: string; acceptableExitCodes?: number[]; onToolUse?: (event: import('./llm-provider.js').ToolUseEvent) => void },
   ): Promise<string> => {
     const def = allWorkers()[worker];
     if (!def) throw new Error(`Unknown worker: ${worker}`);
@@ -183,6 +183,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
             cwd: taskCwd,
             signal,
             onActivity: markActive,
+            onToolUse: opts?.onToolUse,
           }),
           { progressMs, hardMs },
         );
@@ -1048,7 +1049,15 @@ export function createRouter(config?: MiddlewareConfig): Hono {
 
     const cb = body.callback;
     const cbFrom = body.callbackFrom ?? 'middleware';
-    const execPromise = mw.executeWorker(body.worker, body.task, timeoutMs, body.cwd ? { cwd: body.cwd } : undefined)
+    // Forensic observability (issue #1): capture every tool_use event from the
+    // worker's LLM and accumulate into TaskRecord.metadata so GET /status/:id
+    // surfaces it. Closes the federation observability gap (KG a051725d).
+    const onToolUse = (event: import('./llm-provider.js').ToolUseEvent) => {
+      try { mw.buffer.pushToolUse(taskId, event); } catch { /* never block worker on instrumentation */ }
+    };
+    const execOpts: { cwd?: string; onToolUse: (e: import('./llm-provider.js').ToolUseEvent) => void } = { onToolUse };
+    if (body.cwd) execOpts.cwd = body.cwd;
+    const execPromise = mw.executeWorker(body.worker, body.task, timeoutMs, execOpts)
       .then(result => {
         mw.buffer.complete(taskId, result);
         if (cb) sendCallback(cb, cbFrom, { type: 'task.completed', id: taskId, status: 'completed', result });

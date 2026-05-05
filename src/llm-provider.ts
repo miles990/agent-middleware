@@ -80,6 +80,25 @@ export interface StructuredResponse {
  * ignore unknown fields. Expand carefully — every field here widens the trust
  * surface for /dispatch callers.
  */
+/**
+ * ToolUseEvent — surfaced from the underlying provider whenever the model
+ * invokes a tool. Used by callers (e.g. middleware /dispatch) to enrich
+ * TaskRecord.metadata.toolUseSummary for cross-agent observability.
+ * Issue #1 (federation observability gap).
+ */
+export interface ToolUseEvent {
+  /** Tool name (e.g. 'Read', 'Bash', 'Edit') */
+  name: string;
+  /** Compact target/argument hint — best-effort extraction from input shape */
+  target?: string;
+  /** True if a tool_result with is_error=false was observed; undefined if pending */
+  ok?: boolean;
+  /** Provider-specific tool_use id, used to correlate with tool_result */
+  id?: string;
+  /** Wall-clock timestamp when tool_use was emitted */
+  ts: number;
+}
+
 export interface RuntimeOptions {
   /** Absolute workdir for this call. Validated at dispatch boundary (must exist + be directory). */
   cwd?: string;
@@ -87,6 +106,13 @@ export interface RuntimeOptions {
   signal?: AbortSignal;
   /** Called on each observable activity (e.g. SDK message yield) for progress-based timeout. */
   onActivity?: () => void;
+  /**
+   * Called whenever the underlying provider observes a tool_use event from the model.
+   * Fired once per tool invocation (best-effort, after the initial assistant message
+   * with the tool_use block). For providers that subsequently see a matching
+   * tool_result block, the same event is fired again with `ok` populated.
+   */
+  onToolUse?: (event: ToolUseEvent) => void;
 }
 
 export interface LLMProvider {
