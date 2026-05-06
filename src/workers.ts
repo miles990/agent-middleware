@@ -112,7 +112,7 @@ export const WORKERS: Record<string, WorkerDefinition> = {
     backend: 'shell',
     maxConcurrency: 4,
     defaultTimeoutSeconds: 1800,
-    progressTimeoutSeconds: 60, // stall-kill if no stdout for 60s
+    progressTimeoutSeconds: 300, // stall-kill if no stdout for 300s (was 60s; bumped for KG/LLM long-running tasks per #167)
     healthCheck: 'echo ok',
   },
 
