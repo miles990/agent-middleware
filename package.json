@@ -12,7 +12,8 @@
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
     "setup": "node scripts/setup.mjs",
-    "deploy": "git pull --ff-only && pnpm install && pnpm run build && pm2 reload ecosystem.config.cjs --update-env"
+    "deploy": "git pull --ff-only && pnpm install && pnpm run build && pm2 reload ecosystem.config.cjs --update-env",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "bin": {
     "agent-middleware-setup": "./scripts/setup.mjs"
