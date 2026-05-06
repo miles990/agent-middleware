@@ -53,6 +53,14 @@ export interface PlanStep {
    * Only applies to shell backend (SDK/ACP don't have exit codes).
    */
   acceptableExitCodes?: number[];
+  /**
+   * Per-step progress timeout in seconds. Overrides the worker-level
+   * `progressTimeoutSeconds` for this step only.
+   * Use for LLM-heavy shell tasks (e.g. KG extraction) that produce no stdout
+   * during long LLM round-trips and would otherwise be killed by the default
+   * 60-300s worker stall cap.
+   */
+  progressTimeoutSeconds?: number;
   /** Dynamic branching */
   condition?: {
     stepId: string;
@@ -677,6 +685,7 @@ export class PlanEngine {
         const output = await this.executor(step.worker, task, timeoutMs, {
           ...(step.cwd ? { cwd: step.cwd } : {}),
           ...(step.acceptableExitCodes ? { acceptableExitCodes: step.acceptableExitCodes } : {}),
+          ...(step.progressTimeoutSeconds !== undefined ? { progressTimeoutMs: step.progressTimeoutSeconds * 1000 } : {}),
         });
 
         // Mechanical verification: run verifyCommand if defined (async — won't block event loop)

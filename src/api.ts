@@ -161,7 +161,7 @@ export function createMiddleware(config?: MiddlewareConfig) {
     worker: string,
     task: string | import('./llm-provider.js').ContentBlock[],
     timeoutMs: number,
-    opts?: { cwd?: string; acceptableExitCodes?: number[]; onToolUse?: (event: import('./llm-provider.js').ToolUseEvent) => void },
+    opts?: { cwd?: string; acceptableExitCodes?: number[]; progressTimeoutMs?: number; onToolUse?: (event: import('./llm-provider.js').ToolUseEvent) => void },
   ): Promise<string> => {
     const def = allWorkers()[worker];
     if (!def) throw new Error(`Unknown worker: ${worker}`);
@@ -298,8 +298,8 @@ export function createMiddleware(config?: MiddlewareConfig) {
           }
         }
         // No allowlist → trusted agent, full shell features via progress-timeout helper.
-        // progressMs from worker config (default 60s if not set; undefined disables stall-kill).
-        const progressMs = (def.progressTimeoutSeconds ?? 60) * 1000;
+        // progressMs: per-task override takes priority; falls back to worker config (default 60s).
+        const progressMs = opts?.progressTimeoutMs ?? (def.progressTimeoutSeconds ?? 60) * 1000;
         try {
           return await execShellWithProgress(shellCmd, {
             cwd: execCwd,
