@@ -27,7 +27,8 @@ reimplemented from public API specs.
 
 ## Layout
 - `server.py` — FastMCP entrypoint, 3 tools
-- `.venv/` — gitignored, `python3 -m venv .venv && .venv/bin/pip install fastmcp`
+- `requirements.txt` — pinned `fastmcp==3.2.4`
+- `.venv/` — gitignored, `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
 
 ## Configuration
 
