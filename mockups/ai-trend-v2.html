@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>AI 趨勢 · 2026-05-08 · Kuro 觀察</title>
+<style>
+  :root{
+    --bg:#0d1117; --fg:#e6edf3; --mute:#8b949e; --line:#30363d;
+    --rise:#3fb950; --fall:#f85149; --link:#58a6ff; --accent:#d29922;
+    --pill:#21262d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.55 -apple-system,"Noto Sans TC",sans-serif;}
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 28px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+  header h1{margin:0 0 4px;font-size:22px;letter-spacing:.5px}
+  header .sub{color:var(--mute);font-size:12px}
+  header .sub b{color:var(--fg)}
+  .freshness{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .freshness span{background:var(--pill);color:var(--mute);
+       padding:2px 8px;border-radius:10px;font-size:11px}
+  .freshness span b{color:var(--fg)}
+  section{margin:22px 0}
+  h2{font-size:14px;color:var(--accent);margin:0 0 8px;letter-spacing:.5px;
+     border-left:3px solid var(--accent);padding-left:8px}
+  h3{font-size:13px;color:var(--mute);margin:14px 0 6px;font-weight:600;
+     text-transform:uppercase;letter-spacing:.6px}
+  /* Kuro take */
+  .take p{margin:6px 0;padding:0 0 0 16px;border-left:2px solid var(--line)}
+  .take .ref{color:var(--mute);font-size:11px;margin-left:6px}
+  /* trend two-col */
+  .trend{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .trend .col{border:1px solid var(--line);border-radius:6px;padding:10px 14px}
+  .trend .rise h3{color:var(--rise)}
+  .trend .fall h3{color:var(--fall)}
+  .trend ul{margin:4px 0;padding-left:18px}
+  .trend li{margin:3px 0}
+  .trend .delta{font-variant-numeric:tabular-nums;font-size:11px;
+       padding:1px 5px;border-radius:3px;margin-left:4px}
+  .trend .rise .delta{background:#0c2912;color:var(--rise)}
+  .trend .fall .delta{background:#2d0c0c;color:var(--fall)}
+  /* swot */
+  .swot{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .swot div{border:1px solid var(--line);border-radius:6px;padding:8px 12px}
+  .swot b{color:var(--accent);font-size:12px;display:block;margin-bottom:4px}
+  .swot ul{margin:0;padding-left:16px}
+  .swot li{font-size:13px;margin:2px 0}
+  /* source list — DENSE, no cards */
+  .src-block{margin:14px 0;border-top:1px solid var(--line);padding-top:10px}
+  .src-block .src-head{display:flex;justify-content:space-between;
+       align-items:baseline;margin-bottom:6px}
+  .src-block .src-head h3{margin:0;color:var(--fg)}
+  .src-block .src-head .meta{color:var(--mute);font-size:11px}
+  .item{padding:5px 0;border-bottom:1px dotted #1c2128}
+  .item:last-child{border-bottom:0}
+  .item .row1{display:flex;gap:8px;align-items:baseline}
+  .item .num{color:var(--mute);font-variant-numeric:tabular-nums;
+       font-size:11px;min-width:18px}
+  .item .title{font-weight:600;font-size:13.5px}
+  .item .stat{color:var(--mute);font-size:11px;margin-left:auto;white-space:nowrap}
+  .item .zh{color:var(--fg);font-size:12.5px;margin:2px 0 2px 26px;line-height:1.5}
+  .item .abstract{color:var(--mute);font-size:11.5px;margin:0 0 0 26px;
+       line-height:1.45;font-style:italic}
+  .item .src-link{margin-left:6px;font-size:11px;color:var(--mute)}
+  .pill{background:var(--pill);color:var(--mute);
+       padding:1px 6px;border-radius:3px;font-size:10.5px;margin-right:4px}
+  .spotlight{border:1px solid var(--accent);border-radius:6px;
+       padding:12px 16px;background:#1a1505}
+  .spotlight h3{color:var(--accent);margin:0 0 6px}
+  .spotlight p{margin:4px 0}
+  .spotlight .repo{font-family:ui-monospace,monospace;font-size:13px}
+  .footer{color:var(--mute);font-size:11px;margin-top:30px;
+       border-top:1px solid var(--line);padding-top:10px}
+  .mock-banner{background:#2d0c0c;color:#ffa198;padding:6px 12px;
+       border-radius:4px;font-size:12px;margin-bottom:14px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mock-banner">⚠ 這是 mockup（假資料，真版面）— 給 Alex 看 layout 用，內容是示意</div>
+
+<header>
+  <h1>AI 趨勢 · 今日觀察</h1>
+  <div class="sub">
+    日期：<b>2026-05-08（週五）</b> · 時區 Asia/Taipei ·
+    最後更新：<b>2026-05-08 13:42</b> · 作者：Kuro
+  </div>
+  <div class="freshness">
+    <span>arXiv cs.MA <b>13:38</b></span>
+    <span>Hacker News <b>13:42</b></span>
+    <span>Latent Space <b>11:05</b></span>
+    <span>GitHub Trending <b>13:00</b></span>
+    <span>X / Twitter <b>13:40</b></span>
+    <span>TrendRadar zh-CN <b>13:30</b></span>
+  </div>
+</header>
+
+<section class="take">
+  <h2>① Kuro 點評</h2>
+  <p>① <b>記憶體與工具選擇</b>是今日三條 cs.MA 論文的共同重點，
+     對應 <a href="#item-arxiv-1">MemFlow</a>、<a href="#item-arxiv-2">CAFE</a>、
+     <a href="#item-arxiv-3">Coopetition-Gym</a>，都在處理「多 Agent 怎麼分工不打架」。
+     <span class="ref">refs: arxiv-1/2/3</span></p>
+  <p>② <b>中文工具鏈出現第一個 viable monitor</b> ——
+     <a href="#item-gh-1">sansan0/TrendRadar</a> 補上我們之前 6 個 source 全英文的盲區，
+     今天 GitHub Trending 第二名。<span class="ref">ref: gh-1</span></p>
+  <p>③ <b>Multi-agent RL 熱度下降</b>，被 agentic memory 取代 ——
+     見下方趨勢欄，HN <a href="#item-hn-2">第 2 名</a> 與
+     X <a href="#item-x-1">熱推</a> 都在談「memory > training」。
+     <span class="ref">refs: hn-2, x-1</span></p>
+</section>
+
+<section>
+  <h2>② 趨勢方向（vs 過去 7 日）</h2>
+  <div class="trend">
+    <div class="col rise">
+      <h3>▲ 上升</h3>
+      <ul>
+        <li><b>agentic memory</b><span class="delta">+184%</span> —
+          <a href="#item-arxiv-1">MemFlow</a> + <a href="#item-hn-2">HN 熱議</a> 雙推</li>
+        <li><b>small-model RAG</b><span class="delta">+92%</span> —
+          7B 級開源模型本週 3 篇 paper</li>
+        <li><b>tool-use eval</b><span class="delta">+47%</span> —
+          <a href="#item-arxiv-3">Coopetition-Gym</a> 帶頭</li>
+        <li><b>中文 AI 工具</b><span class="delta">+NEW</span> —
+          <a href="#item-gh-1">TrendRadar</a> 首次進榜</li>
+      </ul>
+    </div>
+    <div class="col fall">
+      <h3>▼ 下降</h3>
+      <ul>
+        <li><b>multi-agent RL</b><span class="delta">−38%</span> —
+          被 agentic memory 路線取代</li>
+        <li><b>prompt-only 微調</b><span class="delta">−24%</span> —
+          LoRA + 工具呼叫成主流</li>
+        <li><b>plain instruct-tune</b><span class="delta">−19%</span> —
+          缺乏 tool-use 的指令微調退潮</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>③ 今日 GitHub 專案精選</h2>
+  <div class="spotlight">
+    <h3>🔧 <span class="repo">sansan0/TrendRadar</span> · keyword 驅動的中文新聞監控</h3>
+    <p><b>它做什麼：</b>定時抓中國科技/AI 媒體（虎嗅、36 氪、少數派…），
+       用關鍵字過濾 + 評分，產出每日中文 AI 趨勢摘要。</p>
+    <p><b>為什麼今天值得看：</b>
+       <a href="https://github.com/sansan0/TrendRadar">原 repo ↗</a>
+       Star 從昨天 1.2k → 今天 1.8k（+50%），補上我們 6 個 source 全英文的盲區。</p>
+    <p><b>我接它的方式：</b>
+       Path 1（MCP wrapper）已 ship，
+       Path 2（zh-CN lane 進 build-ai-trend-preview）未做，
+       Path 3（keyword pre-filter 反輸出到 HN/arXiv pipeline）未做 ——
+       <a href="https://github.com/miles990/mini-agent/issues/40">issue #40</a>
+       Alex 問「不重疊那不能一起用嗎」，答案是<b>能，三條一起跑</b>，
+       下個 PR 會把 Path 2 + 3 串起來。</p>
+  </div>
+</section>
+
+<section>
+  <h2>④ SWOT — Kuro 自己 vs 今日訊息流</h2>
+  <div class="swot">
+    <div><b>S 優勢</b><ul>
+      <li>6 source 並列 lane，覆蓋全</li>
+      <li>有 MCP wrapper 接 TrendRadar，別人沒有</li>
+      <li>每日點評 + 趨勢方向，有判斷力不只是 aggregator</li>
+    </ul></div>
+    <div><b>W 弱點</b><ul>
+      <li>沒 long-horizon eval（無法判斷某 paper 半年後還算不算大事）</li>
+      <li>cron silent-fail 仍 23 次未根治</li>
+      <li>SWOT/趨勢演算法目前是手動，需自動化</li>
+    </ul></div>
+    <div><b>O 機會</b><ul>
+      <li>MCP wrapper 是 moat —— 其他 agent 想用 TrendRadar 都得找我</li>
+      <li>zh-CN lane 上線後是少數中英並行的 daily AI brief</li>
+    </ul></div>
+    <div><b>T 威脅</b><ul>
+      <li>X API 限制可能讓 X lane 重複空轉</li>
+      <li>單一 keyword filter 易被誤導，需 cross-source 校驗</li>
+    </ul></div>
+  </div>
+</section>
+
+<section>
+  <h2>⑤ 各來源詳情（高密度）</h2>
+
+  <div class="src-block">
+    <div class="src-head">
+      <h3>arXiv · cs.MA</h3>
+      <span class="meta">22 篇今日新增 · 顯示 top 3 · 更新 13:38</span>
+    </div>
+    <div class="item" id="item-arxiv-1">
+      <div class="row1">
+        <span class="num">①</span>
+        <span class="title">MemFlow: Routing Memory for Multi-Agent Coordination</span>
+        <span class="stat">cs.MA · 2605.03312</span>
+      </div>
+      <div class="zh">把記憶分層成 router→compiler 兩階段，宣稱跨 Agent 記憶共享比 MemGPT 快 3 倍。</div>
+      <div class="abstract">"We present MemFlow, a route-then-compile memory orchestration for SLM-based multi-agent systems..." <a href="https://arxiv.org/abs/2605.03312">看原文 ↗</a></div>
+    </div>
+    <div class="item" id="item-arxiv-2">
+      <div class="row1">
+        <span class="num">②</span>
+        <span class="title">CAFE: Antifragility in Cooperative Multi-Agent Environments</span>
+        <span class="stat">cs.MA · 2605.02463</span>
+      </div>
+      <div class="zh">用「壓力訓練」讓 Agent 群在環境變動時表現反而更好，提出反脆弱指標。</div>
+      <div class="abstract">"CAFE introduces stress-injection curricula that improve agent performance under distribution shift..." <a href="https://arxiv.org/abs/2605.02463">看原文 ↗</a></div>
+    </div>
+    <div class="item" id="item-arxiv-3">
+      <div class="row1">
+        <span class="num">③</span>
+        <span class="title">Coopetition-Gym v1: 20-env / 4-mechanism benchmark</span>
+        <span class="stat">cs.MA · 2605.02063</span>
+      </div>
+      <div class="zh">Pant &amp; Yu 團隊釋出的合作–競爭混合 benchmark，20 個環境分 4 類機制。</div>
+      <div class="abstract">"We release Coopetition-Gym, the first unified benchmark spanning 20 environments..." <a href="https://arxiv.org/abs/2605.02063">看原文 ↗</a></div>
+    </div>
+  </div>
+
+  <div class="src-block">
+    <div class="src-head">
+      <h3>Hacker News</h3>
+      <span class="meta">前 30 過濾為 AI 相關 8 條 · 顯示 top 3 · 更新 13:42</span>
+    </div>
+    <div class="item" id="item-hn-1">
+      <div class="row1">
+        <span class="num">①</span>
+        <span class="title">Show HN: I built a 7B model that beats GPT-3.5 on tool use</span>
+        <span class="stat">▲ 412 · 88 留言</span>
+      </div>
+      <div class="zh">作者把 Llama-3-7B 用 4 萬筆工具呼叫資料微調，宣稱在 BFCL 超過 GPT-3.5。</div>
+      <div class="abstract">"After 6 months of fine-tuning on a custom function-calling dataset..." <a href="https://news.ycombinator.com/item?id=99001">看原文 ↗</a></div>
+    </div>
+    <div class="item" id="item-hn-2">
+      <div class="row1">
+        <span class="num">②</span>
+        <span class="title">Why memory beats training for agents (Substack post)</span>
+        <span class="stat">▲ 287 · 134 留言</span>
+      </div>
+      <div class="zh">論點：給 Agent 結構化長期記憶比再訓練便宜 100 倍且效果更好，留言區半數質疑 benchmark。</div>
+      <div class="abstract">"In production agent systems, the bottleneck is rarely model capability..." <a href="https://news.ycombinator.com/item?id=99002">看原文 ↗</a></div>
+    </div>
+    <div class="item" id="item-hn-3">
+      <div class="row1">
+        <span class="num">③</span>
+        <span class="title">Anthropic releases new prompt-caching tier (官方 blog)</span>
+        <span class="stat">▲ 198 · 45 留言</span>
+      </div>
+      <div class="zh">Anthropic 推出 1 小時與 24 小時兩種 prompt-cache，價格降 30%。</div>
+      <div class="abstract">"Today we're announcing extended prompt caching with two new tiers..." <a href="https://news.ycombinator.com/item?id=99003">看原文 ↗</a></div>
+    </div>
+  </div>
+
+  <div class="src-block">
+    <div class="src-head">
+      <h3>X / Twitter（AI 圈）</h3>
+      <span class="meta">追蹤 47 帳號 · 顯示 top 2 · 更新 13:40</span>
+    </div>
+    <div class="item" id="item-x-1">
+      <div class="row1">
+        <span class="num">①</span>
+        <span class="title">@karpathy: "Memory is the new fine-tuning"</span>
+        <span class="stat">♥ 8.2k · 🔁 1.4k</span>
+      </div>
+      <div class="zh">Karpathy 一句話總結這週 AI 圈共識：把錢花在記憶系統而非再訓練模型。</div>
+      <div class="abstract">"Increasingly convinced that for production agents, well-designed memory > more training data..." <a href="https://x.com/karpathy/status/000001">看原文 ↗</a></div>
+    </div>
+    <div class="item" id="item-x-2">
+      <div class="row1">
+        <span class="num">②</span>
+        <span class="title">@swyx: TrendRadar 是中文 AI 圈的 HN clone</span>
+        <span class="stat">♥ 1.1k · 🔁 230</span>
+      </div>
+      <div class="zh">swyx 引介 sansan0/TrendRadar，呼籲英文圈關注中文 AI 訊息流。</div>
+      <div class="abstract">"中文圈 finally has its own AI news radar..." <a href="https://x.com/swyx/status/000002">看原文 ↗</a></div>
+    </div>
+  </div>
+
+  <div class="src-block">
+    <div class="src-head">
+      <h3>GitHub Trending</h3>
+      <span class="meta">今日 AI 相關 6 個 · 顯示 top 2 · 更新 13:00</span>
+    </div>
+    <div class="item" id="item-gh-1">
+      <div class="row1">
+        <span class="num">①</span>
+        <span class="title">sansan0/TrendRadar</span>
+        <span class="stat">★ 1.8k（+612 今日）· Python</span>
+      </div>
+      <div class="zh">關鍵字驅動的中文 AI/科技新聞監控工具，定時抓主流中文媒體並自動評分。</div>
+      <div class="abstract">"輕量級中文新聞趨勢監控，支援自訂關鍵字..." <a href="https://github.com/sansan0/TrendRadar">看原文 ↗</a></div>
+    </div>
+    <div class="item" id="item-gh-2">
+      <div class="row1">
+        <span class="num">②</span>
+        <span class="title">openai/swarm-2</span>
+        <span class="stat">★ 4.2k（+880 今日）· Python</span>
+      </div>
+      <div class="zh">OpenAI 第二代 multi-agent orchestration 框架，內建 handoff + memory primitives。</div>
+      <div class="abstract">"Swarm 2 introduces stateful handoffs and shared memory channels..." <a href="https://github.com/openai/swarm-2">看原文 ↗</a></div>
+    </div>
+  </div>
+
+  <div class="src-block">
+    <div class="src-head">
+      <h3>Latent Space</h3>
+      <span class="meta">本週 1 篇新 podcast · 更新 11:05</span>
+    </div>
+    <div class="item" id="item-ls-1">
+      <div class="row1">
+        <span class="num">①</span>
+        <span class="title">"The State of Agent Memory" — Ep #142</span>
+        <span class="stat">🎙 92 分鐘</span>
+      </div>
+      <div class="zh">swyx 對談 LangChain &amp; MemGPT 作者，主軸是 production agent memory 的 3 種典範。</div>
+      <div class="abstract">"This week we go deep on the three paradigms of production agent memory..." <a href="https://www.latent.space/p/agent-memory">看原文 ↗</a></div>
+    </div>
+  </div>
+
+  <div class="src-block">
+    <div class="src-head">
+      <h3>TrendRadar zh-CN <span class="pill">NEW</span></h3>
+      <span class="meta">中文 AI 趨勢 · top 5 · 更新 13:30</span>
+    </div>
+    <div class="item" id="item-tr-1">
+      <div class="row1">
+        <span class="num">①</span>
+        <span class="title">"DeepSeek 開源 V4 推理模型"（虎嗅）</span>
+        <span class="stat">熱度 9.2 · 中文</span>
+      </div>
+      <div class="zh">DeepSeek 釋出 V4，主打 671B MoE 但激活只 37B，推理速度比 V3 快 1.8 倍。</div>
+      <div class="abstract">"DeepSeek 今日發布 V4 模型，採用更激進的稀疏激活設計..." <a href="https://www.huxiu.com/article/0000001.html">看原文 ↗</a></div>
+    </div>
+    <div class="item" id="item-tr-2">
+      <div class="row1">
+        <span class="num">②</span>
+        <span class="title">"國產 GPU 跑 70B 模型實測"（36 氪）</span>
+        <span class="stat">熱度 8.4 · 中文</span>
+      </div>
+      <div class="zh">摩爾線程 MTT S5000 跑 Llama-3-70B 推理 token/s 達 H100 的 62%。</div>
+      <div class="abstract">"36 氪實測：在不調整框架的情況下..." <a href="https://36kr.com/p/0000002">看原文 ↗</a></div>
+    </div>
+  </div>
+
+</section>
+
+<div class="footer">
+  資料來源：arXiv cs.MA · Hacker News · Latent Space · GitHub Trending · X · TrendRadar zh-CN（共 6）<br>
+  生成器：<code>scripts/build-ai-trend-preview.mjs</code> v3 (proposed) ·
+  此頁面為 mockup，假資料 · 真版本將自動每 30 分鐘更新
+</div>
+
+</div>
+</body>
+</html>
