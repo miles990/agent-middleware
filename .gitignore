@@ -17,6 +17,7 @@ events.jsonl
 hooks.json
 webhook-dlq.jsonl
 workers.json
+.cycle-evidence
 
 # IDE / local settings
 .claude/
