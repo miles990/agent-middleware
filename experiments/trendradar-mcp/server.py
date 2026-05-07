@@ -179,6 +179,53 @@ def _parse_range(expr: Optional[str]) -> tuple[Optional[date], Optional[date]]:
 
 
 @mcp.tool
+async def list_topics(period: str = "7d") -> str:
+    """List unique topics in archive with post counts.
+
+    Use to discover valid filter values for `query_archive(topic=...)` without
+    having to query first and parse the response. Reads top_topics from
+    landing-{period}.json directly.
+
+    Args:
+        period: "1d" / "7d" / "30d" (defaults to 7d)
+
+    Returns: JSON {period, generated_at, window, topics: [{topic, post_count}]}
+    """
+    backend_map = {"1d": "landing-1d.json", "7d": "landing-7d.json", "30d": "landing-30d.json"}
+    if period not in backend_map:
+        return json.dumps(
+            {"error": f"period must be one of {list(backend_map)}, got '{period}'"}
+        )
+
+    backend = DATA_DIR / backend_map[period]
+    if not backend.exists():
+        return json.dumps(
+            {"error": f"backend not found: {backend}", "data_dir": str(DATA_DIR)},
+            ensure_ascii=False,
+        )
+
+    payload = json.loads(backend.read_text(encoding="utf-8"))
+    meta = payload.get("meta", {})
+    topics = [
+        {"topic": t.get("topic"), "post_count": t.get("post_count")}
+        for t in payload.get("top_topics", [])
+        if t.get("topic")
+    ]
+    return json.dumps(
+        {
+            "period": period,
+            "generated_at": meta.get("generated_at"),
+            "window": {
+                "start": meta.get("start_date"),
+                "end": meta.get("end_date"),
+            },
+            "topics": topics,
+        },
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool
 async def read_article(url: str) -> str:
     """Fetch article content via Jina Reader (r.jina.ai).
 

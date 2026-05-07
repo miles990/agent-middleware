@@ -14,7 +14,7 @@ async def main():
         # 1. list_tools — verifies registration over MCP transport
         tools = await client.list_tools()
         names = sorted(t.name for t in tools)
-        assert names == ["query_archive", "read_article", "resolve_date_range"], names
+        assert names == ["list_topics", "query_archive", "read_article", "resolve_date_range"], names
         print(f"[OK] list_tools: {names}")
 
         # 2. resolve_date_range
@@ -41,6 +41,18 @@ async def main():
         r = await client.call_tool("query_archive", {"date_range": "last-7-days", "topic": "agent"})
         body = json.loads(r.content[0].text)
         print(f"[OK] query_archive(7d, topic=agent): returned={body.get('meta', {}).get('returned', 'err')}")
+
+        # 5. list_topics — discovery
+        r = await client.call_tool("list_topics", {"period": "7d"})
+        body = json.loads(r.content[0].text)
+        if "error" in body:
+            print(f"[WARN] list_topics returned error: {body}")
+        else:
+            n = len(body.get("topics", []))
+            sample = [t["topic"] for t in body["topics"][:3]]
+            print(f"[OK] list_topics(7d): {n} topics, sample={sample}")
+            assert n > 0, "expected at least one topic in 7d archive"
+
 
         print("\nALL E2E TESTS PASSED.")
 

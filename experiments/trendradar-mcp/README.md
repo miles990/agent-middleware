@@ -22,6 +22,7 @@ reimplemented from public API specs.
 | name | purpose |
 |------|---------|
 | `resolve_date_range(expr)` | Canonicalize `today` / `yesterday` / `last-7-days` / `last-30-days` / ISO ranges → `{start, end}` |
+| `list_topics(period)` | Discovery: list available topic filters from `landing-{1d,7d,30d}.json` with post counts |
 | `query_archive(date_range, topic?)` | Read `landing-{1d,7d,30d}.json`, return entries with `{title, url, zh_claim, zh_so_what, source, points, published_at}` |
 | `read_article(url)` | Fetch full article content via Jina Reader (`r.jina.ai/<url>`) — markdown out |
 
