@@ -1067,9 +1067,18 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         const msg = err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
         const taskPreview = (typeof body.task === 'string' ? body.task : JSON.stringify(body.task)).slice(0, 200).replace(/\n/g, '\\n');
-        console.error(`[api:dispatch] FAIL taskId=${taskId} worker=${body.worker} cwd=${body.cwd ?? '-'} timeoutMs=${timeoutMs} taskPreview=${taskPreview} err=${msg}${stack ? `\n${stack}` : ''}`);
+        // Issue #12: detect provider budget-hold so the failure is routable
+        // instead of indistinguishable from a generic error. Pattern set covers
+        // Claude Code 'Reached maximum budget ($5)' and similar wording.
+        const budgetHold = /Reached maximum (budget|usage|spend)|budget cap reached|monthly budget exhausted|insufficient (budget|credits)/i.test(msg);
+        if (budgetHold) {
+          const t = mw.buffer.get(taskId);
+          if (t) t.metadata = { ...(t.metadata || {}), budgetHold: true, budgetHoldReason: msg, budgetHoldAt: new Date().toISOString(), worker: body.worker };
+          console.error(`[api:dispatch] BUDGET_HOLD taskId=${taskId} worker=${body.worker} reason=${msg}`);
+        }
+        console.error(`[api:dispatch] FAIL taskId=${taskId} worker=${body.worker} cwd=${body.cwd ?? '-'} timeoutMs=${timeoutMs} taskPreview=${taskPreview} budgetHold=${budgetHold} err=${msg}${stack ? `\n${stack}` : ''}`);
         mw.buffer.fail(taskId, msg);
-        if (cb) sendCallback(cb, cbFrom, { type: 'task.failed', id: taskId, status: 'failed', error: msg });
+        if (cb) sendCallback(cb, cbFrom, { type: 'task.failed', id: taskId, status: 'failed', error: budgetHold ? "BUDGET_HOLD: " + msg : msg });
         throw err;
       });
 
