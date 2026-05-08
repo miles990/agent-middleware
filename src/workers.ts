@@ -61,6 +61,16 @@ export interface WorkerDefinition {
   mcpServers?: Record<string, any>;
   /** Skills (markdown prompts) injected into worker's system prompt — worker-scoped, not agent-scoped */
   skills?: string[];
+  /**
+   * Issue #12 step 2 — fallback worker name. When this worker fails with a
+   * provider budget-hold (e.g. Claude "Reached maximum budget ($5)"), the
+   * dispatcher attempts ONE single retry against `fallbackWorker` with the
+   * same task + timeout. On success: the original taskId completes with the
+   * fallback result, `metadata.providerFallback` is tagged, and a
+   * `task.fallback` callback event fires. On failure: original error path
+   * runs as before. Single hop only (no chains) — predictable cost ceiling.
+   */
+  fallbackWorker?: string;
 }
 
 export const WORKERS: Record<string, WorkerDefinition> = {

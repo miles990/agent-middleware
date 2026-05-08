@@ -864,21 +864,27 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     }
   };
 
-  const sendCallback = (url: string, from: string, event: { type: string; id: string; status: string; result?: unknown; error?: string }) => {
+  const sendCallback = (url: string, from: string, event: { type: string; id: string; status?: string; result?: unknown; error?: string; fallbackFrom?: string; fallbackTo?: string; ok?: boolean }) => {
     const text = event.type === 'task.completed'
       ? `Task ${event.id} completed: ${typeof event.result === 'string' ? event.result.slice(0, 2000) : JSON.stringify(event.result).slice(0, 2000)}`
       : event.type === 'task.failed'
         ? `Task ${event.id} failed: ${event.error ?? 'unknown error'}`
         : event.type === 'plan.completed'
           ? `Plan ${event.id} completed. Status: ${event.status}`
-          : `Event: ${event.type} on ${event.id}`;
+          : event.type === 'task.fallback'
+            ? `Task ${event.id} fallback ${event.ok ? 'ok' : 'fail'}: ${event.fallbackFrom} → ${event.fallbackTo}${event.error ? ` (${event.error})` : ''}`
+            : `Event: ${event.type} on ${event.id}`;
     // Payload carries both chat-shaped fields (from/text for Chat Room ingestion)
     // and structured event fields (type/id/status/result/error for programmatic
     // drainage, e.g. mini-agent delegation result reconciliation). One code path,
     // one payload; consumers pick what they need.
-    const payload: Record<string, unknown> = { from, text, type: event.type, id: event.id, status: event.status };
+    const payload: Record<string, unknown> = { from, text, type: event.type, id: event.id };
+    if (event.status !== undefined) payload.status = event.status;
     if (event.result !== undefined) payload.result = event.result;
     if (event.error !== undefined) payload.error = event.error;
+    if (event.fallbackFrom !== undefined) payload.from_worker = event.fallbackFrom;
+    if (event.fallbackTo !== undefined) payload.to_worker = event.fallbackTo;
+    if (event.ok !== undefined) payload.ok = event.ok;
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1106,7 +1112,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         if (cb) sendCallback(cb, cbFrom, { type: 'task.completed', id: taskId, status: 'completed', result });
         return result;
       })
-      .catch(err => {
+      .catch(async err => {
         const msg = err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
         const taskPreview = (typeof body.task === 'string' ? body.task : JSON.stringify(body.task)).slice(0, 200).replace(/\n/g, '\\n');
@@ -1119,6 +1125,41 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           if (t) t.metadata = { ...(t.metadata || {}), budgetHold: true, budgetHoldReason: msg, budgetHoldAt: new Date().toISOString(), worker: body.worker };
           markBudgetHold(body.worker, msg);
           console.error(`[api:dispatch] BUDGET_HOLD taskId=${taskId} worker=${body.worker} cooldownMs=${BUDGET_HOLD_COOLDOWN_MS} reason=${msg}`);
+
+          // Issue #12 step 2 — single-hop fallback dispatch. If the failed
+          // worker has `fallbackWorker` configured AND that worker is known,
+          // retry the same task once against it. Success → original taskId
+          // completes with fallback result + providerFallback metadata + a
+          // `task.fallback` callback event. Failure → fall through to the
+          // normal fail path with the ORIGINAL error (predictable cost ceiling,
+          // no fallback chains).
+          const fallbackName = def.fallbackWorker;
+          if (fallbackName) {
+            if (!allW[fallbackName]) {
+              console.error(`[api:dispatch] FALLBACK_SKIP taskId=${taskId} from=${body.worker} to=${fallbackName} reason=unknown_worker`);
+            } else if (fallbackName === body.worker) {
+              console.error(`[api:dispatch] FALLBACK_SKIP taskId=${taskId} from=${body.worker} to=${fallbackName} reason=self_reference`);
+            } else {
+              const attemptedAt = new Date().toISOString();
+              try {
+                const fbResult = await mw.executeWorker(fallbackName, body.task, timeoutMs, execOpts);
+                const t2 = mw.buffer.get(taskId);
+                if (t2) t2.metadata = { ...(t2.metadata || {}), providerFallback: { from: body.worker, to: fallbackName, attemptedAt, ok: true } };
+                mw.buffer.complete(taskId, fbResult);
+                if (cb) sendCallback(cb, cbFrom, { type: 'task.fallback', id: taskId, fallbackFrom: body.worker, fallbackTo: fallbackName, ok: true });
+                if (cb) sendCallback(cb, cbFrom, { type: 'task.completed', id: taskId, status: 'completed', result: fbResult });
+                console.error(`[api:dispatch] FALLBACK_OK taskId=${taskId} from=${body.worker} to=${fallbackName}`);
+                return fbResult;
+              } catch (fbErr) {
+                const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
+                const t2 = mw.buffer.get(taskId);
+                if (t2) t2.metadata = { ...(t2.metadata || {}), providerFallback: { from: body.worker, to: fallbackName, attemptedAt, ok: false, error: fbMsg } };
+                if (cb) sendCallback(cb, cbFrom, { type: 'task.fallback', id: taskId, fallbackFrom: body.worker, fallbackTo: fallbackName, ok: false, error: fbMsg });
+                console.error(`[api:dispatch] FALLBACK_FAIL taskId=${taskId} from=${body.worker} to=${fallbackName} err=${fbMsg}`);
+                // fall through to normal fail path with ORIGINAL error
+              }
+            }
+          }
         }
         console.error(`[api:dispatch] FAIL taskId=${taskId} worker=${body.worker} cwd=${body.cwd ?? '-'} timeoutMs=${timeoutMs} taskPreview=${taskPreview} budgetHold=${budgetHold} err=${msg}${stack ? `\n${stack}` : ''}`);
         mw.buffer.fail(taskId, msg);
@@ -2087,6 +2128,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       shellAllowlist?: string[];
       mcpServers?: Record<string, unknown>; skills?: string[];
       healthCheck?: string; healthFix?: string;
+      fallbackWorker?: string;
     }>();
     if (!body.name) return c.json({ error: 'name required' }, 400);
     if (WORKERS[body.name]) return c.json({ error: 'cannot override built-in worker' }, 400);
@@ -2114,6 +2156,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       ...(body.skills ? { skills: body.skills } : {}),
       ...(body.healthCheck ? { healthCheck: body.healthCheck } : {}),
       ...(body.healthFix ? { healthFix: body.healthFix } : {}),
+      ...(body.fallbackWorker ? { fallbackWorker: body.fallbackWorker } : {}),
     };
 
     mw.customWorkers.set(body.name, def);
@@ -2149,6 +2192,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
       shellAllowlist?: string[];
       mcpServers?: Record<string, unknown>; skills?: string[];
       healthCheck?: string; healthFix?: string;
+      fallbackWorker?: string;
     }>();
 
     const existing = mw.customWorkers.get(name)!;
