@@ -2051,6 +2051,26 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     return c.json({ total: Object.keys(results).length, healthy: healthyCount, workers: results });
   });
 
+  // GET /workers/budget-hold — Issue #12 step 3 dashboard surface.
+  // Returns the live per-worker budget-hold state from the dispatch gate so
+  // operators (and the autonomy-closure dashboard) can see which workers are
+  // currently rejected with HTTP 503, why, and when the cooldown expires.
+  app.get('/workers/budget-hold', (c) => {
+    const state = _getBudgetHoldState();
+    const now = Date.now();
+    const workers = Object.entries(state).map(([worker, entry]) => ({
+      worker,
+      reason: entry.reason,
+      until: new Date(entry.until).toISOString(),
+      retryAfterMs: Math.max(0, entry.until - now),
+    }));
+    return c.json({
+      heldCount: workers.length,
+      cooldownMs: BUDGET_HOLD_COOLDOWN_MS,
+      workers,
+    });
+  });
+
   // healthFix is informational — AI reads it from GET /workers/health and decides what to do
 
   // POST /workers — add a custom worker
