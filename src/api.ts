@@ -41,6 +41,33 @@ import { ForgeError } from './forge-client.js';
 
 // Auth middleware — Bearer token from MIDDLEWARE_API_KEY env
 const API_KEY = process.env.MIDDLEWARE_API_KEY;
+
+// Issue #12 step 3: per-worker budget-hold gate. When a worker fails with
+// `BUDGET_HOLD`, record an expiry; subsequent dispatches to that worker are
+// rejected fast with 503 until the hold clears, instead of burning more
+// tasks into the same provider cap. Cooldown defaults to 1h — long enough
+// to escape a rapid retry storm, short enough that monthly caps reset
+// naturally without manual intervention.
+const BUDGET_HOLD_COOLDOWN_MS = Number(process.env.BUDGET_HOLD_COOLDOWN_MS) || 60 * 60 * 1000;
+const budgetHoldUntil = new Map<string, { until: number; reason: string }>();
+function isBudgetHeld(worker: string): { until: number; reason: string } | null {
+  const entry = budgetHoldUntil.get(worker);
+  if (!entry) return null;
+  if (Date.now() >= entry.until) { budgetHoldUntil.delete(worker); return null; }
+  return entry;
+}
+function markBudgetHold(worker: string, reason: string): void {
+  budgetHoldUntil.set(worker, { until: Date.now() + BUDGET_HOLD_COOLDOWN_MS, reason });
+}
+// Exposed for tests + dashboard surfacing.
+export function _getBudgetHoldState(): Record<string, { until: number; reason: string }> {
+  const out: Record<string, { until: number; reason: string }> = {};
+  for (const [worker, entry] of budgetHoldUntil) {
+    if (Date.now() < entry.until) out[worker] = entry;
+  }
+  return out;
+}
+export function _clearBudgetHoldState(): void { budgetHoldUntil.clear(); }
 function authMiddleware(c: { req: { header: (name: string) => string | undefined }; json: (body: unknown, status: number) => Response }, next: () => Promise<void | Response>): Promise<void | Response> {
   if (!API_KEY) return next(); // no key configured → open access (dev mode)
   const auth = c.req.header('Authorization');
@@ -1030,6 +1057,22 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
     if (!allW[body.worker]) return c.json({ error: `Unknown worker: ${body.worker}` }, 400);
 
+    // Issue #12 step 3: gate dispatch on active budget-hold for this worker.
+    // Returning 503 (instead of submitting + immediately failing) prevents the
+    // task from polluting buffer history and gives schedulers a clean signal
+    // to retry-after or fall over to another worker.
+    const held = isBudgetHeld(body.worker);
+    if (held) {
+      return c.json({
+        error: `BUDGET_HOLD: worker ${body.worker} is in budget-hold cooldown`,
+        budgetHold: true,
+        worker: body.worker,
+        reason: held.reason,
+        retryAfterMs: Math.max(0, held.until - Date.now()),
+        retryAfter: new Date(held.until).toISOString(),
+      }, 503);
+    }
+
     // Validate caller-supplied cwd before spending a taskId / starting work.
     const cwdErr = body.cwd !== undefined ? validateTaskCwd(body.cwd) : null;
     if (cwdErr) return c.json({ error: cwdErr }, 400);
@@ -1074,7 +1117,8 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         if (budgetHold) {
           const t = mw.buffer.get(taskId);
           if (t) t.metadata = { ...(t.metadata || {}), budgetHold: true, budgetHoldReason: msg, budgetHoldAt: new Date().toISOString(), worker: body.worker };
-          console.error(`[api:dispatch] BUDGET_HOLD taskId=${taskId} worker=${body.worker} reason=${msg}`);
+          markBudgetHold(body.worker, msg);
+          console.error(`[api:dispatch] BUDGET_HOLD taskId=${taskId} worker=${body.worker} cooldownMs=${BUDGET_HOLD_COOLDOWN_MS} reason=${msg}`);
         }
         console.error(`[api:dispatch] FAIL taskId=${taskId} worker=${body.worker} cwd=${body.cwd ?? '-'} timeoutMs=${timeoutMs} taskPreview=${taskPreview} budgetHold=${budgetHold} err=${msg}${stack ? `\n${stack}` : ''}`);
         mw.buffer.fail(taskId, msg);
