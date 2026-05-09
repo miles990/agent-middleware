@@ -7,6 +7,26 @@ import type { LLMProvider, Prompt, RuntimeOptions, ToolUseEvent } from './llm-pr
 import { promptToText } from './content-adapter.js';
 
 /**
+ * Replace unpaired UTF-16 surrogate code points with U+FFFD so the prompt
+ * survives JSON serialization on the way to Anthropic's API.
+ *
+ * Background: Agent SDK serializes the request body via JSON.stringify, which
+ * happily emits lone surrogates ("\uD83D" without paired low surrogate). The
+ * Anthropic API JSON parser rejects those with HTTP 400 "no low surrogate in
+ * string" — observed 30× across agent-brain failures (e.g. results.jsonl
+ * task-1778314085124-cc, char 53948). Caller-supplied prompts can contain
+ * lone surrogates after CJK/emoji content gets sliced mid-character upstream;
+ * this sanitizer is the safety net at the API boundary.
+ */
+export function sanitizeUnpairedSurrogates(s: string): string {
+  // Lone high surrogate (D800-DBFF) not followed by low surrogate (DC00-DFFF)
+  // Lone low surrogate (DC00-DFFF) not preceded by high surrogate
+  return s
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD')
+    .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, '$1\uFFFD');
+}
+
+/**
  * Best-effort target extraction for common tools so consumers can render
  * a compact `Read(/path/to/file)` summary without having to introspect input.
  */
@@ -46,14 +66,17 @@ export function createSdkProvider(opts?: SdkProviderOptions): LLMProvider {
     async think(prompt: Prompt, systemPrompt: string, runtimeOpts?: RuntimeOptions): Promise<string> {
       const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
-      const sysOpt = systemPrompt
+      // Defensive sanitize at the API boundary — lone UTF-16 surrogates
+      // anywhere in the body trigger Anthropic 400 "no low surrogate in string".
+      const safeSystemPrompt = systemPrompt ? sanitizeUnpairedSurrogates(systemPrompt) : systemPrompt;
+      const sysOpt = safeSystemPrompt
         ? (identityMode === 'inherit-claude-code'
-          ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: systemPrompt } }
-          : { systemPrompt })
+          ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: safeSystemPrompt } }
+          : { systemPrompt: safeSystemPrompt })
         : {};
 
       // Agent SDK's query() prompt is string-based — convert multimodal to text
-      const promptStr = promptToText(prompt);
+      const promptStr = sanitizeUnpairedSurrogates(promptToText(prompt));
 
       let result = '';
 
