@@ -34,7 +34,7 @@ export function extractDecisionBlock(response: string): DecisionBlock | null {
 
   // Field-line prefix supports: optional bullet, optional **bold** label.
   const FIELD_PFX = String.raw`^[-*+]?\s*\d*\.?\s*\**\s*`;
-  const FIELD_TAIL = String.raw`\**\s*:\s*(.+)$`;
+  const FIELD_TAIL = String.raw`\**\s*:[ \t]*(.+)$`;
   const buildRe = (name: string) => new RegExp(FIELD_PFX + name + FIELD_TAIL, 'im');
   const extractField = (re: RegExp): string | undefined => {
     const m = block.match(re);
@@ -46,7 +46,7 @@ export function extractDecisionBlock(response: string): DecisionBlock | null {
   const serving = extractField(buildRe('serving'));
   const chose = extractField(buildRe('chose'));
   const falsifier = extractField(buildRe('(?:falsifier|falsify)'));
-  const ttlStr = block.match(new RegExp(FIELD_PFX + 'ttl' + String.raw`\**\s*:\s*(\d+)$`, 'im'))?.[1];
+  const ttlStr = block.match(new RegExp(FIELD_PFX + 'ttl' + String.raw`\**\s*:[ \t]*(\d+)$`, 'im'))?.[1];
   const ttl = ttlStr ? Math.min(20, Math.max(1, parseInt(ttlStr, 10))) : undefined;
 
   if (!serving && !chose && !falsifier) return null;
@@ -67,17 +67,17 @@ export function synthesizeDecisionFromProse(
 ): { chose: string; falsifier?: string; ttl: number } | null {
   if (response.length < 200) return null;
 
-  const choseMatch = response.match(/^\s*[-*+]?\s*\**\s*chose\**\s*:\s*(.+)$/im);
+  const choseMatch = response.match(/^\s*[-*+]?\s*\**\s*chose\**\s*:[ \t]*(.+)$/im);
   if (!choseMatch) return null;
   const chose = choseMatch[1].trim();
   if (chose.length < 8) return null;
 
   const falsifierMatch = response.match(
-    /^\s*[-*+]?\s*\**\s*(?:falsifier|falsify)\**\s*:\s*(.+)$/im,
+    /^\s*[-*+]?\s*\**\s*(?:falsifier|falsify)\**\s*:[ \t]*(.+)$/im,
   );
   const falsifier = falsifierMatch ? falsifierMatch[1].trim() : undefined;
 
-  const ttlMatch = response.match(/^\s*[-*+]?\s*\**\s*ttl\**\s*:\s*(\d+)$/im);
+  const ttlMatch = response.match(/^\s*[-*+]?\s*\**\s*ttl\**\s*:[ \t]*(\d+)$/im);
   const ttl = ttlMatch ? Math.min(20, Math.max(1, parseInt(ttlMatch[1], 10))) : 3;
 
   return { chose, falsifier, ttl };

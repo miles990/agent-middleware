@@ -103,3 +103,30 @@ describe('synthesizeDecisionFromProse', () => {
     assert.equal(r?.ttl, 4);
   });
 });
+
+describe('extractDecisionBlock — edge cases', () => {
+  it('handles CRLF line endings (edge case: LLM outputs with mixed newlines)', () => {
+    const r = extractDecisionBlock(
+      '## Decision\r\nchose: ship the patch\r\nfalsifier: file_exists:/a\r\nttl: 4\r\n',
+    );
+    assert.equal(r?.chose, 'ship the patch');
+    assert.equal(r?.falsifier, 'file_exists:/a');
+    assert.equal(r?.ttl, 4);
+  });
+
+  it('returns null for empty input (edge case: malformed/zero-length response)', () => {
+    assert.equal(extractDecisionBlock(''), null);
+  });
+
+  it('parses block at end of response with no trailing newline (edge case: truncated stream)', () => {
+    const r = extractDecisionBlock('preamble\n## Decision\nchose: tail-anchored');
+    assert.equal(r?.chose, 'tail-anchored');
+  });
+
+  it('skips field with empty value (edge case: malformed `chose: `)', () => {
+    const r = extractDecisionBlock('## Decision\nserving: real value\nchose:   \nfalsifier: file_exists:/a');
+    assert.equal(r?.chose, undefined);
+    assert.equal(r?.serving, 'real value');
+    assert.equal(r?.falsifier, 'file_exists:/a');
+  });
+});
