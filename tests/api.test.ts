@@ -393,3 +393,26 @@ describe('Dashboard', () => {
     assert.equal(res.status, 302);
   });
 });
+
+describe('Autonomy closure (Issue #16)', () => {
+  it('GET /api/dashboard/autonomy-closure returns aggregator JSON', async () => {
+    const res = await request('/api/dashboard/autonomy-closure');
+    assert.equal(res.status, 200);
+    const body = await res.json() as {
+      ok: boolean;
+      lastVerifiedAt: string;
+      stages: Array<{ name: string; ok: boolean; detail: string }>;
+      blockers: Array<{ stage: string; reason: string }>;
+    };
+    assert.equal(typeof body.ok, 'boolean');
+    assert.ok(typeof body.lastVerifiedAt === 'string' && body.lastVerifiedAt.length > 0);
+    assert.ok(Array.isArray(body.stages));
+    assert.ok(Array.isArray(body.blockers));
+    const stageNames = body.stages.map(s => s.name);
+    assert.ok(stageNames.includes('workers-health'));
+    assert.ok(stageNames.includes('budget-hold'));
+    assert.ok(stageNames.includes('recent-task-failures'));
+    // ok flag must agree with blockers list
+    assert.equal(body.ok, body.blockers.length === 0);
+  });
+});

@@ -3171,6 +3171,77 @@ export function createRouter(config?: MiddlewareConfig): Hono {
     }
   });
 
+  // ─── Autonomy closure aggregator (Issue #16) ───
+  // GET /api/dashboard/autonomy-closure — composes a closure-status JSON from
+  // existing signals (workers/health, budget-hold, recent task failures) so
+  // the autonomy-closure-workflow verifier has a real endpoint to target.
+  // Shape: { ok, lastVerifiedAt, stages[{name,ok,detail}], blockers[{stage,reason}] }
+  app.get('/api/dashboard/autonomy-closure', async (c) => {
+    const stages: Array<{ name: string; ok: boolean; detail: string }> = [];
+    const blockers: Array<{ stage: string; reason: string }> = [];
+
+    // Stage 1: workers health — re-run health checks (same logic as /workers/health).
+    const allW = { ...WORKERS, ...Object.fromEntries(mw.customWorkers) };
+    const healthEntries = await Promise.all(Object.entries(allW).map(async ([name, def]) => {
+      if (!def.healthCheck) return [name, true] as const;
+      try {
+        execSync(def.healthCheck, { timeout: 10_000, stdio: 'ignore', cwd: config?.cwd ?? process.cwd() });
+        return [name, true] as const;
+      } catch {
+        return [name, false] as const;
+      }
+    }));
+    const unhealthy = healthEntries.filter(([, ok]) => !ok).map(([n]) => n);
+    stages.push({
+      name: 'workers-health',
+      ok: unhealthy.length === 0,
+      detail: unhealthy.length === 0
+        ? `${healthEntries.length} workers healthy`
+        : `unhealthy: ${unhealthy.join(', ')}`,
+    });
+    if (unhealthy.length > 0) {
+      blockers.push({ stage: 'workers-health', reason: `${unhealthy.length} worker(s) failing health check: ${unhealthy.join(', ')}` });
+    }
+
+    // Stage 2: budget-hold — any worker currently rejected by dispatch gate.
+    const budgetState = _getBudgetHoldState();
+    const heldWorkers = Object.keys(budgetState);
+    stages.push({
+      name: 'budget-hold',
+      ok: heldWorkers.length === 0,
+      detail: heldWorkers.length === 0 ? 'no holds' : `held: ${heldWorkers.join(', ')}`,
+    });
+    if (heldWorkers.length > 0) {
+      blockers.push({ stage: 'budget-hold', reason: `${heldWorkers.length} worker(s) under budget hold: ${heldWorkers.join(', ')}` });
+    }
+
+    // Stage 3: recent task failures — failures/timeouts in the last 60 minutes.
+    const FAILURE_WINDOW_MS = 60 * 60 * 1000;
+    const FAILURE_THRESHOLD = 5;
+    const cutoff = Date.now() - FAILURE_WINDOW_MS;
+    const countRecent = (status: TaskStatus): number =>
+      mw.buffer.list({ status, limit: 500 }).filter((t) => {
+        const ts = t.completedAt instanceof Date ? t.completedAt.getTime() : 0;
+        return ts >= cutoff;
+      }).length;
+    const failureCount = countRecent('failed') + countRecent('timeout');
+    stages.push({
+      name: 'recent-task-failures',
+      ok: failureCount <= FAILURE_THRESHOLD,
+      detail: `${failureCount} failure(s)/timeout(s) in last 60min (threshold=${FAILURE_THRESHOLD})`,
+    });
+    if (failureCount > FAILURE_THRESHOLD) {
+      blockers.push({ stage: 'recent-task-failures', reason: `${failureCount} task failures/timeouts in last 60min exceeds threshold ${FAILURE_THRESHOLD}` });
+    }
+
+    return c.json({
+      ok: blockers.length === 0,
+      lastVerifiedAt: new Date().toISOString(),
+      stages,
+      blockers,
+    });
+  });
+
   // ─── Dashboard (always fresh — no server cache, no browser cache) ───
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   app.get('/dashboard', (c) => {
