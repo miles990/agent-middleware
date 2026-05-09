@@ -1145,6 +1145,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
                 const fbResult = await mw.executeWorker(fallbackName, body.task, timeoutMs, execOpts);
                 const t2 = mw.buffer.get(taskId);
                 if (t2) t2.metadata = { ...(t2.metadata || {}), providerFallback: { from: body.worker, to: fallbackName, attemptedAt, ok: true } };
+                if (t2) mw.buffer.emit({ type: 'task.fallback', task: t2, timestamp: new Date(), fallback: { from: body.worker, to: fallbackName, ok: true } });
                 mw.buffer.complete(taskId, fbResult);
                 if (cb) sendCallback(cb, cbFrom, { type: 'task.fallback', id: taskId, fallbackFrom: body.worker, fallbackTo: fallbackName, ok: true });
                 if (cb) sendCallback(cb, cbFrom, { type: 'task.completed', id: taskId, status: 'completed', result: fbResult });
@@ -1154,6 +1155,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
                 const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
                 const t2 = mw.buffer.get(taskId);
                 if (t2) t2.metadata = { ...(t2.metadata || {}), providerFallback: { from: body.worker, to: fallbackName, attemptedAt, ok: false, error: fbMsg } };
+                if (t2) mw.buffer.emit({ type: 'task.fallback', task: t2, timestamp: new Date(), fallback: { from: body.worker, to: fallbackName, ok: false, error: fbMsg } });
                 if (cb) sendCallback(cb, cbFrom, { type: 'task.fallback', id: taskId, fallbackFrom: body.worker, fallbackTo: fallbackName, ok: false, error: fbMsg });
                 console.error(`[api:dispatch] FALLBACK_FAIL taskId=${taskId} from=${body.worker} to=${fallbackName} err=${fbMsg}`);
                 // fall through to normal fail path with ORIGINAL error

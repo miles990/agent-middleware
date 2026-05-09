@@ -129,6 +129,57 @@ describe('Issue #12 step 2 — fallback dispatch on budget-hold', () => {
     assert.ok((pf!.error ?? '').match(/downstream provider unreachable/), 'fallback error should be captured in metadata');
   });
 
+  it('emits task.fallback to events.jsonl for persistent observability (AC #3)', async () => {
+    _clearBudgetHoldState();
+
+    // Use a unique cwd so events.jsonl is isolated from prior test runs.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const isolatedCwd = `/tmp/agent-middleware-test-fallback-events-${Date.now()}`;
+    fs.mkdirSync(isolatedCwd, { recursive: true });
+    const { createRouter } = await import('../src/api.js');
+    const isolatedApp = createRouter({ cwd: isolatedCwd });
+
+    const fbWorker = `fallback-evt-ok-${Date.now()}`;
+    await isolatedApp.request('/workers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fbWorker, backend: 'logic', logicFn: 'return "fb-result"' }),
+    });
+    const failWorker = `failing-evt-${Date.now()}`;
+    await isolatedApp.request('/workers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: failWorker,
+        backend: 'logic',
+        logicFn: 'throw new Error("Reached maximum budget ($5)")',
+        fallbackWorker: fbWorker,
+      }),
+    });
+    const dispatchRes = await isolatedApp.request('/dispatch?wait=true', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ worker: failWorker, task: 'evt-test' }),
+    });
+    const dispatchBody = await dispatchRes.json() as { taskId: string; status: string };
+    assert.equal(dispatchBody.status, 'completed');
+
+    // Convergence: events.jsonl must contain a task.fallback row for this taskId.
+    const eventsPath = path.join(isolatedCwd, 'events.jsonl');
+    assert.ok(fs.existsSync(eventsPath), 'events.jsonl must exist after dispatch');
+    const lines = fs.readFileSync(eventsPath, 'utf-8').split('\n').filter(Boolean);
+    const fallbackEvents = lines
+      .map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter((e): e is Record<string, unknown> => e !== null && e.type === 'task.fallback' && e.taskId === dispatchBody.taskId);
+    assert.equal(fallbackEvents.length, 1, `expected 1 task.fallback event for ${dispatchBody.taskId}, got ${fallbackEvents.length}`);
+    const evt = fallbackEvents[0];
+    assert.equal(evt.severity, 'anomaly', 'fallback severity must be anomaly');
+    assert.equal(evt.fallbackFrom, failWorker);
+    assert.equal(evt.fallbackTo, fbWorker);
+    assert.equal(evt.fallbackOk, true);
+  });
+
   it('skips fallback when fallbackWorker references unknown worker', async () => {
     _clearBudgetHoldState();
 

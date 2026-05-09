@@ -35,9 +35,11 @@ export interface TaskRecord {
 }
 
 export type TaskEvent = {
-  type: 'task.submitted' | 'task.started' | 'task.completed' | 'task.failed' | 'task.cancelled';
+  type: 'task.submitted' | 'task.started' | 'task.completed' | 'task.failed' | 'task.cancelled' | 'task.fallback';
   task: TaskRecord;
   timestamp: Date;
+  /** Extra fields for task.fallback (provider reroute observability) */
+  fallback?: { from: string; to: string; ok: boolean; error?: string };
 };
 
 // ─── Event Severity (T11) ───
@@ -56,6 +58,9 @@ export function classifyEventSeverity(event: TaskEvent): EventSeverity {
       return 'critical';
     case 'task.cancelled':
       // Cancellation is anomaly — not routine, but not necessarily failure
+      return 'anomaly';
+    case 'task.fallback':
+      // Provider reroute — anomaly: not failure but observers must see
       return 'anomaly';
     case 'task.completed':
       // Completed successfully — routine signal
@@ -400,7 +405,7 @@ export class ResultBuffer {
   private persistEvent(event: TaskEvent): void {
     if (!this.eventsPath) return;
     try {
-      const record = {
+      const record: Record<string, unknown> = {
         type: event.type,
         severity: classifyEventSeverity(event),
         taskId: event.task.id,
@@ -413,6 +418,14 @@ export class ResultBuffer {
         error: event.task.error,
         timestamp: event.timestamp.toISOString(),
       };
+      // Issue #12 step 2 observer surface: surface reroute origin/destination/outcome
+      // directly on the events.jsonl row so tailers don't need to join results.jsonl.
+      if (event.type === 'task.fallback' && event.fallback) {
+        record.fallbackFrom = event.fallback.from;
+        record.fallbackTo = event.fallback.to;
+        record.fallbackOk = event.fallback.ok;
+        if (event.fallback.error) record.fallbackError = event.fallback.error;
+      }
       fs.appendFileSync(this.eventsPath, JSON.stringify(record) + '\n');
     } catch { /* fail-open */ }
   }
