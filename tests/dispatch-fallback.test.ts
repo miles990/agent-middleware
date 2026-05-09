@@ -2,10 +2,12 @@
  * Issue #12 step 2 — provider budget-hold fallback dispatch.
  *
  * Strategy: register a logic worker whose logicFn throws a Claude-shaped
- * "Reached maximum budget ($5)" error, with `fallbackWorker` pointing at the
- * built-in `shell` worker. Dispatch in wait mode and verify:
+ * "Reached maximum budget ($5)" error, with `fallbackWorker` pointing at a
+ * second logic worker that returns success synchronously. Pure-logic test
+ * fixtures avoid filesystem/spawn dependencies in CI. Dispatch in wait mode
+ * and verify:
  *   1. response is `{ status: 'completed' }` (fallback succeeded)
- *   2. result is the shell stdout
+ *   2. result is the fallback worker's output
  *   3. GET /status/:id surfaces metadata.providerFallback {from,to,ok:true}
  *   4. metadata.budgetHold is also tagged (step 1 still works)
  *
@@ -31,7 +33,19 @@ describe('Issue #12 step 2 — fallback dispatch on budget-hold', () => {
   it('falls back to alternate worker when primary throws budget-hold', async () => {
     _clearBudgetHoldState();
 
-    // Register a custom logic worker that simulates Claude's budget-hold error.
+    // Register a logic-backed fallback worker that succeeds synchronously.
+    const fallbackWorker = `fallback-ok-${Date.now()}`;
+    const fbReg = await req('/workers', {
+      method: 'POST',
+      body: {
+        name: fallbackWorker,
+        backend: 'logic',
+        logicFn: 'return "fallback-ok:" + (typeof input === "string" ? input : JSON.stringify(input))',
+      },
+    });
+    assert.equal(fbReg.status, 200, `fallback worker registration: ${await fbReg.text()}`);
+
+    // Register the primary worker that simulates Claude's budget-hold error.
     const failingWorker = `failing-budget-${Date.now()}`;
     const reg = await req('/workers', {
       method: 'POST',
@@ -39,23 +53,23 @@ describe('Issue #12 step 2 — fallback dispatch on budget-hold', () => {
         name: failingWorker,
         backend: 'logic',
         logicFn: 'throw new Error("Reached maximum budget ($5) for this session")',
-        fallbackWorker: 'shell',
+        fallbackWorker,
       },
     });
     assert.equal(reg.status, 200, `worker registration: ${await reg.text()}`);
 
-    // Dispatch in wait mode — task is what shell will execute on fallback.
+    // Dispatch in wait mode.
     const dispatchRes = await req('/dispatch?wait=true', {
       method: 'POST',
-      body: { worker: failingWorker, task: 'echo fallback-ok' },
+      body: { worker: failingWorker, task: 'task-input' },
     });
     const dispatchBody = await dispatchRes.json() as { taskId: string; status: string; result?: string };
 
-    // Convergence assertion 1: fallback succeeded → completed status, shell stdout in result.
+    // Convergence assertion 1: fallback succeeded → completed status, fallback output in result.
     assert.equal(dispatchRes.status, 200, `dispatch should 200, got ${dispatchRes.status}: ${JSON.stringify(dispatchBody)}`);
     assert.equal(dispatchBody.status, 'completed', `expected completed via fallback, got ${dispatchBody.status}`);
     assert.ok(dispatchBody.taskId, 'taskId required');
-    assert.ok((dispatchBody.result ?? '').includes('fallback-ok'), `result should contain shell stdout, got: ${dispatchBody.result}`);
+    assert.ok((dispatchBody.result ?? '').includes('fallback-ok'), `result should contain fallback output, got: ${dispatchBody.result}`);
 
     // Convergence assertion 2: metadata captures both budgetHold + providerFallback.
     const statusRes = await req(`/status/${dispatchBody.taskId}`);
@@ -66,7 +80,7 @@ describe('Issue #12 step 2 — fallback dispatch on budget-hold', () => {
     assert.ok(meta.providerFallback, 'metadata.providerFallback must be present (step 2 falsifier)');
     const pf = meta.providerFallback as { from: string; to: string; ok: boolean; attemptedAt: string };
     assert.equal(pf.from, failingWorker);
-    assert.equal(pf.to, 'shell');
+    assert.equal(pf.to, fallbackWorker);
     assert.equal(pf.ok, true);
     assert.ok(pf.attemptedAt, 'attemptedAt timestamp required');
   });
