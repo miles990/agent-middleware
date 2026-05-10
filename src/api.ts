@@ -95,6 +95,8 @@ export interface PlanHistoryRecord {
   accepted?: boolean | null;
   convergenceIterations?: number;
   durationMs?: number;
+  /** Failure events: error message (for audit trail when execution rejects) */
+  error?: string;
 }
 
 export interface RecoveryOption {
@@ -1531,7 +1533,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           // Akari P2 fix: clean up Phase 2 plan entry on failure — prevents
           // memory leak in mw.plans Map + audit gap (created without terminal).
           mw.markPlanCompleted(phase2PlanId);
-          mw.persistPlanHistory({ planId: phase2PlanId, createdAt: phase2CreatedAt, event: 'failed' });
+          mw.persistPlanHistory({ planId: phase2PlanId, createdAt: phase2CreatedAt, event: 'failed', error: err instanceof Error ? err.message : String(err) });
           setTimeout(() => mw.plans.delete(phase2PlanId), 3_600_000);
           // Phase 2 failure recovery (brainDigest→replan parity with Phase 1) tracked in #17.
           return { result: phase1Result, planId, plan, createdAt };
