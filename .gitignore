@@ -41,3 +41,7 @@ graphify-out/
 
 # Per-cycle scratchpad (forensic notes, draft text, throwaway analysis)
 scratch/
+
+# Local fetch artifacts and indexes
+memory/arxiv-*.txt
+memory/index/
