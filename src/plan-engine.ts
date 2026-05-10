@@ -85,6 +85,15 @@ export interface PlanStep {
    * (must exist + be a directory). Non-filesystem backends ignore.
    */
   cwd?: string;
+  /**
+   * Phase-1 aggregator marker. When `phase: 'probe'`, exactly one step should
+   * carry findings forward as structured JSON for Phase 2's brain call. The
+   * caller (api.ts) prefers the step with `aggregator: true`; if none is
+   * marked, it falls back to the last step (legacy behavior). Promotes the
+   * implicit "last step is aggregator" convention into an explicit marker
+   * so plans with parallel branches at the tail are unambiguous.
+   */
+  aggregator?: boolean;
 }
 
 export interface ActionPlan {

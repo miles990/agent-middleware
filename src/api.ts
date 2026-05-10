@@ -1451,12 +1451,18 @@ export function createRouter(config?: MiddlewareConfig): Hono {
         return { result: phase1Result, planId, plan, createdAt };
       }
 
-      // Extract probe findings — prefer last step's structured output; fallback to text.
-      // Known limitation (Akari P2): brittle if brain emits multiple parallel
-      // aggregator steps. v0: rely on PLANNING_SYSTEM prompt mandating single
-      // last aggregator. TODO: promote to explicit marker.
+      // Extract probe findings — prefer the explicit `aggregator: true` step
+      // if the plan marks one; otherwise fall back to the last step (legacy
+      // convention). Promotes the v0 "PLANNING_SYSTEM prompt mandates single
+      // last aggregator" implicit rule into an explicit, audit-visible marker
+      // so plans with parallel-branch tails remain unambiguous.
       try {
-        const lastStep = phase1Result.steps[phase1Result.steps.length - 1];
+        const aggregatorStepIdx = plan.steps.findIndex(s => s.aggregator === true);
+        const targetStepId = aggregatorStepIdx >= 0 ? plan.steps[aggregatorStepIdx].id : null;
+        const aggregatorStep = targetStepId
+          ? phase1Result.steps.find(s => s.id === targetStepId)
+          : null;
+        const lastStep = aggregatorStep ?? phase1Result.steps[phase1Result.steps.length - 1];
         const probeResults = lastStep.structured
           ? JSON.stringify(lastStep.structured, null, 2)
           : (lastStep.output ?? '').slice(0, 4000);
