@@ -1527,7 +1527,7 @@ export function createRouter(config?: MiddlewareConfig): Hono {
           mw.markPlanCompleted(phase2PlanId);
           mw.persistPlanHistory({ planId: phase2PlanId, createdAt: phase2CreatedAt, event: 'failed' });
           setTimeout(() => mw.plans.delete(phase2PlanId), 3_600_000);
-          // TODO (Akari P1): no replan loop for phase 2 failures — add brainDigest→replan in future
+          // Phase 2 failure recovery (brainDigest→replan parity with Phase 1) tracked in #17.
           return { result: phase1Result, planId, plan, createdAt };
         }
       } catch (err) {
