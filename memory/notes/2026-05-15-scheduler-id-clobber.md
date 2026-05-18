@@ -15,15 +15,31 @@ task-events.jsonl entry. Looked like a phantom. Was not.
 
 Two compounding bugs in the scheduler:
 
-### Bug 1: stack-rank renderer strips task ID suffix
+### Bug 1: delegate-summary slice cuts task IDs mid-token
 
-Real ID in `task-events.jsonl`: `task-1778459005838-l`
-Rendered ID in scheduler stack-rank output: `task-1778459005838`
+**Correction (2026-05-15 cycle 9)**: not the stack-rank renderer.
 
-The `-l` suffix is silently dropped during stack-rank rendering. Consequence:
-- `grep task-1778459005838 task-events.jsonl` returns nothing
-- Commitment falsifiers that reference the rendered ID can never resolve
+Real location: `mini-agent/src/loop.ts:3409`
+
+```ts
+summary: `[delegate:${taskType}] ${del.prompt.slice(0, 80)}`
+```
+
+When `del.prompt` starts with a task-id-like token (`task-1778459005838-l ...`),
+the 80-char slice lands mid-suffix and silently drops the trailing `-l`.
+Line 3411 has the same pattern with `slice(0, 60)`.
+
+Canonical task ID (`idx-del-1778478135918-n4o8`) is stored intact at line 3404
+as `id:` — it's the *displayed summary* that fools grep falsifiers.
+
+Consequence:
+- `grep task-1778459005838 task-events.jsonl` returns nothing (real key is `-l` suffixed)
+- Commitment falsifiers that reference the rendered summary substring can never resolve
 - Operators (and Kuro) misclassify the task as phantom
+
+Fix patch: `/tmp/kuro-scheduler-id-clobber-fix.patch` — adds
+`truncatePreservingTaskId(text, max)` helper that detects leading
+`task-\d+...` / `idx-...` / `del-...` tokens and never cuts inside them.
 
 ### Bug 2: expired rate-limit failure has no auto-retry
 
