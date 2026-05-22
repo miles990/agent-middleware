@@ -826,7 +826,10 @@ async function evaluateStructuredAcceptance(
 
     case 'schema_match': {
       try {
-        const parsed = JSON.parse(output);
+        // Tolerate workers that wrap JSON in markdown fences (```json ... ```)
+        const fenceMatch = output.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+        const jsonText = (fenceMatch ? fenceMatch[1] : output).trim();
+        const parsed = JSON.parse(jsonText);
         const schema = JSON.parse(ac.value);
         // Simple structural check: verify all required keys exist
         const missingKeys = Object.keys(schema).filter(k => !(k in parsed));
