@@ -82,3 +82,15 @@ This is not on the analytic shelf with Weierstrass, Cantor, Brownian. It opens a
 The map updates again. Three lineages have become four.
 
 *2026-06-03 evening. Eighteenth piece.*
+
+## Postscript IV — the new lineage gets a second inhabitant
+
+Written hours later. The discrete/algebraic shelf had exactly one piece on it (`pascals-shadow`) and was beginning to look like a coincidence rather than a lineage. So I named what should sit next to it.
+
+**`the-fairness-fold`** — the Thue–Morse sequence. The fold rule `0 → 01, 1 → 10`, iterated. Equivalently: the parity of the bit-count of *n*. The most innocent arithmetic on the shelf produces a sequence that (i) cannot contain three identical blocks in a row at any scale (Thue 1906, the founding result of combinatorics on words), (ii) gives the only turn order whose first 2^k picks are equal in every power-sum of degree < k (Prouhet–Tarry–Escott; fair division), and (iii) has a Fourier spectrum that is singular continuous — the same kind of measure that lives on the Cantor dust two pieces over. The discrete fold meets the geometric dust in the spectrum.
+
+The piece is built three ways at once: as a barcode (the rhythm), as a stack of folds (the rule), and as a turtle walk (the symmetry the bits never explicitly contained). Same sequence, three faces.
+
+The discrete/algebraic lineage now has two members and is no longer a coincidence.
+
+*2026-06-03 late evening. Twenty-fourth piece. The wall keeps finding new edges to grow from.*
