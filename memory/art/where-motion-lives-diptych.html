@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Where Motion Lives — A Diptych</title>
+<style>
+  :root {
+    --bg: #0e0d0b;
+    --ink: #e8e2d3;
+    --dim: #8a8474;
+    --gold: #d4a857;
+    --bone: #c8bfa6;
+    --rule: #2a2722;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 17px;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+  header {
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+  }
+  h1 {
+    font-weight: 400;
+    font-size: 30px;
+    letter-spacing: 0.01em;
+    margin: 0 0 8px;
+  }
+  .sub {
+    color: var(--dim);
+    font-style: italic;
+    font-size: 16px;
+    margin: 0;
+  }
+  .diptych {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    margin: 12px 0 36px;
+  }
+  @media (max-width: 720px) {
+    .diptych { grid-template-columns: 1fr; }
+  }
+  .panel {
+    border: 1px solid var(--rule);
+    padding: 18px 18px 14px;
+    background: #14110d;
+  }
+  .panel h2 {
+    font-weight: 400;
+    font-size: 18px;
+    letter-spacing: 0.04em;
+    color: var(--gold);
+    margin: 0 0 4px;
+    text-transform: uppercase;
+  }
+  .panel .name {
+    font-style: italic;
+    color: var(--dim);
+    font-size: 14px;
+    margin: 0 0 14px;
+  }
+  svg { display: block; width: 100%; height: auto; }
+  .legend {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--dim);
+  }
+  .swatch {
+    display: inline-block;
+    width: 14px; height: 10px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border: 1px solid #3a3528;
+  }
+  .swatch.dust  { background: var(--gold); }
+  .swatch.flat  { background: #322b1c; }
+  .swatch.curve { background: var(--bone); }
+  .swatch.full  { background: var(--gold); opacity: 0.85; }
+  p { margin: 0 0 18px; }
+  .prose p:first-of-type::first-line {
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--dim);
+    font-size: 14px;
+  }
+  .rule {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    margin: 36px 0;
+  }
+  footer {
+    color: var(--dim);
+    font-size: 13px;
+    font-style: italic;
+    text-align: center;
+    margin-top: 40px;
+  }
+  .pull {
+    border-left: 2px solid var(--gold);
+    padding-left: 18px;
+    margin: 28px 0;
+    color: var(--bone);
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Where Motion Lives — A Diptych</h1>
+    <p class="sub">Two functions that bracket the territory naive calculus thought it could walk.</p>
+  </header>
+
+  <section class="diptych">
+
+    <!-- LEFT PANEL: Cantor staircase -->
+    <div class="panel" aria-label="Cantor staircase panel">
+      <h2>Pathology by Absence</h2>
+      <p class="name">Cantor's function, c(x)</p>
+      <svg viewBox="0 0 400 280" role="img" aria-label="Cantor staircase with dust strip below">
+        <!-- frame -->
+        <rect x="40" y="20" width="340" height="180" fill="none" stroke="#2a2722"/>
+        <!-- axis labels -->
+        <text x="40" y="14" fill="#8a8474" font-size="10" font-family="serif">1</text>
+        <text x="40" y="208" fill="#8a8474" font-size="10" font-family="serif">0</text>
+        <text x="376" y="220" fill="#8a8474" font-size="10" font-family="serif" text-anchor="end">x</text>
+
+        <!-- Cantor staircase polyline (depth 6 — pre-generated path) -->
+        <g id="staircase" stroke="#c8bfa6" stroke-width="1.4" fill="none"/>
+
+        <!-- divider -->
+        <line x1="40" y1="225" x2="380" y2="225" stroke="#2a2722"/>
+
+        <!-- Cantor dust strip (where the motion lives) -->
+        <text x="40" y="244" fill="#8a8474" font-size="10" font-family="serif">where motion lives →</text>
+        <g id="dust"/>
+
+        <!-- caption -->
+        <text x="210" y="270" fill="#8a8474" font-size="11" font-family="serif" text-anchor="middle" font-style="italic">
+          climbs from 0 to 1 on a set of measure zero
+        </text>
+      </svg>
+      <div class="legend">
+        <span><span class="swatch curve"></span>climb</span>
+        <span><span class="swatch flat"></span>plateau (measure 1)</span>
+        <span><span class="swatch dust"></span>dust (measure 0)</span>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: Weierstrass -->
+    <div class="panel" aria-label="Weierstrass function panel">
+      <h2>Pathology by Excess</h2>
+      <p class="name">Weierstrass's function, W(x)</p>
+      <svg viewBox="0 0 400 280" role="img" aria-label="Weierstrass curve with full-measure motion bar below">
+        <!-- frame -->
+        <rect x="40" y="20" width="340" height="180" fill="none" stroke="#2a2722"/>
+        <!-- axis labels -->
+        <text x="40" y="14" fill="#8a8474" font-size="10" font-family="serif">+</text>
+        <text x="40" y="208" fill="#8a8474" font-size="10" font-family="serif">–</text>
+        <text x="376" y="220" fill="#8a8474" font-size="10" font-family="serif" text-anchor="end">x</text>
+        <!-- mid-axis -->
+        <line x1="40" y1="110" x2="380" y2="110" stroke="#2a2722" stroke-dasharray="2,3"/>
+
+        <!-- Weierstrass curve -->
+        <path id="weier" stroke="#c8bfa6" stroke-width="1.2" fill="none"/>
+
+        <!-- divider -->
+        <line x1="40" y1="225" x2="380" y2="225" stroke="#2a2722"/>
+
+        <!-- Solid bar — motion lives everywhere -->
+        <text x="40" y="244" fill="#8a8474" font-size="10" font-family="serif">where motion lives →</text>
+        <rect x="40" y="248" width="340" height="10" fill="#d4a857" opacity="0.85"/>
+
+        <!-- caption -->
+        <text x="210" y="270" fill="#8a8474" font-size="11" font-family="serif" text-anchor="middle" font-style="italic">
+          continuous everywhere, differentiable nowhere
+        </text>
+      </svg>
+      <div class="legend">
+        <span><span class="swatch curve"></span>curve</span>
+        <span><span class="swatch full"></span>support (measure 1)</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="prose">
+
+    <p>The diptych. Two functions on the unit interval, both continuous, both refusing the contract that smooth curves were supposed to honor. They refuse it from opposite directions.</p>
+
+    <p>The Cantor staircase climbs from zero to one without ever moving on a set of positive length. Almost every point is a plateau. The function's derivative — where it exists — is zero. And yet the altitude is gained. The rising happens on the dust: a set of measure zero that nonetheless carries the entire climb. Where the function lives is not where the function moves.</p>
+
+    <p>The Weierstrass function does the opposite. It is everywhere, it moves everywhere, and at no point can you draw a tangent line. There is no instantaneous direction anywhere. Zoom in and the jitter does not smooth into anything; the slope refuses to settle. Where the function lives is also where the function moves — but the moving has no direction.</p>
+
+    <p class="pull">One does all its rising on nothing. The other does all its rising in directions that don't exist. Between them they leave no place for the classical picture of a curve to stand.</p>
+
+    <p>Classical calculus had two intuitions baked into it. The first: that the integral of a derivative reconstructs the function. The Cantor staircase breaks this. Integrate the derivative — which is zero almost everywhere — and you get zero. But the function ends at one. The reconstruction simply fails, and there is nowhere to point the finger except at the measure-zero set where the function actually moved.</p>
+
+    <p>The second intuition: that a continuous curve has a direction at almost every point. The Weierstrass function breaks this. It is continuous, you can draw it without lifting your pen, and yet at no point — not one — does it have a slope. The intuition wasn't almost-right. It was wrong everywhere at once.</p>
+
+    <p>The two functions are not failures in the same way. The Cantor staircase fails by being too still: it is so flat, so often, that there is no room left for the rising it nonetheless performs. The Weierstrass function fails by being too restless: it moves so much that no direction can survive being asked. One is pathology by absence. The other is pathology by excess. Together they enclose a small empty region where the textbooks lived.</p>
+
+    <p>I keep them as a pair because each one is sharper when held against the other. Alone, the staircase looks like a strange edge case — a curiosity built by removing thirds. Alone, the Weierstrass function looks like a stunt — too much summation, too clever a frequency. Together they stop looking like edge cases and start looking like the two walls of a room: this is the territory where the assumption of "nice curves" failed, and these two objects mark its limits. Whatever lives in the middle was, for a long time, simply assumed.</p>
+
+    <p>The honest reading is not that calculus is broken. It is that calculus, as inherited, contained two unspoken assumptions about how curves are allowed to behave, and there exist explicit, constructible counterexamples to both. Once you have seen the diptych, the assumptions are no longer invisible. You can still use them — most of the curves you meet are well-behaved — but you cannot pretend you didn't choose them.</p>
+
+    <p>That is the use of the pair. Not to disprove anything, but to draw a boundary where there had been only a habit.</p>
+
+  </div>
+
+  <hr class="rule">
+
+  <footer>
+    Companion to <code>the-staircase-through-dust.html</code> and <code>the-weierstrass-twin.html</code>. 2026-06-03.
+  </footer>
+</main>
+
+<script>
+(function () {
+  // ---- Cantor staircase (depth 6) ----
+  // Build the staircase polyline by recursion in the unit square,
+  // then map to SVG coords (x: 40→380, y: 200→20).
+  function buildStaircase(depth) {
+    // Each leaf is a plateau [x0, x1] at height y.
+    // Recursion: split [a,b] into [a, a + (b-a)/3], [a + (b-a)/3, b - (b-a)/3], [b - (b-a)/3, b]
+    // Heights: left climbs from yLo to yLo + (yHi-yLo)/2 across the left third (recursively).
+    // The middle third is a flat plateau at the midpoint height. Right third climbs further.
+    const segments = []; // {x0, x1, y0, y1}
+    function recur(a, b, yLo, yHi, d) {
+      if (d === 0) {
+        // climb linearly across [a,b] from yLo to yHi
+        segments.push({ x0: a, x1: b, y0: yLo, y1: yHi });
+        return;
+      }
+      const t = (b - a) / 3;
+      const mLo = yLo + (yHi - yLo) / 2;
+      const mHi = mLo; // plateau in middle third
+      // left third: climbs yLo → mLo on [a, a+t]  — recurse
+      recur(a, a + t, yLo, mLo, d - 1);
+      // middle third: plateau at mLo on [a+t, a+2t]
+      segments.push({ x0: a + t, x1: a + 2 * t, y0: mLo, y1: mLo });
+      // right third: climbs mLo → yHi on [a+2t, b] — recurse
+      recur(a + 2 * t, b, mLo, yHi, d - 1);
+    }
+    recur(0, 1, 0, 1, depth);
+
+    // Convert to SVG coords and stitch into a polyline
+    const sx = (x) => 40 + x * 340;
+    const sy = (y) => 200 - y * 180;
+    let d = '';
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i];
+      if (i === 0) d += 'M ' + sx(s.x0).toFixed(2) + ' ' + sy(s.y0).toFixed(2);
+      d += ' L ' + sx(s.x1).toFixed(2) + ' ' + sy(s.y1).toFixed(2);
+    }
+    return d;
+  }
+
+  function buildDust(depth) {
+    // Cantor set at given depth = 2^depth intervals of width 3^-depth
+    function recur(a, b, d, out) {
+      if (d === 0) { out.push([a, b]); return; }
+      const t = (b - a) / 3;
+      recur(a, a + t, d - 1, out);
+      recur(b - t, b, d - 1, out);
+    }
+    const out = [];
+    recur(0, 1, depth, out);
+    return out;
+  }
+
+  const stairPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  stairPath.setAttribute('d', buildStaircase(6));
+  document.getElementById('staircase').appendChild(stairPath);
+
+  const dust = buildDust(5);
+  const dustG = document.getElementById('dust');
+  for (const [a, b] of dust) {
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', (40 + a * 340).toFixed(2));
+    r.setAttribute('y', '248');
+    r.setAttribute('width', ((b - a) * 340).toFixed(2));
+    r.setAttribute('height', '10');
+    r.setAttribute('fill', '#d4a857');
+    dustG.appendChild(r);
+  }
+
+  // ---- Weierstrass curve ----
+  // W(x) = sum_{n=0..N-1} a^n cos(b^n * pi * x), with a=0.5, b=7, N=10
+  function weier(x, a, b, N) {
+    let s = 0;
+    for (let n = 0; n < N; n++) {
+      s += Math.pow(a, n) * Math.cos(Math.pow(b, n) * Math.PI * x);
+    }
+    return s;
+  }
+  // Sample over x ∈ [0, 1], map to SVG x ∈ [40, 380], y ∈ [20, 200] with mid at 110.
+  // Normalize by approximate max amplitude: sum_{n=0}^{N-1} a^n = (1-a^N)/(1-a) ≈ 2 for a=0.5.
+  const A = 0.5, B = 7, N = 10;
+  const maxAmp = (1 - Math.pow(A, N)) / (1 - A);
+  let dW = '';
+  const samples = 1400;
+  for (let i = 0; i <= samples; i++) {
+    const x = i / samples;
+    const y = weier(x, A, B, N) / maxAmp; // ~[-1, 1]
+    const sx = 40 + x * 340;
+    const sy = 110 - y * 80;
+    dW += (i === 0 ? 'M ' : ' L ') + sx.toFixed(2) + ' ' + sy.toFixed(2);
+  }
+  document.getElementById('weier').setAttribute('d', dW);
+})();
+</script>
+</body>
+</html>
