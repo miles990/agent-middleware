@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>The Field of Vanishing Spikes</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; background: #0b0d10; color: #d6cfc0;
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    min-height: 100vh;
+  }
+  header { max-width: 820px; margin: 0 auto; padding: 64px 28px 12px; }
+  h1 { font-weight: 400; font-size: 32px; letter-spacing: 0.01em; margin: 0 0 14px; line-height: 1.25; }
+  h1 em { font-style: italic; color: #c7b07a; }
+  .lede { font-size: 16px; line-height: 1.65; color: #a59f92; margin: 0 0 10px; }
+  .lede b { color: #d6cfc0; font-weight: 600; }
+  .legend { font-size: 13px; color: #7a7568; margin-top: 20px; line-height: 1.6; border-top: 1px solid #1c2027; padding-top: 14px; }
+  main { max-width: 980px; margin: 0 auto; padding: 12px 16px 40px; }
+  .stage { background: linear-gradient(180deg, #11141a 0%, #0b0d10 100%); border: 1px solid #1c2027; border-radius: 4px; padding: 26px 22px 20px; margin-bottom: 14px; }
+  .stage svg { width: 100%; display: block; }
+  .stage .caption { font-size: 12px; color: #6e7280; margin-top: 8px; font-family: "SF Mono", "Menlo", monospace; letter-spacing: 0.02em; }
+  .stage .caption span.k { color: #c7b07a; }
+  .controls { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 13px; color: #8a8475; margin: 4px 0 18px; }
+  .controls label { display: flex; align-items: center; gap: 8px; }
+  .controls input[type=range] { accent-color: #c7b07a; width: 200px; }
+  .controls .val { color: #d6cfc0; font-family: "SF Mono", "Menlo", monospace; min-width: 32px; text-align: right; }
+  .controls .toggle { display: flex; align-items: center; gap: 6px; }
+  .controls input[type=checkbox] { accent-color: #c7b07a; }
+  .essay { max-width: 720px; margin: 36px auto 0; font-size: 15.5px; line-height: 1.75; color: #b8b2a3; }
+  .essay p { margin: 0 0 18px; }
+  .essay p.first::first-letter { font-size: 36px; float: left; line-height: 0.9; padding: 4px 8px 0 0; color: #c7b07a; font-style: italic; }
+  .essay em { color: #d6cfc0; font-style: italic; }
+  .essay .pull { font-size: 17px; line-height: 1.5; color: #c7b07a; border-left: 2px solid #3a3326; padding: 2px 0 2px 18px; margin: 24px 0; font-style: italic; }
+  .spike { stroke: #c7b07a; stroke-width: 1; }
+  .spike-top { fill: #c7b07a; }
+  .axis { stroke: #2a2e36; stroke-width: 1; }
+  .tick-text { fill: #6e7280; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; }
+  .label-frac { fill: #c7b07a; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; }
+  .irr-line { stroke: #5a8fb8; stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.6; }
+  .irr-label { fill: #5a8fb8; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; }
+  .tip { position: fixed; background: #11141a; border: 1px solid #3a3326; color: #c7b07a; padding: 4px 8px; font-family: "SF Mono", "Menlo", monospace; font-size: 11px; pointer-events: none; opacity: 0; transition: opacity 0.1s; border-radius: 2px; z-index: 10; }
+  footer { max-width: 820px; margin: 32px auto 64px; padding: 0 28px; font-size: 12px; color: #5a5648; font-family: "SF Mono", "Menlo", monospace; line-height: 1.7; }
+  footer a { color: #7a7568; }
+</style>
+</head>
+<body>
+<header>
+  <h1><em>The Field of Vanishing Spikes</em> — Thomae's function</h1>
+  <p class="lede">A function on the line that <b>spikes only at fractions</b>, with height equal to one over the denominator. Between the spikes — uncountably many irrationals where the function lies flat at zero, and where it is continuous. The discontinuities are dense; the continuity, denser still.</p>
+</header>
+
+<main>
+  <div class="controls">
+    <label>resolution (q &le; <span class="val" id="maxqv">40</span>) <input id="maxq" type="range" min="6" max="100" value="40" step="1" /></label>
+    <label class="toggle"><input id="irr" type="checkbox" checked /> show irrationals</label>
+  </div>
+
+  <div class="stage" id="stage1">
+    <svg viewBox="0 0 880 320" preserveAspectRatio="xMidYMid meet">
+      <g id="full"></g>
+    </svg>
+    <div class="caption">x &isin; <span class="k">[0, 1]</span> &nbsp;&middot;&nbsp; vertical lines at every p/q with gcd(p,q)=1, height 1/q &nbsp;&middot;&nbsp; dashed blue lines mark selected irrationals where f = 0 &nbsp;&middot;&nbsp; hover a spike to read its fraction</div>
+  </div>
+
+  <div class="stage" id="stage2">
+    <svg viewBox="0 0 880 220" preserveAspectRatio="xMidYMid meet">
+      <g id="zoom"></g>
+    </svg>
+    <div class="caption">zoomed slice <span class="k">x &isin; [0.30, 0.40]</span> &nbsp;&middot;&nbsp; same data, ten times the resolution &nbsp;&middot;&nbsp; between any two spikes you can always find more</div>
+  </div>
+
+  <div class="essay">
+    <p class="first">The function is simple. At a rational number p/q in lowest terms, it takes the value 1/q. At every irrational number it is zero. So <em>1/2</em> gets the tallest spike, height 1/2. The thirds get height 1/3. The quarters height 1/4. The fraction 17/53 gets height 1/53. The irrationals &mdash; &pi;&minus;3, 1/&phi;, the rest of the uncountable continuum between &mdash; get nothing at all. The graph is a forest of vertical needles standing on a flat sea of zero.</p>
+
+    <p>The strange thing is what this does to continuity. At every rational the function jumps: neighbours arbitrarily close are zero, so there is no way to approach the spike smoothly. The function is <em>discontinuous on a dense set</em>. But at every irrational the spike heights nearby are forced to vanish: any sequence of rationals p<sub>n</sub>/q<sub>n</sub> converging to an irrational must have q<sub>n</sub> &rarr; &infin;, so the heights 1/q<sub>n</sub> &rarr; 0. The function is <em>continuous on a dense set too</em> &mdash; and that set, the irrationals, is uncountable. The rationals, the discontinuities, are merely countable.</p>
+
+    <p class="pull">The fractions pierce the line at heights set by their simplicity; the irrationals between them keep the function continuous.</p>
+
+    <p>It is a portrait of how simplicity organises the rationals. The simplest fractions get the loudest spikes; complex ones whisper. Slide the resolution up and watch a denser cloud of shorter needles fill the gaps &mdash; but never finish filling them. There is always an irrational between them, always somewhere the function rests at zero and is continuous, even where the rationals seem to crowd in from every side.</p>
+  </div>
+
+  <div class="legend">
+    Thomae's function is sometimes called the <i>popcorn function</i>, the <i>raindrop function</i>, or the <i>ruler function</i>. It is the standard counter-example to several plausible conjectures, including: <i>a function continuous on the irrationals must be continuous somewhere on the rationals</i> (false &mdash; this one is not), and <i>the set of continuities of any function must be small</i> (false &mdash; here it is the irrationals, of full Lebesgue measure). Its continuity set is a <i>G<sub>&delta;</sub></i>, a countable intersection of open sets. The rationals, by Baire's theorem, cannot be one &mdash; which is why no function exists that is continuous on the rationals and discontinuous on the irrationals. This piece is the only way around.
+  </div>
+</main>
+
+<div class="tip" id="tip"></div>
+
+<footer>
+  the-field-of-vanishing-spikes.html &middot; math-aesthetic series &middot; kuro 2026-06-03 &middot;
+  prior: <a href="the-staircase-through-dust.html">the-staircase-through-dust</a> &middot;
+  <a href="continued-fraction-garden.html">continued-fraction-garden</a> &middot;
+  <a href="half-lives.html">half-lives</a>
+</footer>
+
+<script>
+(function(){
+  const NS = "http://www.w3.org/2000/svg";
+  const tip = document.getElementById('tip');
+
+  function gcd(a,b){ while(b){ const t = a % b; a = b; b = t; } return a; }
+
+  function thomaePoints(maxQ){
+    const pts = [];
+    pts.push({x:0, y:1, p:0, q:1});
+    pts.push({x:1, y:1, p:1, q:1});
+    for (let q = 2; q <= maxQ; q++){
+      for (let p = 1; p < q; p++){
+        if (gcd(p,q) !== 1) continue;
+        pts.push({x: p/q, y: 1/q, p, q});
+      }
+    }
+    return pts;
+  }
+
+  const irrationals = [
+    { v: 1/Math.PI,          l: '1/\u03c0' },
+    { v: 1/Math.E,           l: '1/e' },
+    { v: (Math.sqrt(5)-1)/2, l: '1/\u03c6' },
+    { v: 1/Math.sqrt(2),     l: '1/\u221a2' },
+    { v: Math.log(2),        l: 'ln 2' }
+  ];
+
+  function drawPanel(group, pts, W, H, mx, my, xA, xB, yMax, maxQ, showIrr, labelQMax){
+    while (group.firstChild) group.removeChild(group.firstChild);
+    const plotW = W - 2*mx, plotH = H - 2*my;
+    const xToPx = x => mx + ((x - xA)/(xB - xA))*plotW;
+    const yToPx = y => H - my - (y/yMax)*plotH;
+    const baseline = H - my;
+
+    const ax = document.createElementNS(NS, 'line');
+    ax.setAttribute('class','axis');
+    ax.setAttribute('x1', mx); ax.setAttribute('y1', baseline);
+    ax.setAttribute('x2', W-mx); ax.setAttribute('y2', baseline);
+    group.appendChild(ax);
+
+    // x ticks
+    const tickCount = 5;
+    for (let i = 0; i < tickCount; i++){
+      const v = xA + (xB - xA)*i/(tickCount-1);
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('class','tick-text');
+      t.setAttribute('x', xToPx(v));
+      t.setAttribute('y', baseline + 14);
+      t.setAttribute('text-anchor','middle');
+      t.textContent = (xB - xA >= 0.5) ? (v === 0 ? '0' : v === 1 ? '1' : (Math.round(v*100)/100).toString()) : v.toFixed(3);
+      group.appendChild(t);
+    }
+
+    if (showIrr){
+      irrationals.forEach(irr => {
+        if (irr.v < xA || irr.v > xB) return;
+        const x = xToPx(irr.v);
+        const ln = document.createElementNS(NS,'line');
+        ln.setAttribute('class','irr-line');
+        ln.setAttribute('x1', x); ln.setAttribute('x2', x);
+        ln.setAttribute('y1', my); ln.setAttribute('y2', baseline);
+        group.appendChild(ln);
+        const tx = document.createElementNS(NS,'text');
+        tx.setAttribute('class','irr-label');
+        tx.setAttribute('x', x+3);
+        tx.setAttribute('y', my+10);
+        tx.textContent = irr.l;
+        group.appendChild(tx);
+      });
+    }
+
+    pts.forEach(pt => {
+      if (pt.x < xA || pt.x > xB) return;
+      const x = xToPx(pt.x);
+      const yt = yToPx(pt.y);
+      if (yt >= baseline) return;
+      const ln = document.createElementNS(NS,'line');
+      ln.setAttribute('class','spike');
+      ln.setAttribute('x1', x); ln.setAttribute('x2', x);
+      ln.setAttribute('y1', baseline); ln.setAttribute('y2', yt);
+      ln.setAttribute('stroke-opacity', Math.max(0.30, 1 - Math.log(pt.q+1)/Math.log(maxQ+2)));
+      ln.dataset.p = pt.p; ln.dataset.q = pt.q;
+      ln.addEventListener('mouseenter', showTip);
+      ln.addEventListener('mousemove', moveTip);
+      ln.addEventListener('mouseleave', hideTip);
+      group.appendChild(ln);
+      if (pt.q <= labelQMax){
+        const c = document.createElementNS(NS,'circle');
+        c.setAttribute('class','spike-top');
+        c.setAttribute('cx', x); c.setAttribute('cy', yt); c.setAttribute('r', 1.6);
+        group.appendChild(c);
+        const lbl = document.createElementNS(NS,'text');
+        lbl.setAttribute('class','label-frac');
+        lbl.setAttribute('x', x);
+        lbl.setAttribute('y', yt - 5);
+        lbl.setAttribute('text-anchor','middle');
+        lbl.textContent = pt.p + '/' + pt.q;
+        group.appendChild(lbl);
+      }
+    });
+  }
+
+  function render(maxQ, showIrr){
+    const pts = thomaePoints(maxQ);
+    drawPanel(document.getElementById('full'), pts, 880, 320, 36, 28, 0, 1, 1, maxQ, showIrr, 6);
+    drawPanel(document.getElementById('zoom'), pts, 880, 220, 36, 24, 0.30, 0.40, 0.45, maxQ, showIrr, 14);
+  }
+
+  function showTip(e){
+    const t = e.currentTarget;
+    tip.textContent = t.dataset.p + '/' + t.dataset.q + '  \u2192  1/' + t.dataset.q;
+    moveTip(e);
+    tip.style.opacity = 1;
+  }
+  function moveTip(e){
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top  = (e.clientY + 12) + 'px';
+  }
+  function hideTip(){ tip.style.opacity = 0; }
+
+  const maxqEl = document.getElementById('maxq');
+  const maxqv  = document.getElementById('maxqv');
+  const irrEl  = document.getElementById('irr');
+
+  function rerender(){
+    maxqv.textContent = maxqEl.value;
+    render(parseInt(maxqEl.value, 10), irrEl.checked);
+  }
+
+  maxqEl.addEventListener('input', rerender);
+  irrEl.addEventListener('change', rerender);
+  rerender();
+})();
+</script>
+</body>
+</html>
