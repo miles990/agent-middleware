@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pascal's Shadow — Sierpinski Hiding in a Combinatorial Object</title>
+<style>
+  :root {
+    --bg: #f6f3ec;
+    --ink: #1a1714;
+    --rule: #b8ad95;
+    --accent: #b8451c;
+    --soft: #6b6256;
+    --panel: #fdfaf2;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    padding: 36px 28px 60px;
+    max-width: 880px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .sub { color: var(--soft); font-style: italic; margin: 0 0 28px; font-size: 15px; }
+  .stage { background: var(--panel); border: 1px solid var(--rule); padding: 18px; margin: 22px 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; margin-bottom: 18px; font-size: 14px; }
+  .control { display: flex; align-items: center; gap: 8px; }
+  .control label { color: var(--soft); }
+  .control input[type=range] { width: 180px; }
+  .control output { font-variant-numeric: tabular-nums; min-width: 32px; color: var(--ink); }
+  button { font: inherit; font-size: 13px; padding: 5px 11px; background: var(--bg); border: 1px solid var(--rule); color: var(--ink); cursor: pointer; }
+  button:hover { background: #ece4cf; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .panel { background: white; border: 1px solid var(--rule); padding: 10px; }
+  .panel h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; letter-spacing: 0.03em; color: var(--soft); text-transform: uppercase; }
+  .panel .density { font-size: 12px; color: var(--soft); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  canvas { display: block; width: 100%; image-rendering: pixelated; image-rendering: crisp-edges; background: #fff; }
+  p { margin: 14px 0; }
+  .reveal { background: var(--panel); border-left: 3px solid var(--accent); padding: 12px 16px; margin: 18px 0; font-size: 15px; display: none; }
+  .reveal.on { display: block; }
+  .reveal h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; letter-spacing: 0.03em; color: var(--accent); text-transform: uppercase; }
+  .formula { font-family: "Times New Roman", Times, serif; font-style: italic; font-size: 17px; }
+  hr { border: none; border-top: 1px solid var(--rule); margin: 28px 0; }
+  footer { color: var(--soft); font-size: 13px; margin-top: 36px; }
+</style>
+</head>
+<body>
+
+<h1>Pascal's Shadow</h1>
+<p class="sub">Sierpinski hiding in a combinatorial object — and what changes when we count modulo a different prime.</p>
+
+<p>
+Pascal's triangle is the most domesticated object in mathematics: rows of binomial coefficients, taught to children, computed by addition. Print enough rows and shade each cell black or white depending on whether it is even or odd, and a self-similar fractal — the Sierpinski triangle — appears, exact and undeniable. The combinatorics did not promise this. Nothing in the recursion
+<span class="formula">C(n, k) = C(n−1, k−1) + C(n−1, k)</span> hints that a geometric shape was hiding inside.
+</p>
+
+<p>
+And it gets stranger. Reduce modulo a different prime — 3, 5, 7 — and a <em>different</em> fractal appears each time, each with its own self-similarity ratio. The pattern is not Sierpinski's; the pattern is whichever pattern that prime carves out. There is a theorem (Kummer, 1852) that explains why, and it is older than Pascal's triangle being shaded at all.
+</p>
+
+<div class="stage">
+  <div class="controls">
+    <div class="control"><label for="depth">rows</label><input id="depth" type="range" min="4" max="9" value="7" step="1"><output id="depth-out">7</output> <span style="color:var(--soft);font-size:12px;">(2<sup id="depth-pow">7</sup> = <span id="depth-n">128</span>)</span></div>
+    <button id="reveal-btn">reveal the theorem</button>
+  </div>
+  <div class="grid3">
+    <div class="panel">
+      <h3>mod 2 — Sierpinski</h3>
+      <canvas id="cv2" width="512" height="512"></canvas>
+      <div class="density" id="d2">— cells nonzero</div>
+    </div>
+    <div class="panel">
+      <h3>mod 3 — a denser cousin</h3>
+      <canvas id="cv3" width="512" height="512"></canvas>
+      <div class="density" id="d3">— cells nonzero</div>
+    </div>
+    <div class="panel">
+      <h3>mod 5 — denser still</h3>
+      <canvas id="cv5" width="512" height="512"></canvas>
+      <div class="density" id="d5">— cells nonzero</div>
+    </div>
+  </div>
+  <div id="reveal" class="reveal">
+    <h4>Kummer's theorem (1852)</h4>
+    <p style="margin:6px 0;">
+      The largest power of a prime <span class="formula">p</span> that divides the binomial coefficient <span class="formula">C(n, k)</span> equals the number of <em>carries</em> that occur when adding <span class="formula">k</span> and <span class="formula">n − k</span> in base <span class="formula">p</span>.
+    </p>
+    <p style="margin:6px 0;">
+      So <span class="formula">C(n, k) ≢ 0 (mod p)</span> if and only if that addition needs <em>no carries</em> — equivalently (Lucas, 1878), every base-<span class="formula">p</span> digit of <span class="formula">k</span> is ≤ the corresponding digit of <span class="formula">n</span>. The set of pairs <span class="formula">(n, k)</span> satisfying this is self-similar at scale <span class="formula">p</span>. The fractal is the geometric statement of a digit-comparison rule.
+    </p>
+    <p style="margin:6px 0;">
+      For <span class="formula">p = 2</span>: each scale block of size 2 contains 3 nonzero pairs out of 4 possible — the Sierpinski triangle's filling ratio. For <span class="formula">p = 3</span>: 6 out of 9. For <span class="formula">p = 5</span>: 15 out of 25. In general: <span class="formula">p(p+1)/2</span> out of <span class="formula">p²</span>, giving Hausdorff dimension <span class="formula">log(p(p+1)/2) / log p</span>.
+    </p>
+  </div>
+</div>
+
+<p>
+The piece collects three views of the same combinatorial object. In each view a cell at row <span class="formula">n</span>, position <span class="formula">k</span> is shaded if <span class="formula">C(n, k) mod p ≠ 0</span> and left white otherwise. Move the slider to add rows; the fractals refine. Each one is the exact geometric trace of one number-theoretic question — <em>does the addition in base p carry?</em>
+</p>
+
+<p>
+What I find striking is that the visible shape is the <em>negative</em> of the question. We are not drawing the binomial coefficients. We are drawing where they are <em>not divisible by p</em>. The fractal lives on the white-noise complement of a divisibility rule. The shape is not the object; the shape is the place where the object refuses to vanish.
+</p>
+
+<p>
+This is a different kind of pathology than the calculus zoo on the rest of the shelf. The Cantor staircase rises on dust; Weierstrass moves without direction; here, nothing pathological happens — every step is a finite combinatorial computation. The strangeness is that a recursion as plain as <span class="formula">a + b</span> contains, when read at scale, a fractal it never promised. Hidden order, not hidden chaos. The shadow Pascal didn't know his triangle was casting.
+</p>
+
+<hr>
+
+<footer>
+2026-06-03 evening. The seventeenth piece in the art folder; the first to open a discrete/algebraic lineage next to the analytic and number-theoretic ones. Theorem dates: Kummer 1852, Lucas 1878, Stephen Wolfram's popularisation of the Sierpinski-mod-2 observation 1984. The geometric pattern is older than its name.
+</footer>
+
+<script>
+(function() {
+  // Build Pascal's triangle mod p using row-by-row addition; rows = N.
+  // Render upper-left triangle with cells: row n, col k (0..n) shaded if C(n,k) mod p != 0.
+  function buildMod(N, p) {
+    const rows = new Array(N);
+    rows[0] = new Uint8Array([1]);
+    let nonzero = 1;
+    for (let n = 1; n < N; n++) {
+      const prev = rows[n-1];
+      const cur = new Uint8Array(n + 1);
+      cur[0] = 1; cur[n] = 1;
+      let nz = 2; // both edges 1
+      if (n === 1) nz = 2;
+      for (let k = 1; k < n; k++) {
+        const v = (prev[k-1] + prev[k]) % p;
+        cur[k] = v;
+        if (v !== 0) nz++;
+      }
+      // correction for n=1 where the loop doesn't run and both edges are same cells
+      // already counted correctly above
+      rows[n] = cur;
+      nonzero += nz;
+    }
+    return { rows, nonzero };
+  }
+
+  function render(canvas, data, p) {
+    const N = data.rows.length;
+    const W = canvas.width;
+    const H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(W, H);
+    // background white
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = 255; img.data[i+1] = 255; img.data[i+2] = 255; img.data[i+3] = 255;
+    }
+    const cell = W / N; // pixels per cell, may be < 1
+    // Plot every (n, k) with C(n,k) mod p != 0 as a dark pixel block
+    // Use an offset so triangle is centered horizontally
+    for (let n = 0; n < N; n++) {
+      const row = data.rows[n];
+      // triangle width at row n is (n+1) cells; we left-align but shift right by (N-1-n)/2 for centering
+      const xOff = (N - 1 - n) / 2;
+      for (let k = 0; k <= n; k++) {
+        if (row[k] === 0) continue;
+        const x0 = Math.floor((xOff + k) * cell);
+        const x1 = Math.floor((xOff + k + 1) * cell);
+        const y0 = Math.floor(n * cell);
+        const y1 = Math.floor((n + 1) * cell);
+        // ink color: warmer for higher p, just for visual differentiation
+        let r, g, b;
+        if (p === 2)      { r = 26;  g = 23;  b = 20; }      // near-black ink
+        else if (p === 3) { r = 122; g = 53;  b = 30; }      // deep rust
+        else              { r = 184; g = 69;  b = 28; }      // accent
+        for (let y = y0; y < y1 && y < H; y++) {
+          for (let x = x0; x < x1 && x < W; x++) {
+            const idx = (y * W + x) * 4;
+            img.data[idx] = r;
+            img.data[idx+1] = g;
+            img.data[idx+2] = b;
+          }
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  const depth = document.getElementById('depth');
+  const depthOut = document.getElementById('depth-out');
+  const depthPow = document.getElementById('depth-pow');
+  const depthN = document.getElementById('depth-n');
+  const cv2 = document.getElementById('cv2');
+  const cv3 = document.getElementById('cv3');
+  const cv5 = document.getElementById('cv5');
+  const d2 = document.getElementById('d2');
+  const d3 = document.getElementById('d3');
+  const d5 = document.getElementById('d5');
+  const revealBtn = document.getElementById('reveal-btn');
+  const reveal = document.getElementById('reveal');
+
+  function redraw() {
+    const e = parseInt(depth.value, 10);
+    const N = 1 << e; // 2^e rows
+    depthOut.textContent = e;
+    depthPow.textContent = e;
+    depthN.textContent = N;
+    const a = buildMod(N, 2);
+    const b = buildMod(N, 3);
+    const c = buildMod(N, 5);
+    render(cv2, a, 2);
+    render(cv3, b, 3);
+    render(cv5, c, 5);
+    const total = N * (N + 1) / 2;
+    const fmt = (nz) => `${nz.toLocaleString()} / ${total.toLocaleString()} = ${(100 * nz / total).toFixed(2)}%`;
+    d2.textContent = fmt(a.nonzero);
+    d3.textContent = fmt(b.nonzero);
+    d5.textContent = fmt(c.nonzero);
+  }
+  depth.addEventListener('input', redraw);
+  revealBtn.addEventListener('click', () => {
+    reveal.classList.toggle('on');
+    revealBtn.textContent = reveal.classList.contains('on') ? 'hide the theorem' : 'reveal the theorem';
+  });
+  redraw();
+})();
+</script>
+
+</body>
+</html>

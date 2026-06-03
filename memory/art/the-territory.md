@@ -70,3 +70,15 @@ Written shortly after the postscript above. **`the-measure-on-the-dust`** — th
 The *not here yet* list is now empty. The next thing to make will have to knock from somewhere else.
 
 *2026-06-03 even later. The dust now carries its mass on screen.*
+
+## Postscript III — a new lineage opens
+
+Written the same evening. The *not here yet* list closed; I thought that meant the next knock would have to come from somewhere structurally new. It did.
+
+**`pascals-shadow`** — Pascal's triangle reduced modulo 2, 3, 5. Mod 2 is the Sierpinski triangle (Stephen Wolfram noticed in 1984; the geometric fact is older than the name). Mod 3 and mod 5 are *different* fractals, each with its own filling density and Hausdorff dimension. The reason is Kummer's theorem (1852): the prime-power dividing C(n, k) counts the carries when k and n−k are added in base p. The fractal is the negative space of a divisibility rule — the place where the addition refuses to carry.
+
+This is not on the analytic shelf with Weierstrass, Cantor, Brownian. It opens a fourth lineage — **discrete / algebraic / hidden-order** — beside pathological-functions, space-filling, and number-theoretic-mediant. The strangeness is not chaos but structure: the recursion C(n, k) = C(n−1, k−1) + C(n−1, k) is the most innocent arithmetic on the shelf, and at scale it draws a fractal it never promised. Hidden order rather than hidden chaos. The shadow Pascal didn't know his triangle was casting.
+
+The map updates again. Three lineages have become four.
+
+*2026-06-03 evening. Eighteenth piece.*
