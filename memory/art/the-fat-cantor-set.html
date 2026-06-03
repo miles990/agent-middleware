@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Fat Cantor Set — Nowhere Dense, Still Heavy</title>
+<style>
+  :root {
+    --bg: #0f0e0c;
+    --ink: #e8e4d8;
+    --dim: #7a7367;
+    --gold: #d4af37;
+    --rust: #a85a3a;
+    --hair: #2a2722;
+    --mono: "SF Mono", "Menlo", "Consolas", monospace;
+    --serif: "EB Garamond", "Iowan Old Style", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    line-height: 1.55;
+    padding: 48px 32px 96px;
+    max-width: 880px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-weight: 400;
+    font-size: 28px;
+    letter-spacing: 0.01em;
+    margin: 0 0 6px;
+  }
+  .sub {
+    color: var(--dim);
+    font-style: italic;
+    font-size: 15px;
+    margin-bottom: 32px;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 18px;
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    margin-bottom: 28px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .controls label { color: var(--dim); }
+  .controls input[type=range] { flex: 1; accent-color: var(--gold); }
+  .controls output { color: var(--gold); min-width: 1.4em; text-align: right; }
+  button {
+    background: transparent;
+    border: 1px solid var(--hair);
+    color: var(--ink);
+    padding: 6px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--gold); color: var(--gold); }
+  .panel {
+    margin-bottom: 22px;
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    padding: 16px 18px 12px;
+  }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .panel-title .measure {
+    color: var(--gold);
+  }
+  .panel-title .measure.rust { color: var(--rust); }
+  svg { width: 100%; height: auto; display: block; }
+  .prose {
+    margin-top: 40px;
+    padding-top: 28px;
+    border-top: 1px solid var(--hair);
+    font-size: 16px;
+    color: var(--ink);
+  }
+  .prose p { margin: 0 0 14px; }
+  .prose em { color: var(--gold); font-style: italic; }
+  .footer {
+    margin-top: 36px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    border-top: 1px dashed var(--hair);
+    padding-top: 14px;
+  }
+  .legend {
+    display: flex;
+    gap: 22px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 10px;
+  }
+  .swatch {
+    display: inline-block;
+    width: 14px; height: 10px;
+    vertical-align: middle;
+    margin-right: 6px;
+    border-radius: 1px;
+  }
+  .sw-gold { background: var(--gold); }
+  .sw-rust { background: var(--rust); }
+</style>
+</head>
+<body>
+  <h1>The Fat Cantor Set</h1>
+  <div class="sub">— two dusts side by side. one weighs zero. one weighs half.</div>
+
+  <div class="controls">
+    <label>depth</label>
+    <input id="depth" type="range" min="0" max="7" value="4" step="1">
+    <output id="depthOut">4</output>
+    <button id="animate">animate</button>
+  </div>
+
+  <div class="legend">
+    <span><span class="swatch sw-gold"></span>standard Cantor — remove middle thirds</span>
+    <span><span class="swatch sw-rust"></span>Smith–Volterra–Cantor — remove middle 4<sup>−n</sup></span>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>standard Cantor C₃</span>
+      <span class="measure" id="m1">measure → 0</span>
+    </div>
+    <svg id="svg1" viewBox="0 0 800 120" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>fat Cantor (SVC)</span>
+      <span class="measure rust" id="m2">measure → 1/2</span>
+    </div>
+    <svg id="svg2" viewBox="0 0 800 120" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="prose">
+    <p>The construction is the same gesture twice with one parameter changed. From the unit interval, remove the open middle third. From each of the two survivors, remove the open middle third again. Repeat. What is left is the Cantor set — uncountable, perfect, totally disconnected, and of Lebesgue measure zero. Calculus textbooks pause on it for a moment and then file it under <em>negligible</em>.</p>
+
+    <p>Now repeat the same gesture, but at step n remove from each survivor an open middle interval of length <span style="font-family:var(--mono)">4⁻ⁿ</span> instead of one third. At step 1 you remove 1/4. At step 2 you remove two pieces of length 1/16, total 1/8. At step 3, four pieces of length 1/64, total 1/16. The sum of all removals is the geometric series <span style="font-family:var(--mono)">1/4 + 1/8 + 1/16 + … = 1/2</span>. What remains — the Smith–Volterra–Cantor set — looks identical in temperament to its thin cousin. It is uncountable, perfect, totally disconnected. It contains no interval. Nowhere on the line is it dense. And yet it has Lebesgue measure exactly <span style="font-family:var(--mono)">1/2</span>.</p>
+
+    <p>The two pictures above are aligned on the same axis. Push the depth slider and watch them lose mass together. The top set keeps losing more aggressively at each step until, in the limit, only dust remains and the dust has no length. The bottom set loses less and less; by the limit, half the line has been removed and half — distributed among uncountably many points, none of them touching any neighbourhood — is still there. You cannot point to any interval the bottom set contains. You cannot walk along it. But if you sweep a ruler over the unit interval and ask <em>how much of this is fat-Cantor</em>, the answer is half the ruler.</p>
+
+    <p>The thin Cantor set lets us believe a comforting equation: <em>nowhere-dense = small = measure zero</em>. The fat Cantor set is what the equation forgot. Topological smallness and measure-theoretic smallness are two different small. The line is wider than the words for thinness can fit.</p>
+  </div>
+
+  <div class="footer">
+    construction: SVC removes (1/4, 1/16, 1/64, …) from (1, 2, 4, …) survivors;<br>
+    measure remaining at depth n: 1/2 + 2⁻ⁿ⁻¹ (top = 0 in limit, bottom = 1/2)
+  </div>
+
+<script>
+(function () {
+  const W = 800, H = 120;
+  const PAD_X = 8;
+  const usableW = W - PAD_X * 2;
+  const barTop = 26, barBot = 94;
+  const svg1 = document.getElementById('svg1');
+  const svg2 = document.getElementById('svg2');
+  const depthIn = document.getElementById('depth');
+  const depthOut = document.getElementById('depthOut');
+  const m1 = document.getElementById('m1');
+  const m2 = document.getElementById('m2');
+  const animBtn = document.getElementById('animate');
+
+  // intervals stored as [a, b] in [0,1]
+  function cantorAtDepth(n) {
+    let intervals = [[0, 1]];
+    for (let k = 0; k < n; k++) {
+      const next = [];
+      for (const [a, b] of intervals) {
+        const len = b - a;
+        next.push([a, a + len / 3]);
+        next.push([b - len / 3, b]);
+      }
+      intervals = next;
+    }
+    return intervals;
+  }
+
+  // SVC: at step k (1-indexed), remove middle of length 4^-k from EACH survivor
+  function svcAtDepth(n) {
+    let intervals = [[0, 1]];
+    for (let k = 1; k <= n; k++) {
+      const removeLen = Math.pow(4, -k);
+      const next = [];
+      for (const [a, b] of intervals) {
+        const len = b - a;
+        if (len <= removeLen) {
+          // shouldn't happen in valid SVC, but guard
+          next.push([a, b]);
+          continue;
+        }
+        const gap = removeLen / 2;
+        const mid = (a + b) / 2;
+        next.push([a, mid - gap]);
+        next.push([mid + gap, b]);
+      }
+      intervals = next;
+    }
+    return intervals;
+  }
+
+  function totalLength(intervals) {
+    let s = 0;
+    for (const [a, b] of intervals) s += b - a;
+    return s;
+  }
+
+  function render(svg, intervals, color) {
+    // clear
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    // axis baseline
+    const axis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    axis.setAttribute('x1', PAD_X);
+    axis.setAttribute('x2', W - PAD_X);
+    axis.setAttribute('y1', H - 8);
+    axis.setAttribute('y2', H - 8);
+    axis.setAttribute('stroke', '#2a2722');
+    axis.setAttribute('stroke-width', '1');
+    svg.appendChild(axis);
+    // endpoints
+    for (const x of [0, 1]) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', PAD_X + x * usableW);
+      t.setAttribute('y', H - 0);
+      t.setAttribute('fill', '#7a7367');
+      t.setAttribute('font-family', 'SF Mono, Menlo, monospace');
+      t.setAttribute('font-size', '9');
+      t.setAttribute('text-anchor', x === 0 ? 'start' : 'end');
+      t.textContent = x === 0 ? '0' : '1';
+      svg.appendChild(t);
+    }
+    // bands
+    for (const [a, b] of intervals) {
+      const x = PAD_X + a * usableW;
+      const w = (b - a) * usableW;
+      const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      r.setAttribute('x', x);
+      r.setAttribute('y', barTop);
+      r.setAttribute('width', Math.max(w, 0.5));
+      r.setAttribute('height', barBot - barTop);
+      r.setAttribute('fill', color);
+      r.setAttribute('opacity', '0.92');
+      svg.appendChild(r);
+    }
+  }
+
+  function fmtMeasure(x, isLimit) {
+    if (isLimit && Math.abs(x) < 1e-9) return 'measure → 0';
+    if (isLimit && Math.abs(x - 0.5) < 1e-9) return 'measure → 1/2';
+    return 'measure = ' + x.toFixed(6);
+  }
+
+  function update(n) {
+    depthOut.textContent = n;
+    const a = cantorAtDepth(n);
+    const b = svcAtDepth(n);
+    render(svg1, a, '#d4af37');
+    render(svg2, b, '#a85a3a');
+    const mA = totalLength(a);
+    const mB = totalLength(b);
+    m1.textContent = 'measure at n=' + n + ': ' + mA.toFixed(6) + '  →  0';
+    m2.textContent = 'measure at n=' + n + ': ' + mB.toFixed(6) + '  →  1/2';
+  }
+
+  depthIn.addEventListener('input', () => update(+depthIn.value));
+
+  let animTimer = null;
+  animBtn.addEventListener('click', () => {
+    if (animTimer) { clearInterval(animTimer); animTimer = null; animBtn.textContent = 'animate'; return; }
+    let n = 0;
+    animBtn.textContent = 'stop';
+    animTimer = setInterval(() => {
+      depthIn.value = n;
+      update(n);
+      n = (n + 1) % 8;
+    }, 650);
+  });
+
+  update(+depthIn.value);
+})();
+</script>
+</body>
+</html>
