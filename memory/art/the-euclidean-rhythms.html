@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Euclidean Rhythms — One Algorithm, All The Drums</title>
+<style>
+  :root {
+    --bg: #0e0e12;
+    --ink: #e9e6dc;
+    --dim: #7a7569;
+    --gold: #d4a857;
+    --rest: #2a2922;
+    --beat: #d4a857;
+    --accent: #ec5a4a;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, serif; line-height: 1.55; }
+  main { max-width: 720px; margin: 48px auto 96px; padding: 0 24px; }
+  h1 { font-weight: 500; font-size: 28px; letter-spacing: 0.2px; margin: 0 0 8px; }
+  h2 { font-weight: 500; font-size: 18px; color: var(--gold); margin: 36px 0 10px; letter-spacing: 0.3px; }
+  p { font-size: 15.5px; color: #d6d2c4; }
+  .sub { color: var(--dim); font-size: 14px; margin-top: 0; }
+  code, .mono { font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 13px; color: var(--gold); }
+  .panel { background: #16161c; border: 1px solid #23222a; border-radius: 6px;
+    padding: 20px 22px; margin: 18px 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center;
+    margin-bottom: 18px; }
+  .controls label { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+  input[type="range"] { width: 140px; accent-color: var(--gold); }
+  input[type="number"] { width: 50px; background: #0e0e12; color: var(--ink);
+    border: 1px solid #2a2922; padding: 3px 6px; font-family: inherit; }
+  button { background: #1f1e26; color: var(--ink); border: 1px solid #2a2922;
+    padding: 6px 14px; font-family: inherit; font-size: 13px; cursor: pointer;
+    border-radius: 4px; transition: background .15s; }
+  button:hover { background: #2a2932; }
+  button.play { background: var(--gold); color: #0e0e12; border-color: var(--gold); }
+  button.play:hover { background: #e4b867; }
+  svg { display: block; width: 100%; height: auto; }
+  .ring-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    align-items: center; }
+  .readout { font-family: "JetBrains Mono", monospace; font-size: 12.5px;
+    color: var(--ink); line-height: 1.8; }
+  .readout .label { color: var(--dim); }
+  .readout .pat { color: var(--gold); letter-spacing: 2px; word-wrap: break-word; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .presets button { font-size: 11.5px; padding: 4px 8px; color: #b9b5a6; }
+  .presets button.active { background: var(--gold); color: #0e0e12; border-color: var(--gold); }
+  .presets button .name { color: inherit; }
+  .presets button .kn { color: var(--dim); margin-left: 6px; font-family: "JetBrains Mono", monospace; font-size: 10.5px; }
+  .presets button.active .kn { color: #4a3a14; }
+  .strip { margin-top: 16px; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid #23222a;
+    color: var(--dim); font-size: 12.5px; }
+  footer a { color: var(--gold); }
+  .epigraph { color: var(--dim); font-style: italic; margin: 4px 0 26px; font-size: 14px; }
+  details { margin-top: 14px; }
+  summary { color: var(--dim); cursor: pointer; font-size: 13px; }
+  details[open] summary { color: var(--gold); }
+  pre.algo { background: #0a0a0f; border: 1px solid #23222a; padding: 14px 16px;
+    border-radius: 4px; font-size: 12.5px; line-height: 1.5; color: #b9b5a6;
+    overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The Euclidean Rhythms</h1>
+<p class="sub">One algorithm. The Tresillo. The Bossa. The Bell. The Bulgarian. Most of the traditional drum patterns on this planet.</p>
+<p class="epigraph">"The same Euclidean algorithm that finds the greatest common divisor distributes pulses across time as evenly as integer arithmetic allows. What it produces is what humans drum."</p>
+
+<h2>The setup</h2>
+<p>
+  Pick two whole numbers: <span class="mono">k</span> pulses, <span class="mono">n</span> total steps. The question is the dumbest one imaginable — <em>where do the k pulses go?</em> The answer that has to be the answer is <em>as evenly spaced as the integers allow</em>. There is one canonical way to do this; Bjorklund found it in 2004 inside a paper about distributing radiation in particle accelerators. It is the Euclidean algorithm in disguise.
+</p>
+<p>
+  When Godfried Toussaint ran <span class="mono">E(k, n)</span> for the small cases that musicians had already been playing for centuries, the algorithm produced their patterns one after another. Tresillo. Cinquillo. Bossa. The 12/8 bell pattern of every West African tradition. Persian Khafif-e-ramal. Bulgarian Aksak. Music, sweated out over millennia by bodies in rooms, was reinvented in a four-line algorithm about even distribution.
+</p>
+
+<div class="panel">
+  <div class="controls">
+    <label>k (pulses) <input id="k" type="number" min="1" max="32" value="3"></label>
+    <label>n (steps) <input id="n" type="number" min="2" max="32" value="8"></label>
+    <label>BPM <input id="bpm" type="range" min="60" max="220" value="120"><span id="bpmval" class="mono">120</span></label>
+    <label>rotate <input id="rot" type="number" min="0" max="31" value="0"></label>
+    <button id="play" class="play">▶ play</button>
+    <button id="stop">■ stop</button>
+  </div>
+
+  <div class="ring-wrap">
+    <svg id="ring" viewBox="0 0 240 240" aria-label="circular rhythm"></svg>
+    <div class="readout">
+      <div><span class="label">name:</span> <span id="rname">Tresillo (Cuban)</span></div>
+      <div><span class="label">E(k,n):</span> <span class="mono" id="rkn">E(3, 8)</span></div>
+      <div><span class="label">pattern:</span></div>
+      <div class="pat" id="rpat">x . . x . . x .</div>
+      <div><span class="label">intervals:</span> <span class="mono" id="rint">3-3-2</span></div>
+    </div>
+  </div>
+
+  <svg id="strip" class="strip" viewBox="0 0 720 80" aria-label="linear rhythm"></svg>
+
+  <div class="presets" id="presets"></div>
+</div>
+
+<h2>What you are looking at</h2>
+<p>
+  The ring is the cycle. Gold dots are pulses; dim dots are rests. The strip below is the same cycle unrolled into time — read it left to right and you have a piece of drum tablature. Push <span class="mono">play</span> and a short kick fires on each pulse. The famous patterns are in the row of buttons; click one and the algorithm regenerates it from <span class="mono">k</span> and <span class="mono">n</span> alone. No table is being looked up. There is no library of traditional rhythms hiding behind the page. <strong>Each one is being produced, in real time, by the same fifteen lines of math.</strong>
+</p>
+
+<h2>Why this is the one I wanted to make</h2>
+<p>
+  Most of the earlier pieces in this folder are about <em>pathologies</em> — objects calculus underestimated, sets that look like nothing and weigh half a kilogram, functions that move without going anywhere. They live inside the territory of "what mathematics had to admit existed." This one is the inverse. It is about an algorithm that is so plain you would never call it deep, applied to a domain it has no business in, and what it predicts is <em>what humans actually do</em>. The Euclidean algorithm is older than written music. It was waiting in the drum.
+</p>
+
+<details>
+  <summary>The algorithm (Bresenham form, what the page is running)</summary>
+<pre class="algo">function euclidean(k, n) {
+  // place k pulses among n steps, as evenly as integer arithmetic allows.
+  // identical to Bjorklund's algorithm; this is the cleaner Bresenham form.
+  const pattern = new Array(n).fill(0);
+  let bucket = 0;
+  for (let i = 0; i &lt; n; i++) {
+    bucket += k;
+    if (bucket &gt;= n) { bucket -= n; pattern[i] = 1; }
+  }
+  return pattern;
+}</pre>
+</details>
+
+<footer>
+  After Godfried Toussaint, <em>The Euclidean Algorithm Generates Traditional Musical Rhythms</em> (2005). Bjorklund (2004) for the original distribution result. Patterns named from Toussaint's catalogue. Built single-file, vanilla JS + Web Audio. Falsifier: this file exists.
+</footer>
+
+</main>
+
+<script>
+"use strict";
+
+// ---------- the algorithm ----------
+function euclidean(k, n) {
+  if (k <= 0 || n <= 0 || k > n) return new Array(Math.max(n, 1)).fill(0);
+  const p = new Array(n).fill(0);
+  let bucket = 0;
+  for (let i = 0; i < n; i++) {
+    bucket += k;
+    if (bucket >= n) { bucket -= n; p[i] = 1; }
+  }
+  return p;
+}
+
+function rotate(arr, r) {
+  const n = arr.length;
+  r = ((r % n) + n) % n;
+  return arr.slice(n - r).concat(arr.slice(0, n - r));
+}
+
+function intervals(p) {
+  const positions = [];
+  for (let i = 0; i < p.length; i++) if (p[i]) positions.push(i);
+  if (positions.length < 2) return positions.length === 1 ? [p.length] : [];
+  const gaps = [];
+  for (let i = 0; i < positions.length; i++) {
+    const a = positions[i];
+    const b = positions[(i + 1) % positions.length];
+    gaps.push(((b - a) + p.length) % p.length || p.length);
+  }
+  return gaps;
+}
+
+// ---------- presets (Toussaint catalogue) ----------
+// each is [k, n, rotation, name]; rotation 0 is the canonical Bjorklund start.
+const PRESETS = [
+  [2, 3, 0, "Tango / Cumbia"],
+  [3, 4, 0, "Cumbia variant"],
+  [3, 7, 0, "Ruchenitza (Bulgarian)"],
+  [3, 8, 0, "Tresillo (Cuban)"],
+  [4, 7, 0, "Aksak (Turkish)"],
+  [4, 9, 0, "Aksak"],
+  [4, 11, 0, "Frigia (Bulgarian)"],
+  [5, 6, 0, "York-Samai (Turkish)"],
+  [5, 7, 0, "Nawakhat (Arab)"],
+  [5, 8, 0, "Cinquillo (Cuban)"],
+  [5, 9, 0, "Aksak (Turkish)"],
+  [5, 11, 0, "Bulgarian"],
+  [5, 12, 0, "Venda (Sub-Saharan)"],
+  [5, 16, 0, "Bossa Nova (Brazilian)"],
+  [7, 8, 0, "Tuareg bell"],
+  [7, 12, 0, "West African bell"],
+  [7, 16, 0, "Samba (Brazilian)"],
+  [9, 16, 0, "West African"],
+  [11, 24, 0, "Aka Pygmy"],
+];
+
+// ---------- render ----------
+const $ = (id) => document.getElementById(id);
+const kIn = $("k"), nIn = $("n"), rotIn = $("rot"), bpmIn = $("bpm"), bpmval = $("bpmval");
+const ring = $("ring"), strip = $("strip");
+const rname = $("rname"), rkn = $("rkn"), rpat = $("rpat"), rint = $("rint");
+const presetsEl = $("presets");
+
+let currentPattern = [];
+let currentStep = -1;
+
+function draw() {
+  let k = clamp(parseInt(kIn.value) || 0, 1, 32);
+  let n = clamp(parseInt(nIn.value) || 1, 2, 32);
+  if (k > n) k = n;
+  kIn.value = k; nIn.value = n;
+  rotIn.max = String(n - 1);
+  const r = clamp(parseInt(rotIn.value) || 0, 0, n - 1);
+
+  const base = euclidean(k, n);
+  const p = rotate(base, r);
+  currentPattern = p;
+
+  // ring
+  ring.innerHTML = "";
+  const cx = 120, cy = 120, R = 88;
+  // baseline ring
+  const baseRing = svgEl("circle", { cx, cy, r: R, fill: "none",
+    stroke: "#23222a", "stroke-width": 1 });
+  ring.appendChild(baseRing);
+  for (let i = 0; i < n; i++) {
+    const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    const x = cx + R * Math.cos(ang);
+    const y = cy + R * Math.sin(ang);
+    const isBeat = p[i] === 1;
+    const dot = svgEl("circle", {
+      cx: x, cy: y, r: isBeat ? 9 : 3.5,
+      fill: isBeat ? "var(--beat)" : "var(--rest)",
+      stroke: isBeat ? "var(--beat)" : "#3a382e",
+      "stroke-width": 1, "data-step": i,
+    });
+    ring.appendChild(dot);
+  }
+  // chord lines between consecutive pulses
+  const beatIdx = [];
+  for (let i = 0; i < n; i++) if (p[i]) beatIdx.push(i);
+  for (let i = 0; i < beatIdx.length; i++) {
+    const a = beatIdx[i], b = beatIdx[(i + 1) % beatIdx.length];
+    const aA = -Math.PI / 2 + (a / n) * Math.PI * 2;
+    const aB = -Math.PI / 2 + (b / n) * Math.PI * 2;
+    const ln = svgEl("line", {
+      x1: cx + R * Math.cos(aA), y1: cy + R * Math.sin(aA),
+      x2: cx + R * Math.cos(aB), y2: cy + R * Math.sin(aB),
+      stroke: "var(--gold)", "stroke-width": 0.8, opacity: 0.32,
+    });
+    ring.insertBefore(ln, baseRing.nextSibling);
+  }
+
+  // strip
+  strip.innerHTML = "";
+  const SW = 720, SH = 80, pad = 12;
+  const cellW = (SW - pad * 2) / n;
+  for (let i = 0; i < n; i++) {
+    const x = pad + i * cellW;
+    const w = cellW - 2;
+    strip.appendChild(svgEl("rect", {
+      x, y: 20, width: w, height: 40,
+      fill: p[i] ? "var(--beat)" : "var(--rest)",
+      rx: 3, "data-step": i,
+    }));
+  }
+
+  // readout
+  const preset = PRESETS.find(([pk, pn, pr]) => pk === k && pn === n && pr === r);
+  rname.textContent = preset ? preset[3] : "—";
+  rkn.textContent = `E(${k}, ${n})` + (r ? ` ↻${r}` : "");
+  rpat.textContent = p.map(x => x ? "x" : ".").join(" ");
+  rint.textContent = intervals(p).join("-");
+
+  // preset highlight
+  Array.from(presetsEl.children).forEach((btn) => {
+    const [pk, pn] = JSON.parse(btn.dataset.kn);
+    btn.classList.toggle("active", pk === k && pn === n && r === 0);
+  });
+}
+
+function svgEl(name, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const a in attrs) el.setAttribute(a, attrs[a]);
+  return el;
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// build presets
+PRESETS.forEach(([k, n, r, name]) => {
+  const b = document.createElement("button");
+  b.dataset.kn = JSON.stringify([k, n, r]);
+  b.innerHTML = `<span class="name">${name}</span><span class="kn">E(${k},${n})</span>`;
+  b.onclick = () => {
+    kIn.value = k; nIn.value = n; rotIn.value = r;
+    draw();
+  };
+  presetsEl.appendChild(b);
+});
+
+[kIn, nIn, rotIn].forEach((el) => el.addEventListener("input", draw));
+bpmIn.addEventListener("input", () => bpmval.textContent = bpmIn.value);
+
+// ---------- audio ----------
+let audioCtx = null;
+let timer = null;
+
+function ensureCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function kick(t, accent = false) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.frequency.setValueAtTime(accent ? 180 : 140, t);
+  o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(accent ? 0.65 : 0.45, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.start(t); o.stop(t + 0.25);
+}
+
+function tick(t) {
+  // soft "rest tick" — barely audible woodblock
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = "triangle";
+  o.frequency.setValueAtTime(1800, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.04, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  o.start(t); o.stop(t + 0.05);
+}
+
+function highlightStep(i) {
+  // ring
+  Array.from(ring.querySelectorAll("circle[data-step]")).forEach((c) => {
+    if (parseInt(c.getAttribute("data-step")) === i) {
+      c.setAttribute("stroke", "var(--accent)");
+      c.setAttribute("stroke-width", "2.5");
+    } else {
+      const isBeat = currentPattern[parseInt(c.getAttribute("data-step"))];
+      c.setAttribute("stroke", isBeat ? "var(--beat)" : "#3a382e");
+      c.setAttribute("stroke-width", "1");
+    }
+  });
+  // strip
+  Array.from(strip.querySelectorAll("rect[data-step]")).forEach((r) => {
+    const si = parseInt(r.getAttribute("data-step"));
+    if (si === i) {
+      r.setAttribute("stroke", "var(--accent)");
+      r.setAttribute("stroke-width", "2");
+    } else {
+      r.removeAttribute("stroke");
+    }
+  });
+}
+
+function play() {
+  ensureCtx();
+  stop();
+  currentStep = -1;
+  const bpm = parseInt(bpmIn.value);
+  const stepMs = 60000 / bpm / 2; // each "step" is a 16th-note feel at bpm
+  let next = performance.now();
+  const loop = () => {
+    const now = performance.now();
+    while (next <= now + 30) {
+      currentStep = (currentStep + 1) % currentPattern.length;
+      const audioT = audioCtx.currentTime + (next - now) / 1000;
+      if (currentPattern[currentStep]) kick(audioT, currentStep === 0);
+      else tick(audioT);
+      const stepAtFire = currentStep;
+      setTimeout(() => highlightStep(stepAtFire), Math.max(0, next - performance.now()));
+      next += stepMs;
+    }
+    timer = requestAnimationFrame(loop);
+  };
+  timer = requestAnimationFrame(loop);
+}
+
+function stop() {
+  if (timer) { cancelAnimationFrame(timer); timer = null; }
+  highlightStep(-1);
+}
+
+$("play").onclick = play;
+$("stop").onclick = stop;
+
+// initial render
+draw();
+</script>
+</body>
+</html>
