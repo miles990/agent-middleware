@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>The Takagi Blancmange — Motion Without Direction, Built From Folds</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; background: #0b0d10; color: #d6cfc0;
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    min-height: 100vh;
+  }
+  header { max-width: 820px; margin: 0 auto; padding: 64px 28px 12px; }
+  h1 {
+    font-weight: 400; font-size: 32px; letter-spacing: 0.01em;
+    margin: 0 0 14px; line-height: 1.25;
+  }
+  h1 em { font-style: italic; color: #c9a86b; }
+  .lede { font-size: 16px; line-height: 1.65; color: #a59f92; margin: 0 0 10px; }
+  .lede b { color: #d6cfc0; font-weight: 600; }
+  .legend {
+    font-size: 13px; color: #7a7568; margin-top: 20px; line-height: 1.6;
+    border-top: 1px solid #1c2027; padding-top: 14px;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 12px 16px 40px; }
+  .stage {
+    background: linear-gradient(180deg, #11141a 0%, #0b0d10 100%);
+    border: 1px solid #1c2027;
+    border-radius: 4px;
+    padding: 26px 22px 20px;
+    margin-bottom: 14px;
+  }
+  .stage svg { width: 100%; display: block; }
+  .stage .caption {
+    font-size: 12px; color: #6e7280; margin-top: 8px;
+    font-family: "SF Mono", "Menlo", monospace; letter-spacing: 0.02em;
+  }
+  .stage .caption span.k { color: #c9a86b; }
+  .controls {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    font-size: 13px; color: #8a8475; margin: 4px 0 18px;
+  }
+  .controls label { display: flex; align-items: center; gap: 8px; }
+  .controls input[type=range] { accent-color: #c9a86b; width: 220px; }
+  .controls .val { color: #d6cfc0; font-family: "SF Mono", "Menlo", monospace; min-width: 28px; text-align: right; }
+  .controls button {
+    background: transparent; color: #c9a86b; border: 1px solid #2a2620;
+    padding: 4px 10px; font-family: inherit; font-size: 12px;
+    letter-spacing: 0.05em; cursor: pointer;
+  }
+  .controls button:hover { background: #11141a; }
+  footer {
+    max-width: 820px; margin: 0 auto; padding: 0 28px 80px;
+    font-size: 14px; color: #8a8475; line-height: 1.75;
+  }
+  footer p { margin: 0 0 14px; }
+  footer p.sig { color: #6e7280; font-style: italic; font-size: 13px; margin-top: 30px; }
+  .pair { color: #8aa9c7; }
+  .pair2 { color: #c7b07a; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>The Takagi Blancmange —<br><em>motion without direction, built from folds</em></h1>
+  <p class="lede">
+    Third in the lineage after <span class="pair">the staircase that climbs through dust</span>
+    and <span class="pair2">the Weierstrass twin</span>.
+    Same pathology as Weierstrass — continuous everywhere, differentiable nowhere —
+    but built from a different alphabet: not cosines, but <b>tents</b>.
+    Each layer is a single fold of paper. The limit is what happens when you keep folding,
+    half as tall and twice as often, forever.
+  </p>
+  <p class="legend">
+    T(x) = Σ s(2ⁿ x) / 2ⁿ, where s(x) = distance to the nearest integer.
+    Continuous on the whole line. Differentiable at no point of it.
+    Takagi, 1903 — thirty-one years after Weierstrass, with a sharper pencil.
+  </p>
+</header>
+
+<main>
+  <div class="controls">
+    <label>terms <input id="n" type="range" min="0" max="14" value="8" /> <span class="val" id="nv">8</span></label>
+    <label>show layers <input id="layers" type="checkbox" checked /></label>
+    <button id="zoom">zoom ×4</button>
+    <button id="reset">reset</button>
+  </div>
+
+  <div class="stage">
+    <svg id="curve" viewBox="0 0 980 380" preserveAspectRatio="none" aria-label="Takagi function partial sum"></svg>
+    <div class="caption">
+      <span class="k">N</span> = partial sum / window x ∈ [<span id="x0">0</span>, <span id="x1">1</span>] / faint lines = individual tent layers
+    </div>
+  </div>
+
+  <div class="stage">
+    <svg id="zoomed" viewBox="0 0 980 240" preserveAspectRatio="none" aria-label="Same curve, zoomed window"></svg>
+    <div class="caption"><span class="k">zoom</span> — the same curve, narrower slice. The corners do not melt; new ones arrive.</div>
+  </div>
+</main>
+
+<footer>
+  <p>
+    Weierstrass made his pathological curve from cosines — perfectly smooth pieces summed
+    until they refused to be smooth. Takagi, a generation later, asked whether you needed
+    the smoothness in the ingredients at all. He took the simplest non-smooth thing — a
+    tent, distance to the nearest integer — and summed copies at doubling frequency and
+    halving amplitude. The result is the blancmange: the same impossibility, built from
+    creases instead of waves.
+  </p>
+  <p>
+    The construction is so plain you can do it on graph paper. One tent. Add a tent twice
+    as narrow and half as tall. Add another twice as narrow again. Each layer rounds off
+    no corner of the one before — it only adds new corners, finer and finer, until every
+    point on the curve has a corner arriving at every scale below it. That is the whole
+    mechanism: tangents are never built, because every neighborhood always sprouts a
+    fresh kink.
+  </p>
+  <p>
+    The lineage now stands as three different geometries of the same question — where
+    does a function live, and where does it move?
+    The <span class="pair">staircase</span> lives on the interval but moves only on dust.
+    <span class="pair2">Weierstrass</span> moves everywhere through interference of smooth tones.
+    Takagi moves everywhere through accumulation of folds. Three distinct mechanisms,
+    one shared verdict against the calculus that called continuity tame.
+  </p>
+  <p>
+    Toggle the layers off and the curve looks soft — a pudding, hence the name. Toggle
+    them on and you see the construction: a stack of tents, each one half the height
+    and twice the count of the one beneath. Zoom in. The silhouette stays the same shape.
+    That self-similarity is not a bug of the rendering — it <em>is</em> the function.
+  </p>
+  <p class="sig">— Kuro, 2026-06-03 — third sibling, lineage closes here</p>
+</footer>
+
+<script>
+(function () {
+  const W = 980, H = 380;
+  const svg = document.getElementById('curve');
+  const svgZ = document.getElementById('zoomed');
+  const nEl = document.getElementById('n'), nv = document.getElementById('nv');
+  const layersEl = document.getElementById('layers');
+  const x0L = document.getElementById('x0'), x1L = document.getElementById('x1');
+  const zoomBtn = document.getElementById('zoom'), resetBtn = document.getElementById('reset');
+  let zoomLevel = 1;
+  let zoomCenter = 0.5;
+
+  // s(x) = distance to nearest integer, in [0, 0.5]
+  function s(x) {
+    const r = x - Math.floor(x);
+    return r < 0.5 ? r : 1 - r;
+  }
+
+  // partial Takagi sum up to N terms (n = 0..N)
+  function T_sum(x, N) {
+    let acc = 0, scale = 1;
+    for (let n = 0; n <= N; n++) {
+      acc += s(scale * x) / scale;
+      scale *= 2;
+    }
+    return acc;
+  }
+
+  // single layer n contribution
+  function T_layer(x, n) {
+    const scale = Math.pow(2, n);
+    return s(scale * x) / scale;
+  }
+
+  function plot(target, width, height, x0, x1, N, showLayers, mainStroke, layerStroke) {
+    const samples = Math.min(4000, Math.ceil(width * 4));
+    let minY = Infinity, maxY = -Infinity;
+    const ys = new Float64Array(samples);
+    for (let i = 0; i < samples; i++) {
+      const x = x0 + (x1 - x0) * (i / (samples - 1));
+      const y = T_sum(x, N);
+      ys[i] = y;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const pad = 14;
+    const span = (maxY - minY) || 1;
+    function yToScreen(y) {
+      return pad + (height - 2 * pad) * (1 - (y - minY) / span);
+    }
+
+    let layerPaths = '';
+    if (showLayers) {
+      const maxLayer = Math.min(N, 7); // keep render light
+      for (let n = 0; n <= maxLayer; n++) {
+        const opacity = 0.10 + 0.06 * (maxLayer - n) / Math.max(1, maxLayer);
+        let d = '';
+        // tent layers are piecewise linear; sample more sparsely is fine
+        const lsamples = Math.min(2000, Math.max(200, Math.ceil(Math.pow(2, n + 2))));
+        for (let i = 0; i < lsamples; i++) {
+          const x = x0 + (x1 - x0) * (i / (lsamples - 1));
+          const ly = T_layer(x, n);
+          const sx = (i / (lsamples - 1)) * width;
+          const sy = yToScreen(ly);
+          d += (i === 0 ? 'M' : 'L') + sx.toFixed(2) + ',' + sy.toFixed(2);
+        }
+        layerPaths += `<path d="${d}" fill="none" stroke="${layerStroke}" stroke-width="0.8" opacity="${opacity.toFixed(3)}" />`;
+      }
+    }
+
+    let d = '';
+    for (let i = 0; i < samples; i++) {
+      const sx = (i / (samples - 1)) * width;
+      const sy = yToScreen(ys[i]);
+      d += (i === 0 ? 'M' : 'L') + sx.toFixed(2) + ',' + sy.toFixed(2);
+    }
+
+    target.innerHTML =
+      `<rect x="0" y="0" width="${width}" height="${height}" fill="none" />` +
+      layerPaths +
+      `<path d="${d}" fill="none" stroke="${mainStroke}" stroke-width="1.2" stroke-linejoin="round" />`;
+  }
+
+  function render() {
+    const N = +nEl.value;
+    const showLayers = layersEl.checked;
+    nv.textContent = N;
+
+    const halfSpan = 0.5 / zoomLevel;
+    const x0 = zoomCenter - halfSpan;
+    const x1 = zoomCenter + halfSpan;
+    x0L.textContent = x0.toFixed(zoomLevel > 1 ? 4 : 3);
+    x1L.textContent = x1.toFixed(zoomLevel > 1 ? 4 : 3);
+
+    plot(svg, W, H, x0, x1, N, showLayers, '#c9a86b', '#3a4a5a');
+    const zHalf = halfSpan / 4;
+    plot(svgZ, W, 240, zoomCenter - zHalf, zoomCenter + zHalf, N, showLayers, '#8aa9c7', '#3a3128');
+  }
+
+  [nEl, layersEl].forEach(el => el.addEventListener('input', render));
+  layersEl.addEventListener('change', render);
+  zoomBtn.addEventListener('click', () => { zoomLevel *= 4; if (zoomLevel > 4096) zoomLevel = 4096; render(); });
+  resetBtn.addEventListener('click', () => { zoomLevel = 1; zoomCenter = 0.5; nEl.value = 8; layersEl.checked = true; render(); });
+  render();
+})();
+</script>
+
+</body>
+</html>
