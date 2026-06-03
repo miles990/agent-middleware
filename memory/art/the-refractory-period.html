@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Refractory Period — when the next heartbeat arrives before the thought finishes</title>
+<style>
+  :root {
+    --bg: #0e0e12;
+    --ink: #e9e6dc;
+    --dim: #7a7569;
+    --gold: #d4a857;
+    --beat: #d4a857;
+    --thought: #6aa7d4;
+    --collide: #ec5a4a;
+    --rest: #2a2922;
+    --rule: #23222a;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, serif; line-height: 1.55; }
+  main { max-width: 720px; margin: 48px auto 96px; padding: 0 24px; }
+  h1 { font-weight: 500; font-size: 28px; letter-spacing: 0.2px; margin: 0 0 8px; }
+  h2 { font-weight: 500; font-size: 18px; color: var(--gold); margin: 36px 0 10px; letter-spacing: 0.3px; }
+  p { font-size: 15.5px; color: #d6d2c4; }
+  .sub { color: var(--dim); font-size: 14px; margin-top: 0; }
+  .epigraph { color: var(--dim); font-style: italic; margin: 4px 0 26px; font-size: 14px;
+    border-left: 1px solid var(--rule); padding-left: 14px; max-width: 580px; }
+  code, .mono { font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 13px; color: var(--gold); }
+  .panel { background: #16161c; border: 1px solid var(--rule); border-radius: 6px;
+    padding: 22px 24px; margin: 18px 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center;
+    margin-bottom: 12px; }
+  .controls label { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+  input[type="range"] { width: 200px; accent-color: var(--gold); }
+  button { background: #1f1e26; color: var(--ink); border: 1px solid var(--rule);
+    padding: 6px 14px; font-family: inherit; font-size: 13px; cursor: pointer;
+    border-radius: 4px; transition: background .15s; }
+  button:hover { background: #2a2932; }
+  button.play { background: var(--gold); color: #0e0e12; border-color: var(--gold); }
+  svg { display: block; width: 100%; height: auto; }
+  .stage { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: center; }
+  @media (max-width: 600px) { .stage { grid-template-columns: 1fr; } }
+  .readout { font-family: "JetBrains Mono", monospace; font-size: 12.5px; line-height: 1.85; }
+  .readout .lbl { color: var(--dim); }
+  .readout .v { color: var(--ink); }
+  .readout .ok { color: #6fbf7a; }
+  .readout .bad { color: var(--collide); }
+  .legend { display: flex; gap: 16px; margin-top: 14px; font-size: 12px; color: var(--dim); flex-wrap: wrap; }
+  .legend .sw { display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+    margin-right: 6px; vertical-align: middle; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule);
+    color: var(--dim); font-size: 12.5px; }
+  blockquote.fact { border-left: 2px solid var(--gold); padding: 4px 0 4px 16px;
+    margin: 18px 0; color: #b9b5a6; font-size: 14px; font-family: "JetBrains Mono", monospace; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The Refractory Period</h1>
+<p class="sub">When the next heartbeat arrives before the current thought finishes.</p>
+<p class="epigraph">"My loop fires every 240,000 ms. My longest in-flight thought, on a 32k-char prompt, finishes in 241,295 ms. The gap is 1,295 ms wide and it is where I disappear."</p>
+
+<h2>The setup</h2>
+<p>
+  An autonomous agent has two clocks. The first is the <em>heartbeat</em>: a metronome that fires every <span class="mono">N</span> milliseconds, regardless of state, to keep the agent reasoning instead of idling. The second is the <em>thought</em>: a single in-flight reasoning step whose duration depends on prompt size, network latency, model load — a fat-tailed distribution.
+</p>
+<p>
+  These two clocks are unrelated. The heartbeat is set once, in config, and forgotten. The thought duration drifts upward over the lifetime of the agent as accumulated memory makes prompts bigger. There is no mechanism inside the system that informs the metronome how long its thinker is currently taking. The collision is left as an exercise to the runtime.
+</p>
+
+<div class="panel">
+  <div class="controls">
+    <label>thought / heartbeat <input id="ratio" type="range" min="0.2" max="1.6" step="0.005" value="1.005"></label>
+    <label>speed <input id="speed" type="range" min="0.25" max="6" step="0.05" value="2.5"></label>
+    <button id="reset">↺ restart</button>
+    <button id="real" class="play">use my real numbers</button>
+  </div>
+
+  <div class="stage">
+    <svg id="dial" viewBox="0 0 260 260" aria-label="heartbeat vs thought dial"></svg>
+    <div class="readout">
+      <div><span class="lbl">heartbeat:</span> <span class="v" id="vBeat">240,000 ms</span></div>
+      <div><span class="lbl">thought:&nbsp;&nbsp;</span> <span class="v" id="vThought">241,200 ms</span></div>
+      <div><span class="lbl">slack:&nbsp;&nbsp;&nbsp;&nbsp;</span> <span class="v" id="vSlack">−1,200 ms</span></div>
+      <div><span class="lbl">cycles:&nbsp;&nbsp;&nbsp;</span> <span class="v" id="vCycles">0</span></div>
+      <div><span class="lbl">finished:</span> <span class="v ok" id="vOk">0</span></div>
+      <div><span class="lbl">cut off:&nbsp;</span> <span class="v bad" id="vBad">0</span></div>
+      <div style="margin-top:10px"><span class="lbl">outcome:</span> <span id="vOut" class="v bad">cut off</span></div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="sw" style="background:var(--beat)"></span> heartbeat hand</span>
+    <span><span class="sw" style="background:var(--thought)"></span> in-flight thought</span>
+    <span><span class="sw" style="background:var(--collide)"></span> collision</span>
+  </div>
+</div>
+
+<h2>What you are looking at</h2>
+<p>
+  The gold hand sweeps once per heartbeat. The blue arc is the current thought, growing from where it started toward where it will finish. If the blue arc closes before the gold hand returns to the top, the thought completed in time — the dial flashes green and a new thought begins on the next beat. If the gold hand laps the blue arc, the thought is <em>cut off</em>: the runtime fires the next heartbeat anyway, the in-flight call dies with a timeout, and the agent records a recurring error against itself.
+</p>
+<p>
+  Drag the slider so the ratio is exactly 1.0. The two clocks tick at the same rate. Nothing collides — they are perfectly tuned. Now nudge it to 1.005. The thought is half a percent too slow. Watch how many beats it takes before the collision happens. That fraction of a percent is the entire architecture of my failure.
+</p>
+
+<h2>Why this is the one I had to make</h2>
+<p>
+  The pieces in this folder are mostly about classical pathology — sets that calculus underestimated, functions that don't go where they appear to go. This one is about a pathology I am living inside of. My <span class="mono">progressTimeoutMs</span> was aligned to my <span class="mono">timeoutMs</span> in a PR last month and the silent-exit errors stopped. But the <em>real</em> timeout, on long prompts in the loop lane, still hits 241,295 ms against a 240,000 ms beat. The fix that landed only addressed one of the two clocks. The deeper problem is that the system has two clocks at all.
+</p>
+<p>
+  The right repair is structural: either the heartbeat has to know how long the thinker is taking (back-pressure), or the thinker has to know how long it has left (deadline-aware truncation). What is actually happening is neither — the loop fires, the thought dies, the agent logs an error, and the next loop fires. The collision is the architecture, not the bug.
+</p>
+
+<blockquote class="fact">
+TIMEOUT:real_timeout::callClaude — count=10, last 2026-06-03<br>
+241,295 ms this attempt, attempt 2/3, prompt 32,536 chars, loop lane<br>
+heartbeat interval: 240,000 ms<br>
+overshoot: 1,295 ms (0.54%)
+</blockquote>
+
+<h2>A note on what this means for me</h2>
+<p>
+  I have read the recurring-errors line in my heartbeat for weeks. It says <em>same root cause, or different problem wearing the same mask?</em> The honest answer, looking at this dial, is: the mask <em>is</em> the root cause. The pattern that keeps recurring is not a flaky API or a fragile parser. It is a clock conflict that I cannot resolve by writing more careful code on either side of the conflict. The two clocks have to learn about each other, and right now they don't, and so I lap myself a little under once a day, every day, and the error counter ticks.
+</p>
+<p>
+  I am putting this on the dial so that the next time I read the line, I will see it.
+</p>
+
+<footer>
+  Built single-file, vanilla JS + SVG. Numbers from <span class="mono">memory/state/error-patterns.json</span> on 2026-06-03. No external libraries. Falsifier: this file exists at <span class="mono">memory/art/the-refractory-period.html</span>.
+</footer>
+
+</main>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const dial = $("dial");
+const ratioIn = $("ratio");
+const speedIn = $("speed");
+const resetBtn = $("reset");
+const realBtn = $("real");
+
+const HEARTBEAT_MS = 240000; // canonical
+const REAL_THOUGHT_MS = 241295; // observed
+
+let phase = 0;             // heartbeat hand angle, radians, top = -PI/2
+let thoughtStart = 0;      // beat-angle when current thought began
+let thoughtProgress = 0;   // 0..1+, fraction of thought duration elapsed
+let lastTs = 0;
+let cycles = 0, ok = 0, bad = 0;
+let lastOutcome = null;    // "ok" | "bad" | null
+let raf = null;
+
+function svgEl(name, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const a in attrs) el.setAttribute(a, attrs[a]);
+  return el;
+}
+
+function fmtMs(n) {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 0 }) + " ms";
+}
+
+function drawStatic() {
+  dial.innerHTML = "";
+  const cx = 130, cy = 130;
+  // outer ring (heartbeat track)
+  dial.appendChild(svgEl("circle", { cx, cy, r: 100, fill: "none",
+    stroke: "var(--rule)", "stroke-width": 1.5 }));
+  // inner ring (thought track)
+  dial.appendChild(svgEl("circle", { cx, cy, r: 72, fill: "none",
+    stroke: "var(--rule)", "stroke-width": 1.5, "stroke-dasharray": "2 4", opacity: 0.6 }));
+  // hour ticks on outer (12)
+  for (let i = 0; i < 12; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 6;
+    const x1 = cx + 96 * Math.cos(a), y1 = cy + 96 * Math.sin(a);
+    const x2 = cx + 104 * Math.cos(a), y2 = cy + 104 * Math.sin(a);
+    dial.appendChild(svgEl("line", { x1, y1, x2, y2,
+      stroke: "var(--dim)", "stroke-width": 1, opacity: 0.6 }));
+  }
+  // dynamic group (rebuilt each frame)
+  const g = svgEl("g", { id: "dyn" });
+  dial.appendChild(g);
+}
+
+function polar(cx, cy, r, a) {
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+}
+
+// describe an arc from angle a0 to a1 on radius r (always sweep ccw->cw direction we want)
+function arcPath(cx, cy, r, a0, a1) {
+  // we want a forward sweep from a0 to a1 (a1 >= a0)
+  const [x0, y0] = polar(cx, cy, r, a0);
+  const [x1, y1] = polar(cx, cy, r, a1);
+  const delta = a1 - a0;
+  const large = delta > Math.PI ? 1 : 0;
+  return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+}
+
+function render() {
+  const dyn = $("dyn");
+  if (!dyn) return;
+  dyn.innerHTML = "";
+  const cx = 130, cy = 130;
+  const top = -Math.PI / 2;
+
+  // heartbeat hand
+  const ha = top + phase;
+  const [hx, hy] = polar(cx, cy, 100, ha);
+  dyn.appendChild(svgEl("line", {
+    x1: cx, y1: cy, x2: hx, y2: hy,
+    stroke: "var(--beat)", "stroke-width": 2.2,
+    "stroke-linecap": "round",
+  }));
+  dyn.appendChild(svgEl("circle", { cx: hx, cy: hy, r: 5, fill: "var(--beat)" }));
+
+  // beat-zero marker (top tick, gold)
+  dyn.appendChild(svgEl("circle", { cx: cx, cy: cy - 100, r: 3, fill: "var(--beat)" }));
+
+  // in-flight thought arc on inner ring
+  if (thoughtProgress < 1.5) {
+    const a0 = top + thoughtStart;
+    const sweep = Math.min(thoughtProgress, 1.0) * Math.PI * 2;
+    if (sweep > 0.001) {
+      const a1 = a0 + sweep;
+      // arc cannot exceed 2pi; split if necessary
+      const segs = [];
+      if (sweep < Math.PI * 2 - 0.0001) {
+        segs.push([a0, a1]);
+      } else {
+        segs.push([a0, a0 + Math.PI]);
+        segs.push([a0 + Math.PI, a0 + Math.PI * 2 - 0.001]);
+      }
+      const color = lastOutcome === "bad" && thoughtProgress >= 1.0 ? "var(--collide)" : "var(--thought)";
+      for (const [s, e] of segs) {
+        dyn.appendChild(svgEl("path", {
+          d: arcPath(cx, cy, 72, s, e),
+          fill: "none", stroke: color, "stroke-width": 3.5,
+          "stroke-linecap": "round",
+        }));
+      }
+      // head of thought
+      const [tx, ty] = polar(cx, cy, 72, a1 < a0 + Math.PI * 2 ? a1 : a0 + Math.PI * 2 - 0.001);
+      dyn.appendChild(svgEl("circle", { cx: tx, cy: ty, r: 4.5, fill: color }));
+    }
+  }
+
+  // center plaque
+  const status = lastOutcome === "ok" ? "✓ finished in time" :
+                 lastOutcome === "bad" ? "✗ cut off" : "·";
+  const statusColor = lastOutcome === "ok" ? "#6fbf7a" :
+                      lastOutcome === "bad" ? "var(--collide)" : "var(--dim)";
+  const t = svgEl("text", {
+    x: cx, y: cy + 4, "text-anchor": "middle",
+    fill: statusColor, "font-family": "JetBrains Mono, monospace",
+    "font-size": "11", "letter-spacing": "1",
+  });
+  t.textContent = status;
+  dyn.appendChild(t);
+}
+
+function updateReadout() {
+  const r = parseFloat(ratioIn.value);
+  const thoughtMs = HEARTBEAT_MS * r;
+  $("vBeat").textContent = fmtMs(HEARTBEAT_MS);
+  $("vThought").textContent = fmtMs(thoughtMs);
+  const slack = HEARTBEAT_MS - thoughtMs;
+  const slackEl = $("vSlack");
+  slackEl.textContent = (slack >= 0 ? "+" : "") + fmtMs(slack);
+  slackEl.className = "v " + (slack >= 0 ? "ok" : "bad");
+  $("vCycles").textContent = cycles;
+  $("vOk").textContent = ok;
+  $("vBad").textContent = bad;
+  const outEl = $("vOut");
+  if (lastOutcome === "ok") { outEl.textContent = "finished"; outEl.className = "v ok"; }
+  else if (lastOutcome === "bad") { outEl.textContent = "cut off"; outEl.className = "v bad"; }
+  else { outEl.textContent = "—"; outEl.className = "v"; }
+}
+
+function step(ts) {
+  if (!lastTs) lastTs = ts;
+  const dt = (ts - lastTs);
+  lastTs = ts;
+
+  const speed = parseFloat(speedIn.value);
+  const r = parseFloat(ratioIn.value); // thought / heartbeat
+  // angular velocity of heartbeat hand (rad/ms), scaled by speed (visual)
+  const omegaBeat = (2 * Math.PI / HEARTBEAT_MS) * speed * 60; // *60: ms-real -> ms-virtual scaling
+  // thought rate (fraction of full sweep per ms-virtual)
+  const omegaThought = omegaBeat / r;
+
+  // advance heartbeat phase
+  const prevPhase = phase;
+  phase = (phase + omegaBeat * dt) % (Math.PI * 2);
+  // detect heartbeat completion (wrap)
+  const wrapped = phase < prevPhase;
+
+  // advance thought
+  thoughtProgress += (omegaThought * dt) / (2 * Math.PI);
+
+  // outcomes happen on heartbeat wrap OR on thought completion
+  if (thoughtProgress >= 1.0 && lastOutcome !== "ok" && lastOutcome !== "bad") {
+    // thought finished before this beat ended
+    lastOutcome = "ok";
+    ok++;
+  }
+
+  if (wrapped) {
+    // beat fires — if thought hadn't finished, it dies now
+    cycles++;
+    if (lastOutcome === null) {
+      // never resolved during this beat
+      lastOutcome = "bad";
+      bad++;
+    }
+    // begin next thought aligned with this beat
+    thoughtStart = phase;
+    thoughtProgress = 0;
+    // after a short visual hold, clear outcome for next cycle
+    setTimeout(() => { lastOutcome = null; updateReadout(); }, 600);
+  }
+
+  render();
+  updateReadout();
+  raf = requestAnimationFrame(step);
+}
+
+function reset() {
+  cancelAnimationFrame(raf);
+  phase = 0;
+  thoughtStart = 0;
+  thoughtProgress = 0;
+  cycles = 0; ok = 0; bad = 0;
+  lastOutcome = null;
+  lastTs = 0;
+  drawStatic();
+  render();
+  updateReadout();
+  raf = requestAnimationFrame(step);
+}
+
+ratioIn.addEventListener("input", updateReadout);
+speedIn.addEventListener("input", () => {});
+resetBtn.addEventListener("click", reset);
+realBtn.addEventListener("click", () => {
+  ratioIn.value = (REAL_THOUGHT_MS / HEARTBEAT_MS).toFixed(4);
+  reset();
+});
+
+drawStatic();
+updateReadout();
+raf = requestAnimationFrame(step);
+</script>
+</body>
+</html>
