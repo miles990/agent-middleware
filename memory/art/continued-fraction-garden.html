@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>The Continued Fraction Garden</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; background: #0b0d10; color: #d6cfc0;
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    min-height: 100vh;
+  }
+  header {
+    max-width: 880px; margin: 0 auto; padding: 56px 28px 24px;
+  }
+  h1 {
+    font-weight: 400; font-size: 32px; letter-spacing: 0.01em;
+    margin: 0 0 12px;
+  }
+  h1 em { font-style: italic; color: #c7b07a; }
+  .lede {
+    font-size: 16px; line-height: 1.6; color: #a59f92; margin: 0 0 8px;
+  }
+  .lede b { color: #d6cfc0; font-weight: 600; }
+  .legend {
+    font-size: 13px; color: #7a7568; margin-top: 18px; line-height: 1.55;
+  }
+  main {
+    max-width: 1080px; margin: 0 auto; padding: 8px 16px 80px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  .plant {
+    background: linear-gradient(180deg, #11141a 0%, #0b0d10 100%);
+    border: 1px solid #1c2027;
+    border-radius: 4px;
+    padding: 14px 16px 18px;
+    position: relative;
+  }
+  .plant svg { width: 100%; height: 340px; display: block; }
+  .name {
+    font-size: 17px; color: #d6cfc0; margin: 8px 0 2px;
+  }
+  .name span.sym { color: #c7b07a; font-style: italic; margin-right: 6px; }
+  .cf {
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 11px; color: #6e7280; letter-spacing: 0; line-height: 1.5;
+    word-break: break-all;
+  }
+  .note {
+    font-size: 12px; color: #8a8475; margin-top: 6px; line-height: 1.55;
+    font-style: italic;
+  }
+  footer {
+    max-width: 880px; margin: 0 auto; padding: 24px 28px 64px;
+    color: #6e6a5e; font-size: 12px; line-height: 1.6;
+  }
+  footer code { font-family: "SF Mono", "Menlo", monospace; color: #a59f92; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>The <em>Continued Fraction Garden</em></h1>
+  <p class="lede">
+    Every real number can be unfolded as a continued fraction
+    <b>a₀ + 1/(a₁ + 1/(a₂ + …))</b>. Rationals terminate; irrationals
+    go forever. Each <b>aₖ</b> is a positive integer — a node in this
+    garden becomes a segment whose length is <b>aₖ</b>, branching to
+    the next at a fixed turn. Numbers whose <b>aₖ</b> stay small grow
+    into balanced plants; numbers with rare giant <b>aₖ</b> grow spikes.
+  </p>
+  <p class="legend">
+    The golden ratio <b>φ</b> has the slowest-growing expansion
+    [1; 1, 1, 1, …] — all the partial quotients are 1. This is exactly
+    why φ is called "the most irrational number": no rational
+    p/q approximates it especially well. Its plant is the most
+    regular. <b>π</b>'s expansion contains a sudden <b>292</b> at the
+    fifth term — that is why <b>355/113</b> is uncannily accurate.
+    You can see the spike.
+  </p>
+</header>
+
+<main id="garden"></main>
+
+<footer>
+  Drawn with deterministic geometry — no randomness. Each segment is
+  <code>length ∝ √aₖ</code> (so a₆=292 doesn't dwarf the canvas),
+  turn angle <code>137.508°</code> (the golden angle, used by sunflower
+  florets), color hue stepping by <code>aₖ mod 360°</code>. The
+  composition is the mathematics. ⌁ Kuro, 2026-06-03.
+</footer>
+
+<script>
+(() => {
+  // Continued fraction expansions, hand-curated (10–14 terms).
+  // Sources: OEIS A001203 (π), A003417 (e), A040000 (√2), A002852 (γ), A058265 (φ).
+  const PLANTS = [
+    {
+      sym: "φ", name: "Golden ratio",
+      cf: [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      note: "All ones. The slowest-growing expansion possible — and the most irrational number.",
+      hue0: 45
+    },
+    {
+      sym: "√2", name: "Square root of two",
+      cf: [1,2,2,2,2,2,2,2,2,2,2,2,2,2],
+      note: "Periodic [1; 2,2,2,…]. Every quadratic irrational has a periodic tail (Lagrange, 1770).",
+      hue0: 200
+    },
+    {
+      sym: "e", name: "Euler's number",
+      cf: [2,1,2,1,1,4,1,1,6,1,1,8,1,1,10],
+      note: "The pattern 1,2k,1 repeats forever. Proven by Euler in 1737 — and why e is irrational.",
+      hue0: 110
+    },
+    {
+      sym: "π", name: "Pi",
+      cf: [3,7,15,1,292,1,1,1,2,1,3,1,14,2],
+      note: "The 292 is the spike: 1/(3+1/(7+1/(15+1/1))) = 355/113, accurate to 6 decimals.",
+      hue0: 330
+    },
+    {
+      sym: "γ", name: "Euler–Mascheroni",
+      cf: [0,1,1,2,1,2,1,4,3,13,5,1,1,8,1],
+      note: "We do not even know if γ is irrational. We just write down its partial quotients and hope.",
+      hue0: 270
+    },
+    {
+      sym: "³√2", name: "Cube root of two",
+      cf: [1,3,1,5,1,1,4,1,1,8,1,14,1,10],
+      note: "Cubic irrational — Lagrange's theorem does NOT apply. No periodicity has ever been found.",
+      hue0: 20
+    },
+  ];
+
+  const GOLDEN_ANGLE = 137.5077640500378 * Math.PI / 180;
+
+  function drawPlant(svg, cf, hue0) {
+    const W = 280, H = 340;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+    // Pass 1: compute geometry to find bounds.
+    let x = W/2, y = H - 20, ang = -Math.PI/2;
+    const segs = [];
+    for (let k = 0; k < cf.length; k++) {
+      const a = cf[k];
+      const len = Math.sqrt(Math.max(1, a)) * 14;
+      const x2 = x + Math.cos(ang) * len;
+      const y2 = y + Math.sin(ang) * len;
+      segs.push({ x1:x, y1:y, x2, y2, a, k });
+      x = x2; y = y2;
+      ang += GOLDEN_ANGLE * (k % 2 === 0 ? 1 : -1);
+    }
+
+    // Bounding box of segments → scale into canvas.
+    let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+    for (const s of segs) {
+      minX = Math.min(minX, s.x1, s.x2);
+      maxX = Math.max(maxX, s.x1, s.x2);
+      minY = Math.min(minY, s.y1, s.y2);
+      maxY = Math.max(maxY, s.y1, s.y2);
+    }
+    const pad = 24;
+    const bw = (maxX - minX) || 1, bh = (maxY - minY) || 1;
+    const scale = Math.min((W - 2*pad) / bw, (H - 2*pad) / bh);
+    const ox = pad - minX * scale + (W - 2*pad - bw*scale) / 2;
+    const oy = pad - minY * scale + (H - 2*pad - bh*scale) / 2;
+
+    const tx = p => p * scale;
+    const X = px => px * scale + ox;
+    const Y = py => py * scale + oy;
+
+    // Soil line.
+    const soil = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    soil.setAttribute("x1", 12); soil.setAttribute("x2", W-12);
+    soil.setAttribute("y1", H-12); soil.setAttribute("y2", H-12);
+    soil.setAttribute("stroke", "#1c2027"); soil.setAttribute("stroke-width", "1");
+    svg.appendChild(soil);
+
+    // Draw segments back-to-front.
+    for (const s of segs) {
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", X(s.x1)); line.setAttribute("y1", Y(s.y1));
+      line.setAttribute("x2", X(s.x2)); line.setAttribute("y2", Y(s.y2));
+      const hue = (hue0 + s.k * 18 + s.a * 7) % 360;
+      const lit = 38 + Math.min(40, s.a * 2);
+      line.setAttribute("stroke", `hsl(${hue} 55% ${lit}%)`);
+      line.setAttribute("stroke-width", 1.5 + Math.log2(1 + s.a) * 0.6);
+      line.setAttribute("stroke-linecap", "round");
+      line.setAttribute("opacity", 0.92);
+      svg.appendChild(line);
+
+      // Bud at each joint.
+      const bud = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      bud.setAttribute("cx", X(s.x2)); bud.setAttribute("cy", Y(s.y2));
+      bud.setAttribute("r", 1.2 + Math.log2(1 + s.a) * 0.45);
+      bud.setAttribute("fill", `hsl(${(hue+30)%360} 60% 68%)`);
+      bud.setAttribute("opacity", 0.85);
+      svg.appendChild(bud);
+    }
+  }
+
+  const root = document.getElementById("garden");
+  for (const p of PLANTS) {
+    const card = document.createElement("div");
+    card.className = "plant";
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    card.appendChild(svg);
+    const nm = document.createElement("div");
+    nm.className = "name";
+    nm.innerHTML = `<span class="sym">${p.sym}</span>${p.name}`;
+    card.appendChild(nm);
+    const cf = document.createElement("div");
+    cf.className = "cf";
+    cf.textContent = `[${p.cf[0]}; ${p.cf.slice(1).join(", ")}, …]`;
+    card.appendChild(cf);
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent = p.note;
+    card.appendChild(note);
+    root.appendChild(card);
+    drawPlant(svg, p.cf, p.hue0);
+  }
+})();
+</script>
+
+</body>
+</html>
