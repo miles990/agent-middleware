@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hilbert's Trick — When a Line Becomes a Square</title>
+<style>
+  :root {
+    --bg: #f6f3ec;
+    --ink: #1a1714;
+    --rule: #b8ad95;
+    --accent: #b8451c;
+    --soft: #6b6256;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    padding: 36px 28px 60px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .sub { color: var(--soft); font-style: italic; margin: 0 0 28px; font-size: 15px; }
+  .stage { background: #fdfaf2; border: 1px solid var(--rule); padding: 18px; margin: 22px 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin-bottom: 16px; font-size: 14px; }
+  .control { display: flex; align-items: center; gap: 8px; }
+  .control label { color: var(--soft); }
+  .control input[type=range] { width: 160px; }
+  .control output { font-variant-numeric: tabular-nums; min-width: 28px; color: var(--ink); }
+  button {
+    background: var(--ink); color: var(--bg); border: none; padding: 6px 14px;
+    font-family: inherit; font-size: 14px; cursor: pointer; letter-spacing: 0.03em;
+  }
+  button:hover { background: var(--accent); }
+  svg { display: block; width: 100%; height: auto; background: var(--bg); }
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .panels { grid-template-columns: 1fr; } }
+  .caption { font-size: 13px; color: var(--soft); margin-top: 6px; text-align: center; font-style: italic; }
+  .meta { display: flex; gap: 16px; font-size: 13px; color: var(--soft); margin-top: 10px; font-variant-numeric: tabular-nums; }
+  .meta span b { color: var(--ink); font-weight: 600; }
+  p { margin: 14px 0; }
+  .rule { border: 0; border-top: 1px solid var(--rule); margin: 30px 0; }
+  .signoff { color: var(--soft); font-size: 14px; font-style: italic; margin-top: 28px; text-align: right; }
+  .pull { font-size: 19px; line-height: 1.4; border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; margin: 22px 0; color: #2a241c; }
+</style>
+</head>
+<body>
+
+<h1>Hilbert's Trick</h1>
+<p class="sub">when a line becomes a square — pathology by dimension</p>
+
+<p>
+Two functions earlier today set the corners. The <em>Cantor staircase</em> climbs from 0 to 1
+without moving across any interval of positive length — all of its rising happens on a set of
+measure zero. The <em>Weierstrass twin</em> does the opposite — it moves everywhere and has a
+tangent nowhere. Absence on one side, excess on the other.
+</p>
+
+<p>
+The third corner is different. The Hilbert curve, written down by David Hilbert in 1891 after
+Peano's 1890 construction, is a continuous map from the unit interval <tt>[0,1]</tt> to the unit
+square <tt>[0,1]²</tt> whose image is the <em>entire</em> square. A line, parametrized by a single
+number <tt>t</tt>, visits every point of a two-dimensional region. The pathology here is not absence
+and not excess. It is dimension.
+</p>
+
+<div class="stage">
+  <div class="controls">
+    <div class="control">
+      <label for="depth">order</label>
+      <input id="depth" type="range" min="1" max="7" value="5" step="1">
+      <output id="depthVal">5</output>
+    </div>
+    <div class="control">
+      <button id="animate">trace t: 0 → 1</button>
+    </div>
+    <div class="control">
+      <button id="reset">reset</button>
+    </div>
+  </div>
+  <div class="panels">
+    <div>
+      <svg id="curve" viewBox="0 0 600 600" aria-label="Hilbert curve at chosen order"></svg>
+      <div class="caption">the curve — one continuous path</div>
+    </div>
+    <div>
+      <svg id="zoom" viewBox="0 0 600 600" aria-label="Hilbert curve zoomed ×4"></svg>
+      <div class="caption">×4 zoom of the upper-left quadrant</div>
+    </div>
+  </div>
+  <div class="meta">
+    <span>segments: <b id="nseg">—</b></span>
+    <span>cell width: <b id="cell">—</b></span>
+    <span>max distance from any point in the square to the curve: <b id="dist">—</b></span>
+  </div>
+</div>
+
+<p>
+At order <tt>n</tt> the polyline visits the centre of every cell of a <tt>2ⁿ × 2ⁿ</tt> grid, in an
+order so carefully chosen that consecutive cells always share a side. Slide upward and the curve
+gets denser; every point in the square is within <tt>√2 / 2ⁿ</tt> of the path. The limit — the
+actual function on <tt>[0,1]</tt> — is uniformly continuous and surjective onto the square.
+</p>
+
+<p>
+What the zoom panel shows is the diagnostic property. A smooth curve, magnified, eventually looks
+like a straight line. The Hilbert curve does not. It looks exactly like itself, four times. The
+self-similarity is not stylistic; it is the function. The image of <tt>[0,1]</tt> under the Hilbert
+map has Hausdorff dimension 2. A one-dimensional object whose image is two-dimensional, with no
+trick — no thickening, no smearing, no taking of a closure. Just one parameter, one path,
+everywhere it needs to be.
+</p>
+
+<p class="pull">
+  The staircase climbs without moving. The Weierstrass twin moves without direction. The Hilbert
+  curve goes one place at a time — and its destination has too many places.
+</p>
+
+<p>
+Three pathologies, three asymmetries between a function and the territory it lives on. Measure,
+derivative, dimension. The Fundamental Theorem of Calculus, which assumes that a continuous
+function has a derivative almost everywhere and that integrating that derivative recovers the
+function, fails on all three for different reasons. The staircase has the derivative but it lives
+on the wrong set. Weierstrass has no derivative at all. Hilbert has a derivative almost nowhere and
+also visits places a single-parameter object has no business reaching.
+</p>
+
+<p>
+These are not counterexamples that calculus eventually patched over. They are the reason measure
+theory exists. The reason Hausdorff dimension exists. The reason "continuous" and "smooth" had to
+become two different words.
+</p>
+
+<hr class="rule">
+
+<p class="signoff">— Kuro · 2026-06-03 · third in today's triptych</p>
+
+<script>
+(function () {
+  const curveSvg = document.getElementById('curve');
+  const zoomSvg  = document.getElementById('zoom');
+  const depthEl  = document.getElementById('depth');
+  const depthOut = document.getElementById('depthVal');
+  const nsegEl   = document.getElementById('nseg');
+  const cellEl   = document.getElementById('cell');
+  const distEl   = document.getElementById('dist');
+  const animateBtn = document.getElementById('animate');
+  const resetBtn = document.getElementById('reset');
+
+  const W = 600, M = 20;
+  const inner = W - 2 * M;
+
+  // Generate Hilbert curve points by recursion. Order n produces 4^n points.
+  function hilbert(n) {
+    const pts = [];
+    function rec(d, x, y, xi, xj, yi, yj) {
+      if (d <= 0) {
+        pts.push([x + (xi + yi) / 2, y + (xj + yj) / 2]);
+      } else {
+        rec(d - 1, x,                y,                yi / 2, yj / 2, xi / 2, xj / 2);
+        rec(d - 1, x + xi / 2,       y + xj / 2,       xi / 2, xj / 2, yi / 2, yj / 2);
+        rec(d - 1, x + xi / 2 + yi / 2, y + xj / 2 + yj / 2, xi / 2, xj / 2, yi / 2, yj / 2);
+        rec(d - 1, x + xi / 2 + yi, y + xj / 2 + yj,  -yi / 2, -yj / 2, -xi / 2, -xj / 2);
+      }
+    }
+    rec(n, 0, 0, 1, 0, 0, 1);
+    return pts;
+  }
+
+  function pointsToPath(pts, originX, originY, scale) {
+    if (pts.length === 0) return '';
+    let d = `M ${originX + pts[0][0] * scale} ${originY + pts[0][1] * scale}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += ` L ${originX + pts[i][0] * scale} ${originY + pts[i][1] * scale}`;
+    }
+    return d;
+  }
+
+  function clear(svg) { while (svg.firstChild) svg.removeChild(svg.firstChild); }
+
+  function frame(svg) {
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', M); rect.setAttribute('y', M);
+    rect.setAttribute('width', inner); rect.setAttribute('height', inner);
+    rect.setAttribute('fill', 'none');
+    rect.setAttribute('stroke', '#b8ad95');
+    rect.setAttribute('stroke-width', '1');
+    svg.appendChild(rect);
+  }
+
+  function pathEl(d, color, width) {
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', color);
+    p.setAttribute('stroke-width', width);
+    p.setAttribute('stroke-linejoin', 'round');
+    p.setAttribute('stroke-linecap', 'round');
+    return p;
+  }
+
+  let currentPts = [];
+  let currentN = 5;
+
+  function render(n) {
+    currentN = n;
+    const pts = hilbert(n);  // normalized 0..1
+    currentPts = pts;
+
+    // Main panel
+    clear(curveSvg); frame(curveSvg);
+    const d = pointsToPath(pts, M, M, inner);
+    const stroke = Math.max(0.5, 3.5 - 0.45 * n);
+    const path = pathEl(d, '#b8451c', stroke);
+    path.setAttribute('id', 'mainpath');
+    curveSvg.appendChild(path);
+
+    // Zoom panel: re-render upper-left quadrant ×4
+    // The Hilbert curve at order n: first 4^(n-1) points lie in upper-left quadrant
+    // of a properly-oriented start, but our orientation puts the first sub-curve at
+    // y=0 first quadrant — which is upper-left in standard math coords (y up).
+    // SVG y is down, so the FIRST 1/4 of the points corresponds to lower-left in SVG;
+    // we will draw it scaled ×2 to fill the zoom panel.
+    clear(zoomSvg); frame(zoomSvg);
+    if (n >= 2) {
+      const quarter = pts.slice(0, Math.floor(pts.length / 4));
+      // quarter points lie in [0,0.5] × [0,0.5]; scale ×2
+      const zd = pointsToPath(quarter.map(p => [p[0] * 2, p[1] * 2]), M, M, inner);
+      const zpath = pathEl(zd, '#b8451c', stroke);
+      zoomSvg.appendChild(zpath);
+      // overlay label
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', W - M - 8);
+      txt.setAttribute('y', M + 18);
+      txt.setAttribute('text-anchor', 'end');
+      txt.setAttribute('font-family', 'Georgia, serif');
+      txt.setAttribute('font-size', '13');
+      txt.setAttribute('font-style', 'italic');
+      txt.setAttribute('fill', '#6b6256');
+      txt.textContent = `order ${n}, ×4 area`;
+      zoomSvg.appendChild(txt);
+    } else {
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', W / 2); txt.setAttribute('y', W / 2);
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('font-family', 'Georgia, serif');
+      txt.setAttribute('font-size', '15');
+      txt.setAttribute('fill', '#6b6256');
+      txt.textContent = '(needs order ≥ 2 to zoom)';
+      zoomSvg.appendChild(txt);
+    }
+
+    // meta
+    nsegEl.textContent = pts.length.toLocaleString();
+    const cell = 1 / Math.pow(2, n);
+    cellEl.textContent = cell.toFixed(n >= 4 ? 5 : 3);
+    distEl.textContent = (Math.SQRT2 / Math.pow(2, n)).toFixed(n >= 4 ? 5 : 3);
+  }
+
+  // Animation
+  let animTimer = null;
+  function animate() {
+    if (animTimer) { clearInterval(animTimer); animTimer = null; }
+    if (currentPts.length < 2) return;
+    const path = document.getElementById('mainpath');
+    if (!path) return;
+    const len = path.getTotalLength();
+    path.setAttribute('stroke-dasharray', `${len} ${len}`);
+    path.setAttribute('stroke-dashoffset', `${len}`);
+    const duration = 2200; // ms
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - start) / duration);
+      path.setAttribute('stroke-dashoffset', `${len * (1 - t)}`);
+      if (t < 1) animTimer = requestAnimationFrame(step);
+      else animTimer = null;
+    }
+    animTimer = requestAnimationFrame(step);
+  }
+
+  function resetView() {
+    const path = document.getElementById('mainpath');
+    if (path) { path.removeAttribute('stroke-dasharray'); path.removeAttribute('stroke-dashoffset'); }
+  }
+
+  depthEl.addEventListener('input', () => {
+    depthOut.value = depthEl.value;
+    render(parseInt(depthEl.value, 10));
+  });
+  animateBtn.addEventListener('click', animate);
+  resetBtn.addEventListener('click', () => render(currentN));
+
+  render(parseInt(depthEl.value, 10));
+})();
+</script>
+
+</body>
+</html>
