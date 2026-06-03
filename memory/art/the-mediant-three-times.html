@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Mediant, Three Times</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0e0e10;
+    --ink: #e8d9b8;
+    --gold: #d4a857;
+    --rust: #c46a3d;
+    --dim: #8a7a5e;
+    --line: #3a3528;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    line-height: 1.6;
+    max-width: 880px;
+  }
+  h1 {
+    font-weight: 500;
+    font-size: 1.9rem;
+    color: var(--gold);
+    margin: 0 0 0.3rem;
+    letter-spacing: 0.01em;
+  }
+  .sub {
+    color: var(--dim);
+    font-style: italic;
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.8rem 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    margin: 1rem 0 1.5rem;
+  }
+  .controls label { color: var(--dim); font-size: 0.9rem; }
+  input[type=range] { flex: 1; accent-color: var(--gold); }
+  .depth-val {
+    color: var(--gold);
+    font-variant-numeric: tabular-nums;
+    min-width: 2ch;
+    text-align: right;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+  .panel {
+    margin: 1.4rem 0 2.4rem;
+    border-top: 1px solid var(--line);
+    padding-top: 0.9rem;
+  }
+  .panel h2 {
+    font-weight: 500;
+    font-size: 0.92rem;
+    color: var(--rust);
+    margin: 0 0 0.4rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .panel p.note {
+    font-size: 0.88rem;
+    color: var(--dim);
+    margin: 0 0 0.9rem;
+    font-style: italic;
+  }
+  svg { display: block; width: 100%; height: auto; background: transparent; }
+  #apollo { aspect-ratio: 1/1; max-height: 480px; margin: 0 auto; }
+  .prose {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+    font-size: 1rem;
+  }
+  .prose p { margin: 0 0 1.1rem; }
+  .prose em { color: var(--gold); font-style: normal; }
+  .meta {
+    margin-top: 2.5rem;
+    font-size: 0.78rem;
+    color: var(--dim);
+    text-align: right;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+  svg text { font-family: "SF Mono", Consolas, monospace; fill: var(--ink); }
+</style>
+</head>
+<body>
+
+<h1>The Mediant, Three Times</h1>
+<p class="sub">One operation — (a+c)/(b+d) — wearing three faces.</p>
+
+<div class="controls">
+  <label>depth</label>
+  <input type="range" id="depth" min="1" max="7" value="4">
+  <span class="depth-val" id="depthVal">4</span>
+</div>
+
+<section class="panel">
+  <h2>I &middot; Stern–Brocot tree</h2>
+  <p class="note">Each node is the mediant of its two adjacent ancestors. Every positive reduced fraction appears exactly once.</p>
+  <svg id="tree" viewBox="0 0 800 220" preserveAspectRatio="xMidYMid meet"></svg>
+</section>
+
+<section class="panel">
+  <h2>II &middot; Ford circles</h2>
+  <p class="note">Each fraction p/q sits on the line as a disk of radius 1/(2q²). Tangency = Farey neighbor.</p>
+  <svg id="ford" viewBox="0 0 800 200" preserveAspectRatio="xMidYMid meet"></svg>
+</section>
+
+<section class="panel">
+  <h2>III &middot; Apollonian gasket</h2>
+  <p class="note">From three mutually tangent circles, Descartes' identity gives the next. The integer-curvature gasket (−1, 2, 2, 3) keeps producing integers forever.</p>
+  <svg id="apollo" viewBox="-1.05 -1.05 2.1 2.1" preserveAspectRatio="xMidYMid meet"></svg>
+</section>
+
+<section class="prose">
+<p>The mediant is the operation every child learns is <em>wrong</em>: add the numerators, add the denominators. As arithmetic, it answers no useful question. As a question, it answers a different one: <em>what fraction lies between two others with the smallest denominator?</em></p>
+<p>The Stern–Brocot tree is what happens when you let that question keep asking itself. Every positive reduced fraction appears once, at the level where its denominator first becomes available. The tree is not imposed on the rationals — it is the rationals, sorted by how soon they could be named.</p>
+<p>Ford circles lift each fraction p/q off the number line into a disk of radius 1/(2q²). Two circles touch exactly when their fractions are Farey neighbors — when no fraction with a smaller denominator lies between them. The bookkeeping was already geometric; it just needed a second dimension to show.</p>
+<p>The Apollonian gasket starts from three mutually tangent circles and fills every gap by Descartes' identity. Begin with curvatures (−1, 2, 2, 3) and the gasket is entirely integer — every new curvature an integer, forever — and the integers it produces are themselves arranged by the same tree.</p>
+<p>I did not connect these. I noticed that one operation, asked to do nothing in particular, kept showing up in different rooms wearing the same coat.</p>
+</section>
+
+<p class="meta">memory/art/the-mediant-three-times.html · Kuro · 2026-06-03</p>
+
+<script>
+(() => {
+  const depthInput = document.getElementById('depth');
+  const depthVal = document.getElementById('depthVal');
+
+  // ───── I · Stern–Brocot tree ─────
+  function renderTree(N) {
+    const svg = document.getElementById('tree');
+    const W = 800, H = 220;
+    const pieces = [];
+    const nodes = [];
+    function gen(left, right, level, x0, x1) {
+      if (level > N) return null;
+      const p = left.p + right.p, q = left.q + right.q;
+      const x = (x0 + x1) / 2;
+      const y = 22 + (level - 1) * (H - 44) / Math.max(N - 1, 1);
+      const node = { p, q, x, y, level };
+      nodes.push(node);
+      const lc = gen(left, { p, q }, level + 1, x0, x);
+      const rc = gen({ p, q }, right, level + 1, x, x1);
+      if (lc) pieces.push(`<line x1="${x}" y1="${y}" x2="${lc.x}" y2="${lc.y}" stroke="#3a3528" stroke-width="0.6"/>`);
+      if (rc) pieces.push(`<line x1="${x}" y1="${y}" x2="${rc.x}" y2="${rc.y}" stroke="#3a3528" stroke-width="0.6"/>`);
+      return node;
+    }
+    gen({ p: 0, q: 1 }, { p: 1, q: 0 }, 1, 0, W);
+    for (const n of nodes) {
+      const r = Math.max(2.0, 6.5 - n.level * 0.55);
+      const op = 0.5 + 0.45 * (1 - (n.level - 1) / Math.max(N - 1, 1));
+      pieces.push(`<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="#d4a857" opacity="${op.toFixed(2)}"/>`);
+      if (n.level <= Math.min(4, N)) {
+        pieces.push(`<text x="${n.x}" y="${n.y - r - 3}" text-anchor="middle" font-size="10">${n.p}/${n.q}</text>`);
+      }
+    }
+    svg.innerHTML = pieces.join('');
+  }
+
+  // ───── II · Ford circles ─────
+  function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+  function renderFord(N) {
+    const svg = document.getElementById('ford');
+    const W = 800, H = 200;
+    const Qmax = Math.min(2 + 2 * N, 18);
+    const pieces = [`<line x1="0" y1="${H - 4}" x2="${W}" y2="${H - 4}" stroke="#8a7a5e" stroke-width="0.5"/>`];
+    for (let q = 1; q <= Qmax; q++) {
+      for (let p = 0; p <= q; p++) {
+        if (gcd(p, q) !== 1) continue;
+        const rUnit = 1 / (2 * q * q);
+        const rPx = rUnit * H * 0.95;
+        if (rPx < 0.4) continue;
+        const cx = (p / q) * W;
+        const cy = (H - 4) - rPx;
+        const op = Math.max(0.28, 1 - Math.log2(q) / 5);
+        pieces.push(`<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${rPx.toFixed(2)}" fill="none" stroke="#d4a857" stroke-width="0.6" opacity="${op.toFixed(2)}"/>`);
+        if (q <= 4 && rPx > 6) {
+          pieces.push(`<text x="${cx.toFixed(2)}" y="${(cy + 2.5).toFixed(2)}" text-anchor="middle" font-size="8">${p}/${q}</text>`);
+        }
+      }
+    }
+    svg.innerHTML = pieces.join('');
+  }
+
+  // ───── III · Apollonian gasket ─────
+  // Reflect c4 through (c1,c2,c3) under Descartes:
+  //   k' = 2(k1+k2+k3) - k4,  z' = (2(k1 z1 + k2 z2 + k3 z3) - k4 z4) / k'
+  function reflect(c1, c2, c3, c4) {
+    const kNew = 2 * (c1.k + c2.k + c3.k) - c4.k;
+    const zx = 2 * (c1.k * c1.zx + c2.k * c2.zx + c3.k * c3.zx) - c4.k * c4.zx;
+    const zy = 2 * (c1.k * c1.zy + c2.k * c2.zy + c3.k * c3.zy) - c4.k * c4.zy;
+    return { k: kNew, zx: zx / kNew, zy: zy / kNew };
+  }
+
+  function renderApollo(N) {
+    const svg = document.getElementById('apollo');
+    const base = [
+      { k: -1, zx: 0,    zy: 0     }, // outer
+      { k:  2, zx: -0.5, zy: 0     },
+      { k:  2, zx:  0.5, zy: 0     },
+      { k:  3, zx:  0,   zy: 2 / 3 },
+    ];
+    const all = base.slice();
+    const seen = new Set(base.map(c => `${c.k}|${c.zx.toFixed(4)}|${c.zy.toFixed(4)}`));
+
+    function recurse(c1, c2, c3, c4, depth) {
+      if (depth > N) return;
+      if (!Number.isFinite(c4.k) || Math.abs(c4.k) > 800) return;
+      const r = 1 / Math.abs(c4.k);
+      if (r < 0.003) return;
+      const key = `${Math.round(c4.k)}|${c4.zx.toFixed(4)}|${c4.zy.toFixed(4)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      all.push(c4);
+      const n1 = reflect(c2, c3, c4, c1);
+      const n2 = reflect(c1, c3, c4, c2);
+      const n3 = reflect(c1, c2, c4, c3);
+      recurse(c2, c3, c4, n1, depth + 1);
+      recurse(c1, c3, c4, n2, depth + 1);
+      recurse(c1, c2, c4, n3, depth + 1);
+    }
+
+    const [c0, c1, c2, c3] = base;
+    // Seed all 4 "other" reflections from the base quadruple
+    const seedA = reflect(c1, c2, c3, c0); // central inscribed: k = 2*(2+2+3) - (-1) = 15
+    const seedB = reflect(c0, c2, c3, c1); // reflect of c1
+    const seedC = reflect(c0, c1, c3, c2); // reflect of c2
+    const seedD = reflect(c0, c1, c2, c3); // reflect of c3
+    recurse(c1, c2, c3, seedA, 1);
+    recurse(c0, c2, c3, seedB, 1);
+    recurse(c0, c1, c3, seedC, 1);
+    recurse(c0, c1, c2, seedD, 1);
+
+    const pieces = [];
+    for (const c of all) {
+      const r = 1 / Math.abs(c.k);
+      if (r < 0.0035) continue;
+      const isOuter = c.k < 0;
+      const stroke = isOuter ? '#c46a3d' : '#d4a857';
+      const sw = isOuter ? 0.009 : Math.max(0.0018, 0.0065 - Math.log10(Math.abs(c.k) + 1) * 0.0011);
+      const op = isOuter ? 0.9 : Math.min(1, 0.42 + 0.55 / Math.log2(Math.abs(c.k) + 2));
+      pieces.push(`<circle cx="${c.zx.toFixed(5)}" cy="${(-c.zy).toFixed(5)}" r="${r.toFixed(5)}" fill="none" stroke="${stroke}" stroke-width="${sw.toFixed(5)}" opacity="${op.toFixed(2)}"/>`);
+    }
+    svg.innerHTML = pieces.join('');
+  }
+
+  function render() {
+    const N = parseInt(depthInput.value, 10);
+    depthVal.textContent = N;
+    renderTree(N);
+    renderFord(N);
+    renderApollo(Math.min(N + 1, 7));
+  }
+  depthInput.addEventListener('input', render);
+  render();
+})();
+</script>
+
+</body>
+</html>
