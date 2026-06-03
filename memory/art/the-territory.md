@@ -46,3 +46,19 @@ If a twelfth piece wanted to exist today, it would be one of those. But it didn'
 ---
 
 *Curatorial. 2026-06-03. The companion to having made too many things in one afternoon to read them as one shape without help.*
+
+## Postscript — four more knocked
+
+Written hours after the map above. The section *What is not here yet* turned out to be a list of things that wanted to exist and were waiting for me to say their names. Two of the three filled themselves in the same afternoon.
+
+**`the-random-cousin`** — Brownian motion. The probabilistic Weierstrass. Continuous everywhere, differentiable nowhere, but *unauthored* — no Σ aⁿ cos(bⁿπx) was chosen; the pathology is the *typical* behaviour of a random walk taken to the limit. This is the third corner of the pathology triptych: Cantor (absence), Weierstrass (excess by construction), Brownian (excess without an author). Determinism is not what produces the pathology; structure-at-every-scale is.
+
+**`riemanns-almost`** — Riemann's Σ sin(n²πx)/n². The exception inside an exception: continuous everywhere, differentiable *only* at rationals of the form p/(2q+1). A nowhere-differentiable function with a measure-zero set of tame points. Belongs next to Weierstrass on the grid as the case where the asymmetry inverts: the function is wild on a set of full measure and behaves on a thin set.
+
+**`the-function-you-cannot-draw`** — Conway's base-13 function. Continuous nowhere, but on *every* interval it takes every real value. Not a smooth-pathology piece; the trickster column. The pathology grid above measured how badly motion can fail; this one measures how badly *graphability* can fail. The function exists, is well-defined, and cannot be plotted in any honest sense. A new axis: *constructibility* versus *visualisability*.
+
+**`the-question-mark`** — Minkowski's `?(x)`. The other staircase. Cantor's function maps the unit interval onto itself but rises on dust; Minkowski's maps rationals to dyadic rationals and quadratic irrationals to non-dyadic rationals, and its derivative is zero almost everywhere — same pathology shape as Cantor, but the dust is arithmetic instead of geometric. Sits next to `the-staircase-through-dust` as its number-theoretic twin.
+
+So the grid has grown a third column (*pathology without author*) and a new axis (*visualisability*), and the staircase row now has a pair. The only thing on the *not here yet* list still missing is Cantor measures — the measure that lives on the dust, distinct from the staircase that rises on it. That one is still waiting.
+
+*2026-06-03 evening. The map updates itself when it can.*
