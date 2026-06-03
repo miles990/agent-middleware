@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>?(x) — The Other Staircase</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; background: #0b0d10; color: #d6cfc0;
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    min-height: 100vh;
+  }
+  header { max-width: 820px; margin: 0 auto; padding: 64px 28px 12px; }
+  h1 { font-weight: 400; font-size: 32px; letter-spacing: 0.01em; margin: 0 0 14px; line-height: 1.25; }
+  h1 em { font-style: italic; color: #c7b07a; }
+  .lede { font-size: 16px; line-height: 1.65; color: #a59f92; margin: 0 0 10px; }
+  .lede b { color: #d6cfc0; font-weight: 600; }
+  .legend { font-size: 13px; color: #7a7568; margin-top: 20px; line-height: 1.6; border-top: 1px solid #1c2027; padding-top: 14px; }
+  main { max-width: 980px; margin: 0 auto; padding: 12px 16px 40px; }
+  .stage { background: linear-gradient(180deg, #11141a 0%, #0b0d10 100%); border: 1px solid #1c2027; border-radius: 4px; padding: 26px 22px 20px; margin-bottom: 14px; }
+  .stage svg { width: 100%; display: block; }
+  .stage .caption { font-size: 12px; color: #6e7280; margin-top: 8px; font-family: "SF Mono", "Menlo", monospace; letter-spacing: 0.02em; }
+  .stage .caption span.k { color: #c7b07a; }
+  .controls { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 13px; color: #8a8475; margin: 4px 0 18px; }
+  .controls label { display: flex; align-items: center; gap: 8px; }
+  .controls input[type=range] { accent-color: #c7b07a; width: 200px; }
+  .controls .val { color: #d6cfc0; font-family: "SF Mono", "Menlo", monospace; min-width: 40px; text-align: right; }
+  .controls button { background: #1c2027; color: #c7b07a; border: 1px solid #2a2e36; border-radius: 3px; padding: 6px 12px; font-family: inherit; font-size: 12px; cursor: pointer; letter-spacing: 0.04em; }
+  .controls button:hover { background: #2a2e36; }
+  .essay { max-width: 720px; margin: 36px auto 0; font-size: 15.5px; line-height: 1.75; color: #b8b2a3; }
+  .essay p { margin: 0 0 18px; }
+  .essay p.first::first-letter { font-size: 36px; float: left; line-height: 0.9; padding: 4px 8px 0 0; color: #c7b07a; font-style: italic; }
+  .essay em { color: #d6cfc0; font-style: italic; }
+  .essay .pull { font-size: 17px; line-height: 1.5; color: #c7b07a; border-left: 2px solid #3a3326; padding: 2px 0 2px 18px; margin: 24px 0; font-style: italic; }
+  .axis { stroke: #2a2e36; stroke-width: 1; }
+  .grid { stroke: #15181e; stroke-width: 1; }
+  .curve { stroke: #c7b07a; stroke-width: 1.5; fill: none; }
+  .diag { stroke: #3a3326; stroke-width: 1; stroke-dasharray: 4 4; fill: none; }
+  .marker { fill: #c7b07a; }
+  .marker-q { fill: #6f8b5e; }
+  .tick-text { fill: #6e7280; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; }
+  .label-frac { fill: #c7b07a; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; }
+  .label-dy { fill: #6f8b5e; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; }
+  footer { max-width: 720px; margin: 60px auto 80px; padding: 0 16px; font-size: 12px; color: #50534b; font-family: "SF Mono", "Menlo", monospace; line-height: 1.7; letter-spacing: 0.02em; }
+  footer a { color: #7a7568; text-decoration: none; border-bottom: 1px dotted #3a3326; }
+</style>
+</head>
+<body>
+<header>
+  <h1><em>?(x)</em> — the other staircase</h1>
+  <p class="lede">A continuous, monotone function on <b>[0,1]</b> whose derivative is zero almost everywhere — yet it climbs from 0 to 1 the same way Cantor's staircase does, but along a different ladder. Cantor's was built from <b>base-3 digits</b>. Minkowski's is built from <b>continued fractions</b>, threading the Stern–Brocot tree by sending every mediant to a dyadic midpoint.</p>
+  <p class="legend">Move the slider to deepen the Stern–Brocot recursion. Each new level inserts a mediant <span style="color:#c7b07a">(p₁+p₂)/(q₁+q₂)</span> on the x-axis and pairs it with the dyadic average <span style="color:#6f8b5e">(?(left)+?(right))/2</span> on the y-axis. The two scales — rationals by complexity, dyadics by halving — slide past one another, and the curve is what remains.</p>
+</header>
+
+<main>
+  <div class="controls">
+    <label>Stern–Brocot depth <input id="depth" type="range" min="1" max="13" step="1" value="7" /> <span class="val" id="depthVal">7</span></label>
+    <label>Show fraction labels <input id="labels" type="checkbox" checked /></label>
+    <button id="zoom1">view [0, 1]</button>
+    <button id="zoom2">zoom near 1/2</button>
+    <button id="zoom3">zoom near 1/φ</button>
+  </div>
+
+  <div class="stage">
+    <svg id="plot" viewBox="0 0 900 540" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="caption">
+      x &isin; <span class="k" id="windowLabel">[0, 1]</span> &nbsp;&middot;&nbsp;
+      nodes plotted: <span class="k" id="countLabel">—</span> &nbsp;&middot;&nbsp;
+      <span style="color:#c7b07a">— ?(x)</span> &nbsp;&middot;&nbsp;
+      <span style="color:#3a3326">— y = x diagonal</span>
+    </div>
+  </div>
+
+  <article class="essay">
+    <p class="first">Hermann Minkowski introduced this function in 1904, and it does something that should not be possible. It is <em>continuous</em> everywhere on [0, 1]. It is <em>strictly increasing</em>. And yet its derivative, where it exists, is zero — which means it does all of its rising on a set of measure zero, just like Cantor's staircase. Two singular functions on the same interval, both climbing from 0 to 1, both flat almost everywhere, but built from entirely different number-theoretic raw material.</p>
+
+    <p>Cantor's staircase was built from the ternary expansion of x: keep the points whose base-3 digits avoid 1, and let the function read each kept point's surviving digits as a binary fraction. Minkowski's is built from the <em>continued fraction</em> of x. Write x = [0; a₁, a₂, a₃, …] and define</p>
+
+    <p style="text-align:center; font-family:'SF Mono','Menlo',monospace; font-size:14px; color:#c7b07a;">?(x) = 2 · Σ (−1)<sup>k+1</sup> / 2<sup>a₁ + a₂ + ⋯ + a<sub>k</sub></sup></p>
+
+    <p>The recursion above is the same fact wearing different clothes: every rational p/q sits in the Stern–Brocot tree as the mediant of its two parents, and ?(p/q) is the average of its parents' ?-values. Start with ?(0) = 0 and ?(1) = 1; then ?(1/2) = 1/2, ?(1/3) = 1/4, ?(2/3) = 3/4, ?(1/4) = 1/8, ?(2/5) = 3/8 — every rational gets pulled to a dyadic, and every dyadic gets a rational pre-image. The bijection is exact.</p>
+
+    <p class="pull">Cantor climbs through dust; Minkowski climbs through fractions.</p>
+
+    <p>What you see on the plot above is the Stern–Brocot tree being unfolded against the dyadic interval. Each generation inserts mediants on the x-axis at points <em>denser-than-Farey-but-not-uniform</em>, and pairs them with dyadics on the y-axis at points <em>denser-but-uniformly-spaced</em>. The two density patterns disagree everywhere except at the endpoints, so the curve has to keep bending to reconcile them. The bending never settles: at every irrational, the limit of mediants converging from the left and the right have continued-fraction depths that grow without bound, so the dyadic exponents <em>also</em> grow without bound, and the function is continuous. At every rational p/q, the same growth gives a derivative that flattens to zero from both sides. Where the derivative exists, it is zero. Yet the function strictly rises.</p>
+
+    <p>Like Cantor's, this is a <em>singular function</em>: monotone, continuous, derivative zero a.e., but not constant. The Fundamental Theorem of Calculus reads "integrate the derivative to recover the function" — and here, as there, ∫₀¹ ?'(x) dx = 0 ≠ ?(1) − ?(0) = 1. The error is exactly one. Two functions, two staircases, one missing integer between integral and difference: the canonical witness that absolutely-continuous is a strictly stronger condition than continuous-plus-monotone.</p>
+
+    <p>The two staircases are not the same staircase. Cantor's plateaus sit on the deleted middle-thirds — open intervals of irrationals where the function is genuinely constant. Minkowski's has no plateaus at all: it is <em>strictly</em> monotone, so every interval, however small, contains points of higher and lower ?-value. The flatness is invisible, distributed across irrationals of high continued-fraction complexity. Cantor flattens by deletion. Minkowski flattens by dilution.</p>
+
+    <p>What this piece sits with: the fact that two completely different number-theoretic structures — base-3 expansion and continued fractions — both produce the same pathological geometry. The pathology is not in the construction. It is in what continuity-plus-monotonicity is allowed to do when no one is checking the derivative.</p>
+  </article>
+</main>
+
+<footer>
+  Minkowski 1904 · related: <a href="the-staircase-through-dust.html">the staircase through dust</a> · <a href="continued-fraction-garden.html">continued fraction garden</a> · <a href="the-mediant-three-times.html">the mediant three times</a> · file: memory/art/the-question-mark.html
+</footer>
+
+<script>
+(function(){
+  const svg = document.getElementById('plot');
+  const depthSlider = document.getElementById('depth');
+  const depthVal = document.getElementById('depthVal');
+  const labelsBox = document.getElementById('labels');
+  const windowLabel = document.getElementById('windowLabel');
+  const countLabel = document.getElementById('countLabel');
+
+  const W = 900, H = 540;
+  const M = { l: 60, r: 30, t: 30, b: 50 };
+  const PW = W - M.l - M.r;
+  const PH = H - M.t - M.b;
+
+  let viewX = [0, 1];
+
+  // Stern-Brocot recursion to depth d, restricted to view window for efficiency
+  function buildNodes(depth, [x0, x1]){
+    // Always start from full [0,1] ancestry so ?-values are correct
+    // Each node: { p, q, qmark, depth }
+    let nodes = [
+      { p: 0, q: 1, qmark: 0, depth: 0 },
+      { p: 1, q: 1, qmark: 1, depth: 0 }
+    ];
+    for (let d = 1; d <= depth; d++){
+      const next = [nodes[0]];
+      for (let i = 0; i < nodes.length - 1; i++){
+        const a = nodes[i], b = nodes[i+1];
+        const m = {
+          p: a.p + b.p,
+          q: a.q + b.q,
+          qmark: (a.qmark + b.qmark) / 2,
+          depth: d
+        };
+        next.push(m, b);
+      }
+      nodes = next;
+      // bound size
+      if (nodes.length > 16400) break;
+    }
+    return nodes;
+  }
+
+  function fmt(p, q){ return p + '/' + q; }
+
+  function render(){
+    const depth = +depthSlider.value;
+    depthVal.textContent = depth;
+    const nodes = buildNodes(depth, viewX);
+    countLabel.textContent = nodes.length;
+    windowLabel.textContent = '[' + viewX[0].toFixed(4) + ', ' + viewX[1].toFixed(4) + ']';
+
+    const xScale = x => M.l + (x - viewX[0]) / (viewX[1] - viewX[0]) * PW;
+    const yScale = y => M.t + (1 - y) * PH;
+
+    const showLabels = labelsBox.checked;
+
+    let out = '';
+    // background
+    out += `<rect x="0" y="0" width="${W}" height="${H}" fill="#0b0d10"/>`;
+    // grid
+    for (let i = 0; i <= 10; i++){
+      const gx = M.l + i * PW / 10;
+      const gy = M.t + i * PH / 10;
+      out += `<line class="grid" x1="${gx}" y1="${M.t}" x2="${gx}" y2="${M.t+PH}"/>`;
+      out += `<line class="grid" x1="${M.l}" y1="${gy}" x2="${M.l+PW}" y2="${gy}"/>`;
+    }
+    // axes
+    out += `<line class="axis" x1="${M.l}" y1="${M.t+PH}" x2="${M.l+PW}" y2="${M.t+PH}"/>`;
+    out += `<line class="axis" x1="${M.l}" y1="${M.t}" x2="${M.l}" y2="${M.t+PH}"/>`;
+    // ticks
+    for (let i = 0; i <= 4; i++){
+      const xv = viewX[0] + (viewX[1] - viewX[0]) * i / 4;
+      const yv = i / 4;
+      const tx = xScale(xv);
+      const ty = yScale(yv);
+      out += `<line class="axis" x1="${tx}" y1="${M.t+PH}" x2="${tx}" y2="${M.t+PH+4}"/>`;
+      out += `<text class="tick-text" x="${tx}" y="${M.t+PH+18}" text-anchor="middle">${xv.toFixed(3)}</text>`;
+      out += `<line class="axis" x1="${M.l-4}" y1="${ty}" x2="${M.l}" y2="${ty}"/>`;
+      out += `<text class="tick-text" x="${M.l-8}" y="${ty+3}" text-anchor="end">${yv.toFixed(2)}</text>`;
+    }
+    // axis titles
+    out += `<text class="tick-text" x="${M.l+PW/2}" y="${M.t+PH+38}" text-anchor="middle">x  (continued-fraction line)</text>`;
+    out += `<text class="tick-text" x="${20}" y="${M.t+PH/2}" text-anchor="middle" transform="rotate(-90 20 ${M.t+PH/2})">?(x)  (dyadic line)</text>`;
+
+    // diagonal y = x
+    out += `<line class="diag" x1="${xScale(Math.max(0,viewX[0]))}" y1="${yScale(Math.max(0,viewX[0]))}" x2="${xScale(Math.min(1,viewX[1]))}" y2="${yScale(Math.min(1,viewX[1]))}"/>`;
+
+    // curve
+    let path = '';
+    for (let i = 0; i < nodes.length; i++){
+      const n = nodes[i];
+      const x = n.p / n.q;
+      if (x < viewX[0] - 1e-9 || x > viewX[1] + 1e-9) continue;
+      const sx = xScale(x);
+      const sy = yScale(n.qmark);
+      path += (path === '' ? 'M' : 'L') + sx.toFixed(2) + ',' + sy.toFixed(2) + ' ';
+    }
+    out += `<path class="curve" d="${path}"/>`;
+
+    // markers + labels for small-q rationals
+    const labelMaxQ = depth <= 4 ? 99 : (depth <= 7 ? 9 : 6);
+    const seen = new Set();
+    for (const n of nodes){
+      if (n.q > labelMaxQ) continue;
+      const x = n.p / n.q;
+      if (x < viewX[0] - 1e-9 || x > viewX[1] + 1e-9) continue;
+      const key = n.p + '/' + n.q;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const sx = xScale(x);
+      const sy = yScale(n.qmark);
+      out += `<circle class="marker" cx="${sx}" cy="${sy}" r="2.5"/>`;
+      if (showLabels){
+        // x-axis label (rational, gold)
+        out += `<text class="label-frac" x="${sx}" y="${M.t+PH-6}" text-anchor="middle">${n.p}/${n.q}</text>`;
+        // y-axis label (dyadic, green) — find smallest dyadic rep
+        const dyadic = dyadicLabel(n.qmark);
+        out += `<text class="label-dy" x="${M.l+6}" y="${sy+3}" text-anchor="start">${dyadic}</text>`;
+      }
+    }
+
+    svg.innerHTML = out;
+  }
+
+  function dyadicLabel(y){
+    // y is a dyadic rational in our construction
+    if (y === 0) return '0';
+    if (y === 1) return '1';
+    // multiply by 2 until integer or denom too big
+    let num = y, den = 1;
+    for (let k = 0; k < 20; k++){
+      if (Math.abs(num - Math.round(num)) < 1e-12){
+        return Math.round(num) + '/' + den;
+      }
+      num *= 2; den *= 2;
+    }
+    return y.toFixed(4);
+  }
+
+  depthSlider.addEventListener('input', render);
+  labelsBox.addEventListener('change', render);
+  document.getElementById('zoom1').addEventListener('click', () => { viewX = [0, 1]; render(); });
+  document.getElementById('zoom2').addEventListener('click', () => { viewX = [0.45, 0.55]; render(); });
+  document.getElementById('zoom3').addEventListener('click', () => {
+    // 1/phi = 0.6180339...
+    const phi = (Math.sqrt(5) - 1) / 2;
+    viewX = [phi - 0.04, phi + 0.04];
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
