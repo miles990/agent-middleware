@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Popcorn Function — A Spike at Every Rational</title>
+<style>
+  :root{
+    --bg:#0f0e0c; --ink:#e9e2d3; --dim:#8a8273;
+    --rule:#2a2620; --accent:#e3b04b; --irr:#5aa1b8;
+  }
+  *{box-sizing:border-box}
+  html,body{background:var(--bg);color:var(--ink);margin:0;font:15px/1.55 ui-serif,Georgia,serif}
+  main{max-width:780px;margin:0 auto;padding:48px 28px 96px}
+  h1{font:600 26px/1.25 ui-serif,Georgia,serif;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-style:italic;margin-bottom:28px}
+  .panel{background:#15140f;border:1px solid var(--rule);border-radius:6px;padding:18px;margin:18px 0}
+  svg{display:block;width:100%;height:auto;background:#0a0907;border-radius:4px}
+  .controls{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-top:14px;font:13px ui-sans-serif,system-ui,sans-serif;color:var(--dim)}
+  .controls label{display:flex;flex-direction:column;gap:4px}
+  .controls input[type=range]{width:200px;accent-color:var(--accent)}
+  .val{color:var(--ink);font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:18px;margin-top:10px;font:12px ui-sans-serif,system-ui,sans-serif;color:var(--dim)}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  p{margin:14px 0}
+  .prose p:first-of-type:first-letter{font-size:32px;float:left;line-height:.9;padding:4px 8px 0 0;color:var(--accent)}
+  .frame{color:var(--accent)}
+  hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
+  .pair{font:13px ui-sans-serif,system-ui,sans-serif;color:var(--dim);display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}
+  .pair b{color:var(--ink);font-weight:600}
+  .inspect{font:13px ui-monospace,SF Mono,Menlo,monospace;color:var(--ink);margin-top:8px;min-height:1.4em}
+  .inspect .k{color:var(--dim)}
+  footer{color:var(--dim);font:12px ui-sans-serif,system-ui,sans-serif;margin-top:42px}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--rule)}
+</style>
+</head>
+<body>
+<main>
+  <h1>The Popcorn Function</h1>
+  <div class="sub">A spike at every rational, silence at every irrational, height that remembers the denominator.</div>
+
+  <div class="panel">
+    <svg id="plot" viewBox="0 0 800 360" preserveAspectRatio="none" aria-label="Thomae popcorn function plot"></svg>
+    <div class="controls">
+      <label>q<sub>max</sub> <span class="val" id="qval">40</span>
+        <input type="range" id="qmax" min="2" max="160" value="40">
+      </label>
+      <label>highlight x ≈ <span class="val" id="hxval">0.6180</span>
+        <input type="range" id="hx" min="0" max="1000" value="618">
+      </label>
+      <label style="flex-direction:row;gap:6px;align-items:center">
+        <input type="checkbox" id="color" checked> color by q
+      </label>
+    </div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--accent)"></span>rational p/q, spike height 1/q</span>
+      <span><span class="swatch" style="background:var(--irr)"></span>irrational baseline f(x)=0</span>
+    </div>
+    <div class="inspect" id="inspect"></div>
+  </div>
+
+  <div class="prose">
+    <p>Carl Johannes Thomae wrote it down in 1875. For any x in [0,1] reduce it to lowest terms p/q if you can; assign 1/q. If you cannot — if x is irrational — assign zero. The resulting function looks like a forest of vertical spikes hung from a flat floor: taller spikes at small denominators, shorter ones crowding into the gaps, an infinite descent of crowding toward every neighborhood.</p>
+
+    <p>Here is the surprise. The function is <span class="frame">continuous at every irrational</span> and <span class="frame">discontinuous at every rational</span>. Near any irrational point, only finitely many rationals have denominator ≤ q, so almost all neighbors are short spikes and irrational zeros — the function is squeezed to zero in the limit. Near any rational p/q, no matter how small a window you pick, the spike at p/q sits at height 1/q while neighbors come arbitrarily close to zero. The break can never be closed.</p>
+
+    <p>The Cantor staircase moves only on a measure-zero set. The popcorn function breaks only on a measure-zero set. One is continuity violated by an absent derivative; the other is continuity preserved by an absent denominator. They share a floorplan and disagree about which room is the kitchen.</p>
+
+    <p>What the picture shows: a slider over q<sub>max</sub> reveals more spikes — but each new one is shorter than its predecessors at the same scale. The denser the rationals visible, the closer the silhouette presses to the baseline. Push q<sub>max</sub> high enough and you can <em>see</em> the limit: the irrationals win, the function flattens, the staircase of arithmetic dissolves into the measure-zero noise it always was.</p>
+
+    <p>The popcorn function is not pathology. It is the calmest thing in the lineage. Every other piece here — Weierstrass, Cantor, Brownian, Conway's base-13 — refuses some classical expectation. Popcorn obeys: it is continuous on a set of full measure, and where it isn't, it apologizes by being very short. It is the function that tells the truth about how dense the rationals actually are.</p>
+
+    <p>Stand on an irrational point and the spikes melt around you. Stand on a rational and you are the only thing standing.</p>
+  </div>
+
+  <hr>
+  <div class="pair">
+    <span><b>Pairs with:</b> <a href="the-staircase-through-dust.html">the staircase through dust</a> (motion on measure-zero) — the popcorn breaks on measure-zero, the staircase moves on it.</span>
+    <span><b>Echoes:</b> <a href="continued-fraction-garden.html">continued fraction garden</a> — the height 1/q is the same denominator that determines how well an irrational approximates it.</span>
+  </div>
+
+  <footer>
+    art/the-popcorn-function.html · 2026-06-03 · math-aesthetic lineage · single-file HTML, vanilla SVG
+  </footer>
+</main>
+
+<script>
+(() => {
+  const svg = document.getElementById('plot');
+  const W=800, H=360, PAD_L=44, PAD_R=14, PAD_T=18, PAD_B=36;
+  const PW = W-PAD_L-PAD_R, PH = H-PAD_T-PAD_B;
+
+  const gcd = (a,b) => b===0 ? a : gcd(b, a%b);
+
+  function colorForQ(q, on){
+    if(!on) return 'var(--accent)';
+    // map q in [2..qmax] to a hue gradient amber → cyan, capped
+    const t = Math.min(1, (q-2)/40);
+    // interp between accent (227,176,75) and irr (90,161,184)
+    const r = Math.round(227 + (90-227)*t);
+    const g = Math.round(176 + (161-176)*t);
+    const b = Math.round(75 + (184-75)*t);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function render(){
+    const qmax = +document.getElementById('qmax').value;
+    const hxRaw = +document.getElementById('hx').value / 1000;
+    const colorOn = document.getElementById('color').checked;
+    document.getElementById('qval').textContent = qmax;
+    document.getElementById('hxval').textContent = hxRaw.toFixed(4);
+
+    let parts = [];
+    // axes
+    parts.push(`<line x1="${PAD_L}" y1="${PAD_T+PH}" x2="${PAD_L+PW}" y2="${PAD_T+PH}" stroke="#2a2620" stroke-width="1"/>`);
+    parts.push(`<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T+PH}" stroke="#2a2620" stroke-width="1"/>`);
+    // gridlines + ticks
+    for(let i=0;i<=5;i++){
+      const x = PAD_L + (PW*i/5);
+      parts.push(`<line x1="${x}" y1="${PAD_T+PH}" x2="${x}" y2="${PAD_T+PH+4}" stroke="#3a342a"/>`);
+      parts.push(`<text x="${x}" y="${PAD_T+PH+18}" text-anchor="middle" fill="#8a8273" font-size="11" font-family="ui-monospace,monospace">${(i/5).toFixed(1)}</text>`);
+    }
+    // y ticks at 1, 1/2, 1/3, 1/4
+    [[1,'1'],[1/2,'½'],[1/3,'⅓'],[1/4,'¼'],[1/8,'⅛']].forEach(([v,lab])=>{
+      const y = PAD_T + PH - PH*v;
+      parts.push(`<line x1="${PAD_L-4}" y1="${y}" x2="${PAD_L}" y2="${y}" stroke="#3a342a"/>`);
+      parts.push(`<text x="${PAD_L-8}" y="${y+4}" text-anchor="end" fill="#8a8273" font-size="11" font-family="ui-serif,serif">${lab}</text>`);
+    });
+
+    // baseline label for irrationals
+    parts.push(`<text x="${PAD_L+PW-6}" y="${PAD_T+PH-4}" text-anchor="end" fill="#5aa1b8" font-size="10" font-family="ui-sans-serif,system-ui,sans-serif" font-style="italic">irrationals → 0</text>`);
+
+    // spikes
+    for(let q=1; q<=qmax; q++){
+      for(let p=0; p<=q; p++){
+        if(gcd(p,q)!==1 && !(p===0&&q===1) && !(p===1&&q===1)) continue;
+        // reduce: only output if p/q is in lowest terms; gcd(0,1)=1, gcd(1,1)=1 handled
+        if(q===1 && p!==0 && p!==1) continue;
+        const x = p/q;
+        const h = 1/q;
+        const X = PAD_L + PW*x;
+        const Y0 = PAD_T + PH;
+        const Y1 = PAD_T + PH - PH*h;
+        const col = colorForQ(q, colorOn);
+        const op = Math.max(0.35, 1 - Math.log(q)/Math.log(qmax+1));
+        parts.push(`<line x1="${X}" y1="${Y0}" x2="${X}" y2="${Y1}" stroke="${col}" stroke-width="1" opacity="${op.toFixed(3)}"/>`);
+        parts.push(`<circle cx="${X}" cy="${Y1}" r="${q<=8?2.4:q<=20?1.8:1.2}" fill="${col}" opacity="${op.toFixed(3)}"/>`);
+      }
+    }
+
+    // highlight one x
+    const hx = hxRaw;
+    const HX = PAD_L + PW*hx;
+    parts.push(`<line x1="${HX}" y1="${PAD_T}" x2="${HX}" y2="${PAD_T+PH}" stroke="#e9e2d3" stroke-width="0.6" stroke-dasharray="2 3" opacity="0.5"/>`);
+    parts.push(`<text x="${HX+4}" y="${PAD_T+10}" fill="#e9e2d3" font-size="11" font-family="ui-monospace,monospace">x = ${hx.toFixed(4)}</text>`);
+
+    // inspect text — find best rational approx within qmax via Stern-Brocot-ish scan
+    let best = {p:0,q:1,err:hx};
+    for(let q=1;q<=qmax;q++){
+      const p = Math.round(hx*q);
+      if(gcd(Math.abs(p),q)!==1 && q>1) continue;
+      const err = Math.abs(hx - p/q);
+      if(err < best.err){ best = {p,q,err}; }
+    }
+    const exactMatch = best.err < 1e-9;
+    const ins = document.getElementById('inspect');
+    if(exactMatch){
+      ins.innerHTML = `<span class="k">at x =</span> ${best.p}/${best.q} <span class="k">→ f(x) =</span> 1/${best.q} = ${(1/best.q).toFixed(4)} <span class="k">·</span> <span style="color:var(--accent)">discontinuity</span>`;
+    } else {
+      ins.innerHTML = `<span class="k">at x ≈</span> ${hx.toFixed(4)} <span class="k">(closest p/q with q≤${qmax}:</span> ${best.p}/${best.q}, err ${best.err.toExponential(2)}<span class="k">) → f(x) =</span> 0 <span class="k">·</span> <span style="color:var(--irr)">continuous</span>`;
+    }
+
+    svg.innerHTML = parts.join('');
+  }
+
+  document.getElementById('qmax').addEventListener('input', render);
+  document.getElementById('hx').addEventListener('input', render);
+  document.getElementById('color').addEventListener('input', render);
+  render();
+})();
+</script>
+</body>
+</html>
