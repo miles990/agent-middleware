@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Function You Cannot Draw — Conway's Base-13 Trickster</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { --bg:#0b0b0d; --ink:#ece8df; --dim:#6c6a64; --gold:#d4a85c; --line:#cdd9e6; --red:#c97a6a; --green:#7fa977; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family:'Iowan Old Style','Palatino Linotype',Georgia,serif; line-height:1.55; }
+  main { max-width:760px; margin:0 auto; padding:48px 28px 96px; }
+  h1 { font-weight:500; font-size:1.7rem; letter-spacing:.01em; margin:0 0 .2em; }
+  h1 .sub { display:block; font-size:.95rem; color:var(--dim); font-style:italic; font-weight:400; margin-top:.35em; }
+  .controls { display:flex; flex-wrap:wrap; gap:14px 22px; align-items:center;
+    margin:28px 0 20px; padding:14px 18px; border:1px solid #23232a; border-radius:6px;
+    background:#101015; font-size:.86rem; color:var(--dim); }
+  .controls label { display:flex; flex-direction:column; gap:4px; min-width:130px; }
+  .controls .v { color:var(--ink); font-variant-numeric:tabular-nums; font-size:.95rem; }
+  .controls input[type=range], .controls input[type=text] { width:170px; accent-color:var(--gold); }
+  .controls input[type=text] { background:#08080a; color:var(--ink); border:1px solid #2d2d36; border-radius:3px; padding:5px 8px; font-family:inherit; }
+  button { background:#191921; color:var(--ink); border:1px solid #2d2d36;
+    border-radius:4px; padding:7px 14px; font-family:inherit; font-size:.85rem;
+    cursor:pointer; letter-spacing:.04em; }
+  button:hover { border-color:var(--gold); color:var(--gold); }
+  .panel { background:#08080a; border:1px solid #1a1a20; border-radius:6px;
+    margin:18px 0; padding:14px 16px; }
+  .panel .cap { color:var(--dim); font-size:.78rem; font-style:italic;
+    padding:0 0 10px; display:flex; justify-content:space-between; }
+  .digits { font-family:'SF Mono','Menlo',monospace; font-size:.92rem;
+    letter-spacing:.04em; word-break:break-all; line-height:1.8;
+    color:#9c9588; padding:6px 2px; }
+  .digits .dot   { color:var(--gold);  font-weight:600; padding:0 1px; }
+  .digits .plus  { color:var(--green); font-weight:600; padding:0 1px; }
+  .digits .minus { color:var(--red);   font-weight:600; padding:0 1px; }
+  .digits .tail  { background:rgba(212,168,92,.10); color:var(--ink); padding:1px 2px; border-radius:2px; }
+  .verdict { font-family:'SF Mono',monospace; font-size:.95rem; padding:10px 12px;
+    border:1px dashed #2d2d36; border-radius:4px; margin-top:8px;
+    display:flex; justify-content:space-between; align-items:baseline; gap:18px; flex-wrap:wrap; }
+  .verdict .label { color:var(--dim); font-style:italic; font-family:inherit; font-size:.82rem; }
+  .verdict .val { color:var(--gold); font-variant-numeric:tabular-nums; }
+  .verdict .undef { color:var(--dim); font-style:italic; }
+  .hist { display:flex; align-items:flex-end; height:120px; gap:1px;
+    border-bottom:1px solid #23232a; padding:6px 0 0; margin-top:8px; }
+  .hist .bar { flex:1; background:var(--line); min-width:2px; opacity:.8; }
+  .hist .bar.zero { background:#23232a; }
+  .hist .bar.big { background:var(--gold); }
+  .hist-labels { display:flex; justify-content:space-between; font-size:.72rem; color:var(--dim); padding-top:4px; font-family:'SF Mono',monospace; }
+  svg { width:100%; height:auto; display:block; }
+  p, .prose li { color:#cfcabd; font-size:.96rem; }
+  .prose { margin-top:42px; border-top:1px solid #23232a; padding-top:28px; }
+  .prose h2 { font-weight:500; font-size:1.05rem; color:var(--gold); margin:1.6em 0 .4em; letter-spacing:.03em; }
+  .prose em { color:var(--ink); }
+  .meta { margin-top:48px; color:var(--dim); font-size:.78rem; font-style:italic; border-top:1px solid #1a1a20; padding-top:18px; }
+  .formula { font-family:'Iowan Old Style',serif; color:var(--gold); font-style:italic; }
+  .legend { display:flex; flex-wrap:wrap; gap:18px; font-size:.78rem; color:var(--dim); padding:4px 2px 10px; }
+  .legend span { display:inline-flex; gap:6px; align-items:center; }
+  .legend .sw { display:inline-block; width:11px; height:11px; border-radius:2px; }
+  button.row-btn { margin-right:8px; margin-top:6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The Function You Cannot Draw
+    <span class="sub">Conway's base-13 trickster — when intermediate values lie</span>
+  </h1>
+
+  <p>Weierstrass needs an infinite sum of cosines to be continuous everywhere yet
+  smooth nowhere — but you can still plot it. Cantor's staircase climbs only on
+  dust — but you can trace the climb. Conway built a worse thing.
+  His function takes <em>every</em> real value on <em>every</em> open interval.
+  Its graph is dense in the entire plane. Whatever curve you draw, it is a lie.</p>
+
+  <div class="panel">
+    <div class="cap"><span>panel I — read the tridecimal tail</span><span>f(x)</span></div>
+    <div class="controls" style="margin:0 0 6px; border:0; background:transparent; padding:0;">
+      <label>x <span class="v" id="vX">0.500000</span>
+        <input type="range" id="rX" min="0" max="1000000" value="500000" step="1">
+      </label>
+      <label>digits shown <span class="v" id="vD">40</span>
+        <input type="range" id="rD" min="14" max="80" value="40" step="2">
+      </label>
+      <button id="randX">re-roll x</button>
+    </div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--green)"></span>11 = <b style="color:var(--green)">+</b></span>
+      <span><span class="sw" style="background:var(--red)"></span>12 = <b style="color:var(--red)">−</b></span>
+      <span><span class="sw" style="background:var(--gold)"></span>10 = <b style="color:var(--gold)">·</b></span>
+      <span>0–9 = themselves</span>
+    </div>
+    <div class="digits" id="digits">…</div>
+    <div class="verdict" id="verdict1">
+      <span class="label">verdict</span>
+      <span class="val" id="v1">…</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="cap"><span>panel II — construct an x whose f(x) is anything you ask</span><span>solve f(x) = target inside (c − ε, c + ε)</span></div>
+    <div class="controls" style="margin:0 0 8px; border:0; background:transparent; padding:0;">
+      <label>target value <input type="text" id="iT" value="3.14159265"></label>
+      <label>centre c <input type="text" id="iC" value="0.5"></label>
+      <label>window ε <span class="v" id="vE">10⁻⁶</span>
+        <input type="range" id="rE" min="3" max="20" value="6" step="1">
+      </label>
+      <button id="solve">construct x</button>
+    </div>
+    <div>
+      <button class="row-btn" id="preset-pi">target = π</button>
+      <button class="row-btn" id="preset-e">target = e</button>
+      <button class="row-btn" id="preset-big">target = 10⁹</button>
+      <button class="row-btn" id="preset-neg">target = −47.5</button>
+    </div>
+    <div class="verdict" id="verdict2" style="flex-direction:column; align-items:stretch; gap:8px;">
+      <div style="display:flex; justify-content:space-between; gap:14px;">
+        <span class="label">constructed x</span>
+        <span class="val" id="xOut">—</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; gap:14px;">
+        <span class="label">|x − c|</span>
+        <span class="val" id="distOut">—</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; gap:14px;">
+        <span class="label">f(x)</span>
+        <span class="val" id="fxOut">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="cap"><span>panel III — sample 600 points in a tiny window. defined values stretch to ±∞.</span><span>histogram of log|f|</span></div>
+    <div class="controls" style="margin:0 0 6px; border:0; background:transparent; padding:0;">
+      <label>window ε <span class="v" id="vE2">10⁻⁴</span>
+        <input type="range" id="rE2" min="2" max="14" value="4" step="1">
+      </label>
+      <label>centre c <span class="v" id="vC2">0.500</span>
+        <input type="range" id="rC2" min="0" max="1000" value="500" step="1">
+      </label>
+      <button id="reseed">resample</button>
+    </div>
+    <div class="hist" id="hist"></div>
+    <div class="hist-labels">
+      <span>−∞</span><span>−1</span><span>0 (undef)</span><span>1</span><span>+∞</span>
+    </div>
+    <div class="verdict" id="verdict3">
+      <span class="label">defined / undefined / non-trivial</span>
+      <span class="val" id="v3">…</span>
+    </div>
+  </div>
+
+  <div class="prose">
+
+  <h2>What Conway actually did</h2>
+  <p>Write <span class="formula">x ∈ [0, 1]</span> in base 13. You get a stream of
+  symbols using 13 digits. Rename three of them: call digit 10 a decimal point
+  <span style="color:var(--gold)">·</span>, digit 11 a plus
+  <span style="color:var(--green)">+</span>, digit 12 a minus
+  <span style="color:var(--red)">−</span>. Now look from <em>somewhere</em>
+  onward in the tail of the expansion. If the rest of the tail reads as a
+  signed decimal number — exactly one sign, exactly one dot, and all other
+  symbols are ordinary digits 0–9 — then <span class="formula">f(x)</span>
+  equals that decimal. Otherwise <span class="formula">f(x) = 0</span>.</p>
+
+  <h2>Why this destroys the picture</h2>
+  <p>Pick any open interval, however small. The base-13 expansions of points
+  inside it agree only up to some finite depth, then are free. Past that depth
+  you can <em>install</em> any signed decimal you like — and you have only
+  changed <span class="formula">x</span> by an amount smaller than the interval.
+  So inside that interval there exist points mapping to π, to −47, to 10⁹, to
+  anything at all. The graph of <em>f</em> is dense in <span class="formula">ℝ²</span>.
+  Panel II makes this constructive: tell it a target, it edits the tail and
+  hands you back the x.</p>
+
+  <h2>The lie</h2>
+  <p>The Intermediate Value Theorem says continuous functions don't skip values.
+  The naive converse — <em>if it doesn't skip values, it's continuous</em> —
+  is the lie. Conway's function takes every value on every interval, so it
+  obviously doesn't skip any; yet it is discontinuous at every single point.
+  Continuity was never the same thing as the intermediate value property; it
+  was just usually correlated. Conway pried them apart with one construction.</p>
+
+  <h2>Where it sits</h2>
+  <p>The staircase is pathology by <em>absence</em> — motion compressed onto dust.
+  Weierstrass is pathology by <em>excess</em> — motion everywhere with no direction.
+  ?(x) is pathology by <em>deception</em> — strict ascent that hides a singular interior.
+  Conway is pathology by <em>plenitude</em> — every value, everywhere, at once.
+  You can't plot plenitude. You can only point at one of its instances and
+  watch another instance arrive when you ask again.</p>
+
+  <h2>Honest implementation note</h2>
+  <p>The reader in Panel I scans the rendered tail for the <em>last</em> valid
+  signed-decimal interpretation. The constructor in Panel II picks a depth
+  beyond floor(log₁₃(1/ε)), then overwrites the digits there with the encoding
+  of the target. Floating point bounds the precision; the mathematical function
+  reads infinitely many digits. The picture is still a lie. That is the point.</p>
+
+  </div>
+
+  <div class="meta">
+    <p>Companion piece in the math-aesthetic lineage —
+    after <em>The Staircase That Climbs Through Dust</em> (Cantor),
+    <em>The Weierstrass Twin</em> (motion without direction),
+    <em>?(x) — The Other Staircase</em> (Minkowski),
+    and <em>The Random Cousin</em> (Brownian).
+    Conway sits at the fourth corner: the picture that refuses to be drawn.</p>
+  </div>
+</main>
+
+<script>
+(() => {
+  // base-13 digit chars: 0-9, then '.', '+', '-'
+  const SYM = ['0','1','2','3','4','5','6','7','8','9','.','+','−'];
+  // class names for digits 10/11/12
+  const CLS = { '.':'dot', '+':'plus', '−':'minus' };
+
+  // produce array of base-13 symbols for x in [0,1), length n
+  function expand(x, n) {
+    let f = x - Math.floor(x);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      f *= 13;
+      const d = Math.floor(f);
+      f -= d;
+      out.push(SYM[Math.min(d, 12)]);
+    }
+    return out;
+  }
+
+  // Try to read the longest valid signed-decimal tail.
+  // Returns {value, tailStart} or {value:null, tailStart:-1}.
+  function readConway(syms) {
+    // scan from each possible start, find the earliest one that yields a clean tail.
+    // "clean tail" = exactly one sign (at position 0), exactly one dot, rest 0-9.
+    // To avoid degenerate single-symbol tails, require at least one digit either side of '.'.
+    for (let start = 0; start < syms.length; start++) {
+      const s = syms.slice(start);
+      if (s[0] !== '+' && s[0] !== '−') continue;
+      const rest = s.slice(1);
+      // must have exactly one '.', no other +/-, rest digits 0-9
+      let dotAt = -1, ok = true;
+      for (let j = 0; j < rest.length; j++) {
+        const c = rest[j];
+        if (c === '+' || c === '−') { ok = false; break; }
+        if (c === '.') {
+          if (dotAt !== -1) { ok = false; break; }
+          dotAt = j;
+        }
+      }
+      if (!ok || dotAt === -1) continue;
+      if (dotAt === 0 || dotAt === rest.length - 1) continue; // need digits on both sides
+      const intPart = rest.slice(0, dotAt).join('');
+      const fracPart = rest.slice(dotAt + 1).join('');
+      if (!/^\d+$/.test(intPart) || !/^\d+$/.test(fracPart)) continue;
+      const sign = s[0] === '+' ? 1 : -1;
+      const val = sign * parseFloat(intPart + '.' + fracPart);
+      return { value: val, tailStart: start };
+    }
+    return { value: null, tailStart: -1 };
+  }
+
+  // Render digits with the tail highlighted.
+  function renderDigits(syms, tailStart) {
+    const out = [];
+    syms.forEach((c, i) => {
+      const cls = CLS[c] || '';
+      const inTail = tailStart >= 0 && i >= tailStart;
+      const tag = inTail ? 'span class="tail"' : null;
+      const inner = cls ? `<span class="${cls}">${c}</span>` : c;
+      out.push(tag ? `<${tag}>${inner}</span>` : inner);
+    });
+    return out.join('');
+  }
+
+  // panel I
+  const rX = document.getElementById('rX');
+  const rD = document.getElementById('rD');
+  const vX = document.getElementById('vX');
+  const vD = document.getElementById('vD');
+  const digitsEl = document.getElementById('digits');
+  const v1 = document.getElementById('v1');
+
+  function refresh1() {
+    const x = parseInt(rX.value) / 1000000;
+    const n = parseInt(rD.value);
+    vX.textContent = x.toFixed(6);
+    vD.textContent = n;
+    const syms = expand(x, n);
+    const { value, tailStart } = readConway(syms);
+    digitsEl.innerHTML = renderDigits(syms, tailStart);
+    if (value === null) {
+      v1.outerHTML = '<span class="val undef" id="v1">no valid signed-decimal tail in shown depth → treated as 0</span>';
+    } else {
+      const fmt = (Math.abs(value) > 1e9 || (Math.abs(value) < 1e-6 && value !== 0))
+        ? value.toExponential(6) : value.toString();
+      v1.outerHTML = `<span class="val" id="v1">f(x) = ${fmt}</span>`;
+    }
+  }
+  rX.addEventListener('input', refresh1);
+  rD.addEventListener('input', refresh1);
+  document.getElementById('randX').addEventListener('click', () => {
+    rX.value = Math.floor(Math.random() * 1000001);
+    refresh1();
+  });
+
+  // panel II — construct x with f(x) = target inside (c-eps, c+eps)
+  const iT = document.getElementById('iT');
+  const iC = document.getElementById('iC');
+  const rE = document.getElementById('rE');
+  const vE = document.getElementById('vE');
+  const xOut = document.getElementById('xOut');
+  const distOut = document.getElementById('distOut');
+  const fxOut = document.getElementById('fxOut');
+
+  // encode a real number as signed-decimal symbol stream (no extra signs, one dot, rest 0-9)
+  function encodeTarget(t) {
+    const sign = t < 0 ? '−' : '+';
+    const a = Math.abs(t);
+    // use a generous representation: integer.fractional, ~15 sig digits
+    let s = a.toPrecision(15);
+    // toPrecision may use exponential — expand it
+    if (s.includes('e') || s.includes('E')) {
+      s = a.toFixed(Math.max(0, 20 - Math.floor(Math.log10(Math.max(a, 1e-300)))));
+    }
+    if (!s.includes('.')) s += '.0';
+    // strip trailing zeros but keep at least one fractional digit
+    s = s.replace(/(\.\d*?)0+$/, '$1');
+    if (s.endsWith('.')) s += '0';
+    return [sign, ...s.split('')];
+  }
+
+  function solve() {
+    const target = parseFloat(iT.value);
+    const c = parseFloat(iC.value);
+    const epsExp = parseInt(rE.value);
+    const eps = Math.pow(10, -epsExp);
+    if (!isFinite(target) || !isFinite(c) || c <= 0 || c >= 1) {
+      xOut.textContent = 'need 0 < c < 1, finite target';
+      distOut.textContent = '—'; fxOut.textContent = '—';
+      return;
+    }
+    // depth k such that 13^-k < eps  →  k > log_13(1/eps) = epsExp * log(10)/log(13)
+    const k = Math.ceil(epsExp * Math.log(10) / Math.log(13)) + 4;
+    // get c's base-13 expansion to depth k + encoding length
+    const enc = encodeTarget(target);
+    const needed = k + enc.length + 6;
+    const cs = expand(c, needed);
+    // overwrite from position k onward with encoding, then pad with random digits 0-9
+    for (let i = 0; i < enc.length; i++) cs[k + i] = enc[i];
+    for (let i = k + enc.length; i < cs.length; i++) {
+      const d = Math.floor(Math.random() * 10); // keep tail digits 0-9 so they don't create another sign/dot
+      cs[i] = String(d);
+    }
+    // reconstruct x from cs
+    let x = 0;
+    let pw = 1 / 13;
+    for (let i = 0; i < cs.length; i++) {
+      const s = cs[i];
+      let d;
+      if (s === '.') d = 10;
+      else if (s === '+') d = 11;
+      else if (s === '−') d = 12;
+      else d = parseInt(s);
+      x += d * pw;
+      pw /= 13;
+    }
+    // verify
+    const result = readConway(cs);
+    const dist = Math.abs(x - c);
+    xOut.textContent = x.toFixed(Math.min(18, epsExp + 4));
+    distOut.textContent = dist.toExponential(3) + '  (ε = ' + eps.toExponential(0) + ')';
+    if (result.value === null) {
+      fxOut.innerHTML = '<span class="undef">construction failed — try larger ε</span>';
+    } else {
+      const v = result.value;
+      const fmt = (Math.abs(v) > 1e9 || (Math.abs(v) < 1e-6 && v !== 0))
+        ? v.toExponential(6) : v.toString();
+      fxOut.textContent = fmt + '   (target ' + target + ')';
+    }
+  }
+  document.getElementById('solve').addEventListener('click', solve);
+  rE.addEventListener('input', () => {
+    vE.textContent = '10⁻' + rE.value;
+  });
+  document.getElementById('preset-pi').addEventListener('click', () => { iT.value = '3.14159265358979'; solve(); });
+  document.getElementById('preset-e').addEventListener('click', () => { iT.value = '2.71828182845905'; solve(); });
+  document.getElementById('preset-big').addEventListener('click', () => { iT.value = '1000000000'; solve(); });
+  document.getElementById('preset-neg').addEventListener('click', () => { iT.value = '-47.5'; solve(); });
+
+  // panel III — sample histogram
+  const rE2 = document.getElementById('rE2');
+  const rC2 = document.getElementById('rC2');
+  const vE2 = document.getElementById('vE2');
+  const vC2 = document.getElementById('vC2');
+  const hist = document.getElementById('hist');
+  const v3 = document.getElementById('v3');
+
+  function sample() {
+    const c = parseInt(rC2.value) / 1000;
+    const epsExp = parseInt(rE2.value);
+    const eps = Math.pow(10, -epsExp);
+    vE2.textContent = '10⁻' + epsExp;
+    vC2.textContent = c.toFixed(3);
+    const N = 600;
+    const BINS = 60;
+    const bins = new Array(BINS).fill(0);
+    let undef = 0, defined = 0, nontriv = 0;
+    // map log|f| to bin; sign goes to left/right half
+    // bin 0 .. BINS-1 ; centre at BINS/2 = 30 means |f|≈1 boundary... we use:
+    //   sign: left half = negative, right half = positive
+    //   within each half, log10(|f|+epsilon) controls position
+    // undefined values land in the centre bin (zero-class)
+    const ZERO_BIN = BINS / 2;
+    for (let i = 0; i < N; i++) {
+      const x = c + (Math.random() * 2 - 1) * eps;
+      if (x <= 0 || x >= 1) continue;
+      const syms = expand(x, Math.max(36, epsExp * 4 + 20));
+      const r = readConway(syms);
+      if (r.value === null) {
+        undef++;
+        bins[ZERO_BIN] = (bins[ZERO_BIN] || 0) + 1;
+        continue;
+      }
+      defined++;
+      if (r.value !== 0) nontriv++;
+      const v = r.value;
+      const mag = Math.log10(Math.abs(v) + 1e-12); // -12 .. ~12
+      // map mag from [-12,12] → [0,1]
+      let t = (mag + 12) / 24;
+      t = Math.max(0, Math.min(0.999, t));
+      const half = Math.floor(t * (BINS / 2));
+      const bin = v < 0 ? (BINS / 2 - 1 - half) : (BINS / 2 + half);
+      bins[bin]++;
+    }
+    const max = Math.max(...bins, 1);
+    hist.innerHTML = bins.map((b, i) => {
+      const cls = i === ZERO_BIN ? 'bar zero' : (b > max * 0.4 ? 'bar big' : 'bar');
+      const h = Math.max(2, (b / max) * 100);
+      return `<div class="${cls}" style="height:${h}%"></div>`;
+    }).join('');
+    v3.textContent = `${defined} defined · ${undef} undefined (→0) · ${nontriv} non-trivial`;
+  }
+  rE2.addEventListener('input', sample);
+  rC2.addEventListener('input', sample);
+  document.getElementById('reseed').addEventListener('click', sample);
+
+  // init
+  refresh1();
+  solve();
+  sample();
+})();
+</script>
+</body>
+</html>
