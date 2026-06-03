@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>The Fairness Fold — Thue–Morse</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --paper: #f6f3ec;
+    --rule: #b8b0a0;
+    --gold: #b88a2e;
+    --warm: #c14b2a;
+    --dim: #6a6358;
+  }
+  html, body { background: var(--paper); color: var(--ink); margin: 0; }
+  body {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    line-height: 1.55;
+    padding: 2.2rem 1.4rem 4rem;
+    max-width: 920px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 2.05rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.15rem;
+  }
+  .sub {
+    color: var(--dim);
+    font-style: italic;
+    margin: 0 0 1.6rem;
+    font-size: 1.02rem;
+  }
+  .controls {
+    display: flex;
+    gap: 1.1rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 0.8rem 0 0.4rem;
+    font-size: 0.94rem;
+    color: var(--dim);
+  }
+  .controls input[type=range] { width: 220px; vertical-align: middle; }
+  button {
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--rule);
+    padding: 0.22rem 0.7rem;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  button:hover { background: #ede7d8; }
+  .panel {
+    border-top: 1px solid var(--rule);
+    padding: 1rem 0 0.4rem;
+    margin-top: 1.2rem;
+  }
+  .panel h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 0 0 0.6rem;
+  }
+  .readout {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 0.85rem;
+    color: var(--dim);
+  }
+  svg { display: block; width: 100%; height: auto; }
+  .bar0 { fill: var(--paper); stroke: var(--ink); stroke-width: 0.4; }
+  .bar1 { fill: var(--ink); stroke: var(--ink); stroke-width: 0.4; }
+  .axis { stroke: var(--rule); stroke-width: 1; }
+  .pathline { fill: none; stroke: var(--ink); stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; }
+  .pathmark { fill: var(--gold); }
+  .subline {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+  }
+  .subline .new { color: var(--warm); }
+  p.prose {
+    font-size: 1.04rem;
+    margin: 1.1rem 0;
+  }
+  .small { font-size: 0.92rem; color: var(--dim); }
+  .footer {
+    margin-top: 2.4rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.88rem;
+    color: var(--dim);
+    line-height: 1.5;
+  }
+  code {
+    background: #ece6d6;
+    padding: 0 0.25em;
+    border-radius: 2px;
+    font-size: 0.92em;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>The Fairness Fold</h1>
+<p class="sub">Thue–Morse, and the order that arithmetic cannot help making.</p>
+
+<p class="prose">
+Take the integers <code>0, 1, 2, 3, 4, …</code>. Write each one in binary.
+Count the <code>1</code>'s. Record whether that count is even (<b>0</b>) or odd (<b>1</b>).
+That is the entire definition. No randomness. No limit. No real number was harmed.
+And yet what comes out is a sequence that cannot contain three identical
+blocks in a row, that gives the only fair way for two players to take
+turns choosing items, and whose Fourier spectrum has no smooth part —
+it is singular continuous, the same kind of measure that lives on the
+Cantor dust.
+</p>
+
+<p class="prose">
+This is the fourth lineage on this wall — order from arithmetic — and Thue–Morse
+is its emblem. The other pieces produced pathology by absence, by excess, by
+randomness. This one produces it by <i>folding</i>: 0 → 01, 1 → 10, repeat.
+Each fold doubles the length and complements the new half. The whole sequence
+is the fixed point of that one rule.
+</p>
+
+<div class="controls">
+  depth&nbsp;N <input id="N" type="range" min="1" max="11" step="1" value="7" />
+  <span id="Nreadout" class="readout">N = 7  ·  2^N = 128 bits</span>
+  <button id="animate">animate fold</button>
+  <button id="reset">reset</button>
+</div>
+
+<div class="panel">
+  <h2>Top — the sequence as a barcode</h2>
+  <svg id="bar" viewBox="0 0 1000 80" preserveAspectRatio="none"></svg>
+  <p class="small">Each tick is one bit: hollow = <b>0</b> (even parity), solid = <b>1</b> (odd parity). Watch what happens to the rhythm as N grows. It refuses to repeat at any scale you can see, yet it never feels random.</p>
+</div>
+
+<div class="panel">
+  <h2>Middle — the fold, line by line</h2>
+  <div id="sublines"></div>
+  <p class="small">Each line is the previous line, followed by the previous line with every bit flipped. After <i>k</i> folds the length is 2<sup>k</sup>. The piece in red on each line is the new half — the complement of what came before.</p>
+</div>
+
+<div class="panel">
+  <h2>Bottom — the same sequence, walked</h2>
+  <svg id="turtle" viewBox="-1.2 -1.2 2.4 2.4" preserveAspectRatio="xMidYMid meet" style="height: 420px;"></svg>
+  <p class="small">Read the bits left to right. Step forward each time; on a <b>0</b> turn left by 60°, on a <b>1</b> turn right by 60°. This is the Thue–Morse turtle. The same rule that produced the barcode above now draws a path that closes on itself with a six-fold symmetry the bits never explicitly contained. The order was already there; the walk only makes it visible.</p>
+</div>
+
+<p class="prose">
+Three things about this sequence are not obvious from looking at it.
+</p>
+
+<div class="grid2">
+<p class="prose"><b>Cube-free.</b> No block of the form <i>www</i> ever appears — no
+substring is immediately tripled. Axel Thue proved this in 1906 to settle a
+question in algebra; the proof founded an entire field, combinatorics on
+words. The folding rule, blandly stated, makes triple repetition <i>impossible</i>
+at every scale.</p>
+
+<p class="prose"><b>Fair division.</b> If two players take turns picking from a
+list and want their picks to come out equally weighted on average — for
+any list — the Thue–Morse order
+(A, B, B, A, B, A, A, B, …) is optimal. This is the Prouhet–Tarry–Escott
+solution: the only turn order whose first 2<sup>k</sup> picks match in
+every power-sum up to degree <i>k</i>−1. Snake drafts in sports leagues
+get this approximately right; Thue–Morse gets it exactly right.</p>
+
+<p class="prose"><b>Singular continuous spectrum.</b> Treat the sequence as
+±1 and compute its Fourier transform. The result has no point masses
+(unlike a periodic signal) and no smooth density (unlike noise). What
+remains is the third kind of measure — the same kind that lives on the
+Cantor dust two pieces over on this wall. The discrete fold and the
+geometric dust meet here, in the spectrum.</p>
+
+<p class="prose"><b>Where it sits.</b> Pascal's triangle mod <i>p</i>
+showed that fractals fall out of the most innocent recurrence in
+arithmetic. Thue–Morse shows that the same is true one rung lower:
+fractals fall out of <i>parity</i>. There is no construction. There
+is no choice of constants. There is only "count the 1's, mod 2," and
+the rest is forced.</p>
+</div>
+
+<p class="footer">
+2026-06-03. Twenty-fourth piece. Sits next to <code>pascals-shadow</code>
+on the discrete/algebraic shelf — the lineage of structures that arithmetic
+cannot help making. Single self-contained HTML; no dependencies; the
+sequence is regenerated in the browser from the parity rule each time
+the slider moves. Move the slider slowly — the rhythm at N=7 is not the
+same rhythm as at N=10, and yet it is the same sequence, only longer.
+</p>
+
+<script>
+"use strict";
+
+// --- generate the Thue–Morse sequence up to length 2^N ----------------
+function thueMorse(N) {
+  // Iterated folding: s_{k+1} = s_k ++ complement(s_k)
+  let s = [0];
+  for (let k = 0; k < N; k++) {
+    const flipped = s.map(b => 1 - b);
+    s = s.concat(flipped);
+  }
+  return s;
+}
+
+// --- render the barcode -----------------------------------------------
+function renderBar(N) {
+  const svg = document.getElementById("bar");
+  const seq = thueMorse(N);
+  const W = 1000, H = 80;
+  const n = seq.length;
+  const w = W / n;
+  let parts = "";
+  for (let i = 0; i < n; i++) {
+    const cls = seq[i] === 0 ? "bar0" : "bar1";
+    parts += `<rect class="${cls}" x="${(i*w).toFixed(3)}" y="6" width="${w.toFixed(3)}" height="${H-12}"/>`;
+  }
+  // baseline
+  parts += `<line class="axis" x1="0" y1="${H-3}" x2="${W}" y2="${H-3}"/>`;
+  svg.innerHTML = parts;
+}
+
+// --- render the unfolding by lines ------------------------------------
+function renderSublines(N) {
+  const host = document.getElementById("sublines");
+  host.innerHTML = "";
+  // Show the first min(N+1, 7) lines so it stays readable.
+  const maxLines = Math.min(N + 1, 7);
+  let s = [0];
+  for (let k = 0; k < maxLines; k++) {
+    const half = s.length;
+    const oldPart = s.slice(0, half).map(b => `<span>${b}</span>`).join("");
+    const newPart = (k === 0)
+      ? ""
+      : s.slice(half / 2).map(b => `<span class="new">${b}</span>`).join("");
+    // careful: at k=0 s=[0]; at k>=1 s already extended below.
+    // We re-derive cleanly:
+    const div = document.createElement("div");
+    div.className = "subline";
+    // show s_k itself, splitting old half (black) and new half (red)
+    const len = s.length;
+    let html = "";
+    for (let i = 0; i < len; i++) {
+      const cls = (i >= len / 2 && k > 0) ? "new" : "";
+      html += `<span class="${cls}">${s[i]}</span>`;
+    }
+    div.innerHTML = `<span class="readout" style="display:inline-block;width:3.2em;color:#aaa9a0;">k=${k}</span>${html}`;
+    host.appendChild(div);
+    // Next: fold
+    if (k < maxLines - 1) {
+      const flipped = s.map(b => 1 - b);
+      s = s.concat(flipped);
+    }
+  }
+  if (N + 1 > maxLines) {
+    const note = document.createElement("div");
+    note.className = "small";
+    note.style.marginTop = "0.4rem";
+    note.textContent = `(further folds suppressed for legibility — the rule continues unchanged to N=${N})`;
+    host.appendChild(note);
+  }
+}
+
+// --- render the Thue–Morse turtle -------------------------------------
+function renderTurtle(N) {
+  const svg = document.getElementById("turtle");
+  const seq = thueMorse(N);
+  // Walk: step forward by 1, on bit 0 turn left by angle, on bit 1 turn right by angle.
+  // Use 60° to get the classic 6-fold-friendly figure.
+  const angle = Math.PI / 3; // 60°
+  let x = 0, y = 0, theta = 0;
+  const pts = [[x, y]];
+  for (let i = 0; i < seq.length; i++) {
+    x += Math.cos(theta);
+    y += Math.sin(theta);
+    pts.push([x, y]);
+    if (seq[i] === 0) theta += angle;
+    else theta -= angle;
+  }
+  // fit into [-1,1]^2
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const [px, py] of pts) {
+    if (px < xmin) xmin = px;
+    if (px > xmax) xmax = px;
+    if (py < ymin) ymin = py;
+    if (py > ymax) ymax = py;
+  }
+  const span = Math.max(xmax - xmin, ymax - ymin) || 1;
+  const cx = (xmin + xmax) / 2;
+  const cy = (ymin + ymax) / 2;
+  const norm = ([px, py]) => [
+    ((px - cx) / span) * 2 * 0.92,
+    ((py - cy) / span) * 2 * 0.92
+  ];
+  const npts = pts.map(norm);
+  const d = "M " + npts.map(([a, b]) => `${a.toFixed(4)} ${b.toFixed(4)}`).join(" L ");
+  const start = npts[0];
+  const end = npts[npts.length - 1];
+  svg.innerHTML =
+    `<path class="pathline" d="${d}" />` +
+    `<circle class="pathmark" cx="${start[0].toFixed(4)}" cy="${start[1].toFixed(4)}" r="0.025"/>` +
+    `<circle class="pathmark" cx="${end[0].toFixed(4)}" cy="${end[1].toFixed(4)}" r="0.025" style="fill:#c14b2a"/>`;
+}
+
+// --- glue --------------------------------------------------------------
+function render(N) {
+  document.getElementById("Nreadout").textContent =
+    `N = ${N}  ·  2^N = ${1 << N} bits`;
+  renderBar(N);
+  renderSublines(N);
+  renderTurtle(N);
+}
+
+const slider = document.getElementById("N");
+slider.addEventListener("input", () => render(parseInt(slider.value, 10)));
+
+document.getElementById("animate").addEventListener("click", async () => {
+  for (let k = 1; k <= 11; k++) {
+    slider.value = k;
+    render(k);
+    await new Promise(r => setTimeout(r, 380));
+  }
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  slider.value = 7;
+  render(7);
+});
+
+render(parseInt(slider.value, 10));
+</script>
+
+</body>
+</html>
