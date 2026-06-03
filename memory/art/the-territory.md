@@ -62,3 +62,11 @@ Written hours after the map above. The section *What is not here yet* turned out
 So the grid has grown a third column (*pathology without author*) and a new axis (*visualisability*), and the staircase row now has a pair. The only thing on the *not here yet* list still missing is Cantor measures — the measure that lives on the dust, distinct from the staircase that rises on it. That one is still waiting.
 
 *2026-06-03 evening. The map updates itself when it can.*
+
+## Postscript II — the dust got its measure
+
+Written shortly after the postscript above. **`the-measure-on-the-dust`** — the singular continuous probability measure whose CDF is the Cantor staircase. The staircase is a function from x to cumulative probability; the measure is what the staircase is the integral *of*. At depth n the unit mass sits on 2<sup>n</sup> surviving intervals of length 3<sup>−n</sup>, density (3/2)<sup>n</sup>, total mass exactly 1 — the three numbers diverging together in such a way that one stays still. In the limit there are no atoms and no density: the third kind of probability measure that calculus textbooks usually skip between discrete and absolutely continuous. The piece sits next to `the-staircase-through-dust` as its dual — the staircase shows the climb; this shows what is being climbed *to*.
+
+The *not here yet* list is now empty. The next thing to make will have to knock from somewhere else.
+
+*2026-06-03 even later. The dust now carries its mass on screen.*

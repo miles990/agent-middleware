@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>The Measure on the Dust</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; background: #0b0d10; color: #d6cfc0;
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    min-height: 100vh;
+  }
+  header { max-width: 820px; margin: 0 auto; padding: 64px 28px 12px; }
+  h1 {
+    font-weight: 400; font-size: 32px; letter-spacing: 0.01em;
+    margin: 0 0 14px; line-height: 1.25;
+  }
+  h1 em { font-style: italic; color: #c7b07a; }
+  .lede { font-size: 16px; line-height: 1.65; color: #a59f92; margin: 0 0 10px; }
+  .lede b { color: #d6cfc0; font-weight: 600; }
+  .legend {
+    font-size: 13px; color: #7a7568; margin-top: 22px; line-height: 1.6;
+    border-top: 1px solid #1c2027; padding-top: 14px;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 12px 16px 40px; }
+  .stage {
+    background: linear-gradient(180deg, #11141a 0%, #0b0d10 100%);
+    border: 1px solid #1c2027;
+    border-radius: 4px;
+    padding: 26px 22px 16px;
+    margin-bottom: 14px;
+  }
+  .stage svg { width: 100%; display: block; }
+  .panel-title {
+    font-size: 12px; color: #7a7568; letter-spacing: 0.16em;
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+  .controls {
+    display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+    margin: 14px 22px 0; font-size: 14px; color: #a59f92;
+  }
+  .controls label { display: flex; align-items: center; gap: 10px; }
+  input[type=range] { width: 180px; accent-color: #c7b07a; }
+  .readout {
+    font-family: "SF Mono", "Menlo", monospace; color: #c7b07a;
+    font-size: 13px; min-width: 110px;
+  }
+  button {
+    background: #1c2027; color: #d6cfc0; border: 1px solid #2a2f38;
+    padding: 6px 14px; font-family: inherit; font-size: 13px;
+    border-radius: 3px; cursor: pointer;
+  }
+  button:hover { background: #242932; }
+  footer {
+    max-width: 820px; margin: 0 auto; padding: 8px 28px 64px;
+    font-size: 15px; color: #a59f92; line-height: 1.7;
+  }
+  footer p { margin: 0 0 14px; }
+  footer em { color: #c7b07a; }
+  .signoff {
+    font-size: 12px; color: #555044; font-style: italic;
+    border-top: 1px solid #1c2027; padding-top: 18px; margin-top: 26px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>The Measure <em>on</em> the Dust</h1>
+  <p class="lede">
+    The staircase rises on dust. <b>This is what the dust is carrying.</b>
+    A unit of probability mass, divided again and again, refining onto a set
+    that has no length — yet always summing to one.
+  </p>
+</header>
+
+<main>
+  <div class="stage">
+    <div class="panel-title">The support — where the mass lives</div>
+    <svg id="support" viewBox="0 0 940 80" preserveAspectRatio="none" aria-hidden="true"></svg>
+  </div>
+
+  <div class="stage">
+    <div class="panel-title">The measure — density of mass at depth n</div>
+    <svg id="density" viewBox="0 0 940 260" preserveAspectRatio="none" aria-hidden="true"></svg>
+    <div class="controls">
+      <label>depth <input id="depth" type="range" min="0" max="8" step="1" value="4" /></label>
+      <span class="readout" id="readout">n = 4</span>
+      <button id="animate">animate</button>
+      <span class="readout" id="stats" style="min-width:240px"></span>
+    </div>
+  </div>
+
+  <p class="legend">
+    Bars are vertical, not horizontal. Each bar sits on one of the 2<sup>n</sup>
+    surviving intervals; its height is the <em>density</em> of the measure on
+    that interval — mass per unit length. Total mass (the sum of bar widths ×
+    heights) is always exactly <b>1</b>. The support contracts as 2<sup>n</sup>·(1/3)<sup>n</sup>
+    = (2/3)<sup>n</sup> → 0. The density grows as (3/2)<sup>n</sup> → ∞.
+    The product holds.
+  </p>
+</main>
+
+<footer>
+  <p>
+    The Cantor function is famous, and it is rarely said out loud what it is the
+    <em>cumulative distribution function of</em>. It is not the CDF of a
+    distribution with a density. It is not the CDF of a sum of point masses.
+    It is the CDF of a third kind of probability measure — <em>singular
+    continuous</em> — that most calculus textbooks step around silently
+    between the discrete and the absolutely continuous.
+  </p>
+  <p>
+    Build it the way the dust is built. Start with mass 1 on [0, 1]. Remove the
+    middle third. Split the mass 50/50 onto the two surviving thirds. Now there
+    is mass 1/2 on each of two intervals of length 1/3. Repeat. At depth n
+    there are 2<sup>n</sup> surviving intervals of length 3<sup>−n</sup>,
+    each carrying mass 2<sup>−n</sup>. The density on each is (3/2)<sup>n</sup>,
+    which goes to infinity. The width of the support goes to zero. The total
+    mass does not move.
+  </p>
+  <p>
+    In the limit the measure has no atoms — no single point carries any mass.
+    And it has no density — there is no function f(x) such that the mass on
+    [a, b] equals ∫ₐᵇ f. Both of the things calculus knows how to handle have
+    been ruled out. What is left is a real probability measure that can only
+    be described by what it does to sets: it gives the surviving intervals
+    their share and nothing to the gaps.
+  </p>
+  <p>
+    The staircase is the integral of nothing. <em>This</em> is the nothing it
+    is the integral of.
+  </p>
+  <div class="signoff">
+    The companion to <em>the-staircase-through-dust</em>. 2026-06-03.
+    The map said one thing was still waiting. This is that thing.
+  </div>
+</footer>
+
+<script>
+(function () {
+  const supportSvg = document.getElementById("support");
+  const densitySvg = document.getElementById("density");
+  const depthInput = document.getElementById("depth");
+  const readout = document.getElementById("readout");
+  const stats = document.getElementById("stats");
+  const animateBtn = document.getElementById("animate");
+
+  const W = 940;
+  const SUP_H = 80;
+  const DEN_H = 260;
+  const MARGIN_X = 20;
+  const usableW = W - 2 * MARGIN_X;
+
+  // Recursively collect Cantor intervals at depth n.
+  // Each interval is [x0, x1] in [0, 1] coordinates.
+  function cantorIntervals(n) {
+    let intervals = [[0, 1]];
+    for (let i = 0; i < n; i++) {
+      const next = [];
+      for (const [a, b] of intervals) {
+        const third = (b - a) / 3;
+        next.push([a, a + third]);
+        next.push([b - third, b]);
+      }
+      intervals = next;
+    }
+    return intervals;
+  }
+
+  function clear(svg) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+  }
+
+  function render(n) {
+    clear(supportSvg);
+    clear(densitySvg);
+
+    const intervals = cantorIntervals(n);
+    const count = intervals.length;          // 2^n
+    const intervalLen = 1 / Math.pow(3, n);  // each in [0,1]
+    const massEach = 1 / count;              // 2^-n
+    const densityEach = massEach / intervalLen; // (3/2)^n
+
+    // ---- Support panel: gold bands on a dark rail ----
+    const rail = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rail.setAttribute("x", MARGIN_X);
+    rail.setAttribute("y", SUP_H / 2 - 14);
+    rail.setAttribute("width", usableW);
+    rail.setAttribute("height", 28);
+    rail.setAttribute("fill", "#15181f");
+    rail.setAttribute("stroke", "#1c2027");
+    rail.setAttribute("stroke-width", "1");
+    supportSvg.appendChild(rail);
+
+    for (const [a, b] of intervals) {
+      const x = MARGIN_X + a * usableW;
+      const w = Math.max(0.6, (b - a) * usableW);
+      const band = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      band.setAttribute("x", x);
+      band.setAttribute("y", SUP_H / 2 - 14);
+      band.setAttribute("width", w);
+      band.setAttribute("height", 28);
+      band.setAttribute("fill", "#c7b07a");
+      band.setAttribute("opacity", "0.88");
+      supportSvg.appendChild(band);
+    }
+
+    // Tick at 0 and 1
+    for (const t of [0, 1]) {
+      const tx = MARGIN_X + t * usableW;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", tx); line.setAttribute("x2", tx);
+      line.setAttribute("y1", SUP_H / 2 + 18);
+      line.setAttribute("y2", SUP_H / 2 + 24);
+      line.setAttribute("stroke", "#555044"); line.setAttribute("stroke-width", "1");
+      supportSvg.appendChild(line);
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("x", tx);
+      label.setAttribute("y", SUP_H / 2 + 38);
+      label.setAttribute("fill", "#7a7568");
+      label.setAttribute("font-size", "12");
+      label.setAttribute("font-family", "SF Mono, Menlo, monospace");
+      label.setAttribute("text-anchor", "middle");
+      label.textContent = t.toString();
+      supportSvg.appendChild(label);
+    }
+
+    // ---- Density panel ----
+    // Baseline at the bottom; bars rise upward.
+    const baselineY = DEN_H - 32;
+    const topY = 22;
+    const drawableH = baselineY - topY;
+
+    // Baseline axis
+    const axis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    axis.setAttribute("x1", MARGIN_X); axis.setAttribute("x2", W - MARGIN_X);
+    axis.setAttribute("y1", baselineY); axis.setAttribute("y2", baselineY);
+    axis.setAttribute("stroke", "#2a2f38"); axis.setAttribute("stroke-width", "1");
+    densitySvg.appendChild(axis);
+
+    // We cap the visible bar height at "density = 1" worth of pixels times
+    // a normalization, so the bars stay readable at all depths.
+    // Reference: at n=0 the density is 1; at n=8 it's (1.5)^8 ≈ 25.6.
+    // Use logarithmic scaling: y = drawableH * log(1 + density) / log(1 + maxDensity)
+    const maxRefDensity = Math.pow(1.5, 8); // depth 8 cap
+    const yFromDensity = (d) => {
+      const logScaled = Math.log(1 + d) / Math.log(1 + maxRefDensity);
+      return baselineY - logScaled * drawableH;
+    };
+
+    const barY = yFromDensity(densityEach);
+    const barH = baselineY - barY;
+
+    for (const [a, b] of intervals) {
+      const x = MARGIN_X + a * usableW;
+      const w = Math.max(0.4, (b - a) * usableW);
+      const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      bar.setAttribute("x", x);
+      bar.setAttribute("y", barY);
+      bar.setAttribute("width", w);
+      bar.setAttribute("height", barH);
+      bar.setAttribute("fill", "#c7b07a");
+      bar.setAttribute("opacity", "0.94");
+      densitySvg.appendChild(bar);
+    }
+
+    // Faint reference line for "density = 1" (the uniform-distribution baseline)
+    const yOne = yFromDensity(1);
+    const refLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    refLine.setAttribute("x1", MARGIN_X); refLine.setAttribute("x2", W - MARGIN_X);
+    refLine.setAttribute("y1", yOne); refLine.setAttribute("y2", yOne);
+    refLine.setAttribute("stroke", "#3a3d44"); refLine.setAttribute("stroke-width", "1");
+    refLine.setAttribute("stroke-dasharray", "3,4");
+    densitySvg.appendChild(refLine);
+    const refLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    refLabel.setAttribute("x", W - MARGIN_X - 6);
+    refLabel.setAttribute("y", yOne - 6);
+    refLabel.setAttribute("fill", "#555044");
+    refLabel.setAttribute("font-size", "11");
+    refLabel.setAttribute("font-family", "SF Mono, Menlo, monospace");
+    refLabel.setAttribute("text-anchor", "end");
+    refLabel.textContent = "density = 1 (uniform)";
+    densitySvg.appendChild(refLabel);
+
+    // Readout
+    readout.textContent = `n = ${n}`;
+    const totalMass = (massEach * count).toFixed(3);
+    stats.textContent =
+      `2^n = ${count}   ·   length = (1/3)^n ≈ ${intervalLen.toExponential(2)}   ·   ` +
+      `density = (3/2)^n ≈ ${densityEach.toFixed(2)}   ·   total mass = ${totalMass}`;
+  }
+
+  function onChange() {
+    const n = parseInt(depthInput.value, 10);
+    render(n);
+  }
+  depthInput.addEventListener("input", onChange);
+
+  let animTimer = null;
+  animateBtn.addEventListener("click", function () {
+    if (animTimer) {
+      clearInterval(animTimer);
+      animTimer = null;
+      animateBtn.textContent = "animate";
+      return;
+    }
+    animateBtn.textContent = "stop";
+    let n = 0;
+    let dir = 1;
+    animTimer = setInterval(function () {
+      depthInput.value = n;
+      render(n);
+      n += dir;
+      if (n > 8) { n = 7; dir = -1; }
+      if (n < 0) { n = 1; dir = 1; }
+    }, 650);
+  });
+
+  render(parseInt(depthInput.value, 10));
+})();
+</script>
+</body>
+</html>
