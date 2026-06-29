@@ -127,6 +127,14 @@ describe('Dispatch', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it('POST /dispatch?wait=true rejects prose/markdown envelope with shell_received_prose (#581)', async () => {
+    const prose = '## Retry Task: foo\n\nStrategy: bounded-shell-probe\n\necho hi';
+    const res = await request('/dispatch?wait=true', { method: 'POST', body: { worker: 'shell', task: prose } });
+    const body = await res.json() as { status?: string; error?: string; result?: string };
+    const blob = JSON.stringify(body);
+    assert.ok(blob.includes('shell_received_prose'), `expected shell_received_prose error, got: ${blob.slice(0, 300)}`);
+  });
 });
 
 describe('Plan cwd validation', () => {
