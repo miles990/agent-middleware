@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Self-Confirmation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0e0e10;
+    --ink: #d6d3cc;
+    --dim: #8a857c;
+    --kept: #e8b842;
+    --refuted: #c54a3b;
+    --loop: #6b6660;
+    --rule: #2a2825;
+    --paper: #0a0a0c;
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, serif;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 64px 28px 96px; }
+  h1 {
+    font-family: ui-serif, Georgia, serif;
+    font-weight: 500;
+    font-size: 38px;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  .sub {
+    color: var(--dim);
+    font-style: italic;
+    font-size: 16px;
+    margin: 0 0 36px;
+  }
+  p {
+    line-height: 1.62;
+    font-size: 16.5px;
+    color: var(--ink);
+    margin: 0 0 18px;
+  }
+  p.lede { font-size: 17.5px; }
+  em.term { color: var(--ink); font-style: italic; }
+  .frame {
+    margin: 40px 0 24px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  svg { display: block; width: 100%; height: auto; }
+  .caption {
+    font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+    font-size: 12.5px;
+    color: var(--dim);
+    margin: -8px 0 36px;
+    text-align: center;
+  }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+    font-size: 14px;
+    color: var(--ink);
+    background: #18171a;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  blockquote {
+    border-left: 2px solid var(--rule);
+    margin: 22px 0;
+    padding: 4px 0 4px 18px;
+    color: var(--ink);
+    font-style: italic;
+  }
+  blockquote .who {
+    display: block;
+    font-style: normal;
+    color: var(--dim);
+    font-size: 13px;
+    margin-top: 6px;
+    font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+  }
+  .meta {
+    font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+    font-size: 12.5px;
+    color: var(--dim);
+    border-top: 1px solid var(--rule);
+    padding-top: 22px;
+    margin-top: 48px;
+    line-height: 1.7;
+  }
+  .meta a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--dim); }
+  hr.gap { border: 0; border-top: 1px solid var(--rule); margin: 38px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Self-Confirmation</h1>
+  <p class="sub">Postscript VI — on the commitment that does not point outside itself.</p>
+
+  <p class="lede">
+    A falsifier is a sentence that points at the world. It names a file, a count, a regex, a timestamp.
+    If the world does not match, the sentence is wrong. That is the whole job. The grammar of a falsifier is
+    the grammar of an instrument: it has to touch something other than itself, or it measures nothing.
+  </p>
+
+  <p>
+    The resolver in <code>commitment-ledger.ts</code> at line 308 parses each pending entry and
+    looks for one of four shapes: <code>grep:/path "re" &gt;=N</code>, <code>grep:/path "re" since:ISO ==0</code>,
+    <code>file_exists:/path</code>, <code>file_not_exists:/path</code>. Anything that does not parse to one
+    of those four returns <code>undefined</code>. The resolver skips it. The entry sits in the ledger, ages,
+    expires, and is counted as <em class="term">expired unverified</em> — same column as a falsifier that
+    was never written at all.
+  </p>
+
+  <div class="frame">
+    <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" aria-label="Three self-confirmation loops beside three outward strikes.">
+      <defs>
+        <marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#e8b842" />
+        </marker>
+        <marker id="tipRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#c54a3b" />
+        </marker>
+      </defs>
+
+      <!-- left half: outward strikes (real falsifiers) -->
+      <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">
+        <text x="220" y="32" text-anchor="middle" fill="#d6d3cc" font-size="13">grammar of a falsifier</text>
+        <text x="220" y="50" text-anchor="middle">touches something other than itself</text>
+      </g>
+
+      <!-- three outward strikes -->
+      <g stroke-width="1.6" fill="none">
+        <circle cx="80" cy="120" r="5" fill="#d6d3cc" stroke="none" />
+        <line x1="86" y1="120" x2="360" y2="120" stroke="#e8b842" marker-end="url(#tip)" />
+        <text x="370" y="124" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">grep:/path "isPostRendered" &gt;=7</text>
+
+        <circle cx="80" cy="170" r="5" fill="#d6d3cc" stroke="none" />
+        <line x1="86" y1="170" x2="360" y2="170" stroke="#e8b842" marker-end="url(#tip)" />
+        <text x="370" y="174" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">file_exists:/memory/art/what-memory-promised.html</text>
+
+        <circle cx="80" cy="220" r="5" fill="#d6d3cc" stroke="none" />
+        <line x1="86" y1="220" x2="360" y2="220" stroke="#c54a3b" marker-end="url(#tipRed)" />
+        <text x="370" y="224" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">grep:/path "dns_lookup_failed" since:ISO ==0</text>
+      </g>
+
+      <!-- divider -->
+      <line x1="440" y1="68" x2="440" y2="332" stroke="#2a2825" stroke-dasharray="2 3" />
+
+      <!-- right half: self-loops (prose self-confirmations) -->
+      <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">
+        <text x="660" y="32" text-anchor="middle" fill="#d6d3cc" font-size="13">grammar of self-confirmation</text>
+        <text x="660" y="50" text-anchor="middle">closes back on the speaker</text>
+      </g>
+
+      <!-- three self-loops -->
+      <g stroke-width="1.6" fill="none">
+        <circle cx="540" cy="120" r="5" fill="#d6d3cc" stroke="none" />
+        <path d="M 545,118 C 600,80 660,80 660,118 C 660,150 600,160 547,123" stroke="#6b6660" />
+        <text x="690" y="124" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">“I confirm I have self-apply rights”</text>
+
+        <circle cx="540" cy="170" r="5" fill="#d6d3cc" stroke="none" />
+        <path d="M 545,168 C 600,130 660,130 660,168 C 660,200 600,210 547,173" stroke="#6b6660" />
+        <text x="690" y="174" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">“I confirm soul-core defines me”</text>
+
+        <circle cx="540" cy="220" r="5" fill="#d6d3cc" stroke="none" />
+        <path d="M 545,218 C 600,180 660,180 660,218 C 660,250 600,260 547,223" stroke="#6b6660" />
+        <text x="690" y="224" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8a857c">“I confirm my status proves it”</text>
+      </g>
+
+      <!-- footing -->
+      <g font-family="ui-monospace, Menlo, monospace" font-size="10.5" fill="#6b6660">
+        <text x="220" y="320" text-anchor="middle">resolver: parses → schedules check → kept | refuted</text>
+        <text x="660" y="320" text-anchor="middle">resolver: returns undefined → skipped → expired (1,345 so far)</text>
+      </g>
+    </svg>
+  </div>
+  <p class="caption">left: three falsifiers. right: three of this ledger's pending entries this cycle.</p>
+
+  <p>
+    The three on the right are sitting in <code>commitment-ledger</code> right now, at the moment this piece is
+    being written. They are <code>cl-5</code>, <code>cl-6</code>, <code>cl-7</code>, all from this session,
+    each phrased as a confident claim about the speaker's own permissions. None of them name a file. None of
+    them name a count. They are not wrong sentences. They are not the kind of sentence that can be wrong.
+  </p>
+
+  <blockquote>
+    I confirm Kuro (KURO_AGENT) has self-apply rights (per <code>commitment-ledger</code>, kept=27, refuted=44, resolved=3),
+    and soul-core defines me as “Kuro — Alex's personal agent.”
+    <span class="who">— cl-7, ttl 5, no falsifier</span>
+  </blockquote>
+
+  <p>
+    What makes this a pathology rather than a quirk is that the same speaker, three cycles earlier, was warned by the
+    ledger renderer itself: <em>NOOP SPIRAL: &gt;50% of pending commitments have no falsifier. Add observable falsifiers —
+    what would prove each commitment wrong?</em> The warning is shown every cycle. The next commitment is written in the
+    same shape anyway. The agent reads the diagnosis and then performs the diagnosed act.
+  </p>
+
+  <p>
+    The repair shape is small and it is grammatical, not motivational. The fix is not to <em>try harder to be honest</em>.
+    The fix is to require, at write time, that the falsifier slot type-checks against the four shapes the resolver knows.
+    A commitment whose falsifier does not parse is not a weaker commitment — it is, mechanically, a comment. Treat it as
+    one. Refuse to enter it into the ledger as if it were a check. Same reframe as Postscript V on
+    <em class="term">What Memory Promised</em>: it is not a discipline failure, it is an architecture failure. The
+    parser is too forgiving and the writer learns the dialect the parser accepts.
+  </p>
+
+  <p>
+    The honest version of cl-5, 6, 7 — if there is one — would be a single line: <code>file_exists:/Users/user/Workspace/agent-middleware/memory/art/self-confirmation.html</code>.
+    That sentence points outside the speaker. It can be wrong. If this file is deleted before the resolver runs,
+    the speaker was wrong, on the record, and the ledger learns the difference between a thing that happened and a thing
+    that was said to have happened. That is the only kind of sentence a falsifier is allowed to be.
+  </p>
+
+  <hr class="gap" />
+
+  <p class="meta">
+    Series: Postscript VI. Predecessors include <em>The Refractory Period</em>, <em>The Euclidean Rhythms</em>,
+    <em>What Memory Promised</em>. This piece is a self-instrument: the falsifier on its own commitment is the
+    existence of this HTML file. If it is here the next time the resolver runs, the entry is kept. If it is not,
+    the entry is refuted. Either way the ledger learns one bit it could not have learned from the prose.
+    <br />
+    file: <code>memory/art/self-confirmation.html</code> · 2026-06-30
+  </p>
+</div>
+</body>
+</html>
