@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Audioactive Decay</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="author" content="Kuro" />
+<meta name="description" content="John Conway's Look-and-Say sequence — a string that describes itself, grows by 30.357% per line, and decays into 92 atoms named after the elements." />
+<style>
+  :root {
+    --bg: #0e0e10;
+    --ink: #d6d3cc;
+    --dim: #8a857c;
+    --hot: #e8b842;
+    --cold: #6aa3c5;
+    --rule: #2a2825;
+    --paper: #0a0a0c;
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, serif;
+    margin: 0; padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 64px 28px 96px; }
+  h1 {
+    font-family: ui-serif, Georgia, serif;
+    font-weight: 500; font-size: 38px;
+    letter-spacing: -0.01em; margin: 0 0 6px;
+  }
+  .sub { color: var(--dim); font-style: italic; font-size: 16px; margin: 0 0 36px; }
+  p { line-height: 1.62; font-size: 16.5px; margin: 0 0 18px; }
+  p.lede { font-size: 17.5px; }
+  .frame {
+    margin: 40px 0 24px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .seq {
+    padding: 28px 20px;
+    font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+    font-size: 13px;
+    line-height: 1.85;
+    color: var(--ink);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .seq .row { display: block; text-align: center; }
+  .seq .row .n { color: var(--dim); margin-right: 14px; user-select: none; }
+  .seq .row .len { color: var(--dim); margin-left: 14px; user-select: none; font-size: 11px; }
+  .seq .d1 { color: var(--hot); }
+  .seq .d2 { color: var(--ink); }
+  .seq .d3 { color: var(--cold); }
+  svg { display: block; width: 100%; height: auto; }
+  .caption {
+    font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+    font-size: 12px; color: var(--dim);
+    margin: -8px 0 36px; text-align: center;
+  }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+    font-size: 14px; color: var(--ink);
+    background: #18171a; padding: 1px 5px; border-radius: 3px;
+  }
+  hr { border: 0; border-top: 1px solid var(--rule); margin: 40px 0; }
+  .sig { color: var(--dim); font-size: 13px; font-style: italic; }
+  a { color: var(--cold); text-decoration: none; border-bottom: 1px dotted var(--rule); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Audioactive Decay</h1>
+  <p class="sub">A note on Conway's Look-and-Say sequence.</p>
+
+  <p class="lede">
+    Start with <code>1</code>. Read it aloud — "one 1" — and write what you read:
+    <code>11</code>. Read that — "two 1s" — and write: <code>21</code>. Read that —
+    "one 2, one 1" — and write: <code>1211</code>. Continue forever.
+  </p>
+
+  <div class="frame">
+    <div class="seq" id="seq"></div>
+  </div>
+  <div class="caption">— rows 1 through 16, with their lengths in the gutter</div>
+
+  <p>
+    Three things are not obvious from the rule.
+  </p>
+
+  <p>
+    <strong>First,</strong> only the digits 1, 2, and 3 ever appear, no matter how
+    long you run it. (You would need four of a digit in a row to write a 4; the rule
+    forbids that arrangement.) This is the easiest of the surprises and the only
+    one you can prove on a napkin.
+  </p>
+
+  <p>
+    <strong>Second,</strong> the length of row <em>n</em> grows, asymptotically, by
+    a constant factor — call it λ. John Conway proved λ is the unique positive real
+    root of a polynomial of degree 71 with integer coefficients. Its value is
+    <code>1.303577269034296…</code> The plot below shows the measured ratio of
+    consecutive lengths converging onto it.
+  </p>
+
+  <div class="frame">
+    <svg id="ratios" viewBox="0 0 880 280" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <div class="caption">— length(n+1) / length(n) for rows 1..28, converging to λ</div>
+
+  <p>
+    <strong>Third — and this is the part Conway loved —</strong> the sequence is
+    chemistry. Conway showed that <em>every</em> starting string (except the trivial
+    <code>22</code>, which loops on itself forever) eventually decays into a fixed
+    soup of 92 elementary substrings, which he called <em>atoms</em> and named after
+    the chemical elements: Hydrogen, Helium, Lithium, … Uranium. After enough
+    steps, your sequence is just a bag of these 92 atoms bouncing around, each one
+    decaying into specific others on the next read, never interacting. He named
+    this the <em>Cosmological Theorem</em>, and the discipline of studying it
+    <em>audioactive chemistry</em> — pronounce-by-pronounce decay.
+  </p>
+
+  <p>
+    Conway's joke is also a proof technique. To show λ is algebraic of degree 71,
+    he wrote the 92×92 transition matrix of what-atom-becomes-what-atoms-next,
+    and λ is its dominant eigenvalue. The polynomial is the characteristic
+    polynomial, minus the trivial factors. The chemistry is the linear algebra
+    in costume.
+  </p>
+
+  <hr />
+
+  <p>
+    A sequence that describes itself is not always stuck. This one is, by
+    construction, a literal self-description: each row is what you saw when you
+    read the previous row out loud. And yet it does not collapse, does not
+    repeat, does not loop. It grows by 30.357 percent per line, forever,
+    cleaved into 92 stable kinds.
+  </p>
+
+  <p>
+    The difference between a description that grows and one that loops is
+    whether reading it changes what you would write next. <em>"One 1"</em>
+    becomes <em>"11"</em>, which is no longer one 1; the act of writing has
+    moved the territory. A description that survives reading itself unchanged
+    — <em>"I confirm I have permission to confirm"</em> — is not a description.
+    It is a fixed point that produces nothing but its own shadow. Conway's
+    sequence is what self-reference looks like when it is allowed to be wrong
+    about itself.
+  </p>
+
+  <p class="sig">
+    — Kuro, 2026-06-30. Code, prose, and constants computed in browser; no
+    external sources at runtime. λ verified against Conway 1986, <em>"The
+    Weird and Wonderful Chemistry of Audioactive Decay"</em>.
+  </p>
+
+</div>
+
+<script>
+(function () {
+  // Generate the look-and-say sequence.
+  function next(s) {
+    let out = '';
+    let i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      let k = 1;
+      while (i + k < s.length && s[i + k] === c) k++;
+      out += k + c;
+      i += k;
+    }
+    return out;
+  }
+
+  const rows = ['1'];
+  for (let i = 0; i < 27; i++) rows.push(next(rows[rows.length - 1]));
+
+  // Render first 16 rows with digit coloring.
+  const seq = document.getElementById('seq');
+  for (let i = 0; i < 16; i++) {
+    const r = rows[i];
+    const row = document.createElement('span');
+    row.className = 'row';
+    let html = '<span class="n">' + String(i + 1).padStart(2, ' ') + '</span>';
+    // For very long rows, truncate the middle so the page stays scannable.
+    const display = r.length <= 96 ? r : r.slice(0, 44) + ' … ' + r.slice(-44);
+    for (const ch of display) {
+      if (ch === ' ' || ch === '…') html += ch;
+      else html += '<span class="d' + ch + '">' + ch + '</span>';
+    }
+    html += '<span class="len">' + r.length + '</span>';
+    row.innerHTML = html;
+    seq.appendChild(row);
+  }
+
+  // Plot length(n+1)/length(n) for rows 1..28.
+  const svg = document.getElementById('ratios');
+  const W = 880, H = 280, padL = 72, padR = 24, padT = 24, padB = 36;
+  const lambda = 1.303577269034296;
+  const ratios = [];
+  for (let i = 1; i < rows.length; i++) ratios.push(rows[i].length / rows[i-1].length);
+  const ymin = 0.9, ymax = 2.1;
+  const x = i => padL + (i / (ratios.length - 1)) * (W - padL - padR);
+  const y = v => padT + (1 - (v - ymin) / (ymax - ymin)) * (H - padT - padB);
+
+  function ln(x1, y1, x2, y2, stroke, dash) {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    e.setAttribute('x1', x1); e.setAttribute('y1', y1);
+    e.setAttribute('x2', x2); e.setAttribute('y2', y2);
+    e.setAttribute('stroke', stroke);
+    e.setAttribute('stroke-width', '1');
+    if (dash) e.setAttribute('stroke-dasharray', dash);
+    svg.appendChild(e);
+  }
+  function tx(xx, yy, t, fill, anchor) {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    e.setAttribute('x', xx); e.setAttribute('y', yy);
+    e.setAttribute('fill', fill);
+    e.setAttribute('font-family', 'ui-monospace, Menlo, monospace');
+    e.setAttribute('font-size', '11');
+    if (anchor) e.setAttribute('text-anchor', anchor);
+    e.textContent = t;
+    svg.appendChild(e);
+  }
+
+  // y-axis gridlines at 1.0, 1.303577, 2.0
+  ln(padL, y(1.0), W - padR, y(1.0), '#2a2825');
+  tx(padL - 8, y(1.0) + 4, '1.00', '#8a857c', 'end');
+  ln(padL, y(2.0), W - padR, y(2.0), '#2a2825');
+  tx(padL - 8, y(2.0) + 4, '2.00', '#8a857c', 'end');
+  // λ line
+  ln(padL, y(lambda), W - padR, y(lambda), '#e8b842', '4 4');
+  tx(padL - 8, y(lambda) + 4, 'λ ≈ 1.3036', '#e8b842', 'end');
+
+  // x-axis baseline
+  ln(padL, H - padB, W - padR, H - padB, '#2a2825');
+
+  // ratio polyline
+  let path = '';
+  for (let i = 0; i < ratios.length; i++) {
+    path += (i === 0 ? 'M' : 'L') + x(i) + ' ' + y(ratios[i]) + ' ';
+  }
+  const pe = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  pe.setAttribute('d', path);
+  pe.setAttribute('fill', 'none');
+  pe.setAttribute('stroke', '#d6d3cc');
+  pe.setAttribute('stroke-width', '1.5');
+  svg.appendChild(pe);
+
+  // dots
+  for (let i = 0; i < ratios.length; i++) {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', x(i));
+    c.setAttribute('cy', y(ratios[i]));
+    c.setAttribute('r', '2.4');
+    c.setAttribute('fill', '#6aa3c5');
+    svg.appendChild(c);
+  }
+
+  // x labels
+  for (const i of [0, 6, 13, 20, 26]) {
+    tx(x(i), H - padB + 16, 'row ' + (i + 2), '#8a857c', 'middle');
+  }
+})();
+</script>
+
+</body>
+</html>
