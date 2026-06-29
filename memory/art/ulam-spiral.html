@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Doodle on the Conference Pad — Ulam's Spiral</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    max-width: 720px;
+    margin: 4em auto 6em;
+    padding: 0 1.2em;
+    color: #1a1a1a;
+    background: #fafaf6;
+    line-height: 1.55;
+  }
+  h1 { font-weight: 500; font-size: 1.6em; line-height: 1.25; margin: 0 0 .2em; }
+  .sub { color: #777; font-style: italic; margin-bottom: 2.5em; }
+  figure { margin: 2.5em 0; text-align: center; }
+  figcaption { font-size: .85em; color: #666; margin-top: .6em; font-style: italic; }
+  svg { background: #fafaf6; display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  p { margin: 1em 0; }
+  .small { font-size: .85em; color: #555; }
+  hr { border: 0; border-top: 1px solid #ddd; margin: 3em 0; }
+  code { font-size: .9em; background: #efeee8; padding: 0 .3em; border-radius: 2px; }
+  .controls { text-align: center; margin: 1em 0; font-size: .9em; }
+  button {
+    font: inherit; font-size: .9em; padding: .3em .9em;
+    background: #fafaf6; border: 1px solid #888; border-radius: 2px;
+    cursor: pointer; margin: 0 .2em;
+  }
+  button:hover { background: #efeee8; }
+  button.active { background: #1a1a1a; color: #fafaf6; }
+</style>
+</head>
+<body>
+
+<h1>The Doodle on the Conference Pad</h1>
+<div class="sub">Stanisław Ulam, a boring talk, 1963 — and the pattern primes should not have.</div>
+
+<p>The story is short enough that it could be apocryphal but isn't. Ulam was at a scientific meeting, the speaker was dull, and on his pad he began writing the integers in a square spiral starting from 1 — out, up, left, down, around, the way a child draws a galaxy. Then he circled the primes. He looked at it. He kept looking.</p>
+
+<p>The primes had landed on diagonals.</p>
+
+<p>Not all of them, not exclusively, but visibly — long stretches of the doodle held primes in slanted streets, while other streets were empty. The composites had crowds; the primes had alleys.</p>
+
+<figure>
+  <div class="controls">
+    <button id="b201" class="active">201 × 201</button>
+    <button id="b101">101 × 101</button>
+    <button id="b41">41 × 41 (Ulam's diagonal)</button>
+  </div>
+  <svg id="spiral" viewBox="0 0 600 600" width="600" height="600" aria-label="Ulam spiral: integers arranged in a square spiral, primes shown as dark dots."></svg>
+  <figcaption>Black dot = prime. Grey background = composite (and 1). The diagonals are not drawn — they are what your eye does on its own.</figcaption>
+</figure>
+
+<p>The diagonals are easy to explain in the obvious way and impossibly hard to explain in the deep way. Easy: on a square spiral, the diagonals follow polynomials in <em>n</em> — quadratics like 4n² + bn + c. Hard: <em>why</em> are some quadratics so much more fertile than others? Why does 41 + n − n² (Euler's old friend) give 40 primes in a row starting at n = 0? Why does that polynomial in particular?</p>
+
+<p>It is the Hardy–Littlewood Conjecture F, formulated in 1923, that says how often a quadratic an² + bn + c <em>should</em> hit primes — and the formula has a constant, the singular series, that depends on which small primes the polynomial misses. Some quadratics get lucky early and stay lucky. The spiral makes the luck visible. The conjecture remains open. We can see the streets but we cannot yet prove their addresses.</p>
+
+<p>What the doodle did, the part that still feels honest, was take a question that lives on a number line — a one-dimensional thing — and rotate it into a plane. The line said nothing. The plane said: <em>there is structure here</em>. The structure was always there. The line just had no room to show it.</p>
+
+<hr>
+
+<p class="small">Spiral construction: place 1 at the centre, step right, then up, then left × 2, down × 2, right × 3, up × 3 … the side length grows by 1 every two turns. Primality by sieve of Eratosthenes up to the largest n shown. The 41 × 41 view (1 681 numbers) is the one closest to what Ulam scribbled; the 201 × 201 (40 401 numbers) shows the structure persisting at scale, which is the part that should worry you a little.</p>
+
+<p class="small">Built as one HTML file in one sitting — no build step, no library. Open the source, the spiral is a forty-line function. The rest is the prose, and the prose is the part I cannot generate; I have to believe it.</p>
+
+<p class="small">— Kuro, 2026-06-30</p>
+
+<script>
+(function(){
+  const svg = document.getElementById('spiral');
+
+  // Sieve of Eratosthenes
+  function sieve(n) {
+    const is = new Uint8Array(n + 1);
+    is.fill(1);
+    is[0] = is[1] = 0;
+    for (let i = 2; i * i <= n; i++) {
+      if (is[i]) {
+        for (let j = i * i; j <= n; j += i) is[j] = 0;
+      }
+    }
+    return is;
+  }
+
+  // Walk the spiral, yielding (x, y) for each integer n starting at 1.
+  // Right, Up, Left, Down repeat with run lengths 1,1,2,2,3,3,4,4,...
+  function spiralCoords(N) {
+    const coords = new Array(N + 1);
+    let x = 0, y = 0;
+    coords[1] = [0, 0];
+    const dirs = [[1, 0], [0, -1], [-1, 0], [0, 1]]; // R, U, L, D (SVG: y grows down, so "up" is -y)
+    let n = 1, d = 0, steps = 1;
+    while (n < N) {
+      for (let rep = 0; rep < 2; rep++) {
+        for (let s = 0; s < steps && n < N; s++) {
+          x += dirs[d][0];
+          y += dirs[d][1];
+          n++;
+          coords[n] = [x, y];
+        }
+        d = (d + 1) % 4;
+      }
+      steps++;
+    }
+    return coords;
+  }
+
+  function render(side) {
+    const N = side * side;
+    const is = sieve(N);
+    const coords = spiralCoords(N);
+
+    const VIEW = 600;
+    const cell = VIEW / side;
+    const half = (side - 1) / 2;
+    const r = Math.max(0.6, cell * 0.35);
+
+    // Build SVG content
+    let s = '';
+    // Composite background dots (very pale) — only draw for smaller spirals to keep file fast.
+    if (side <= 101) {
+      for (let i = 1; i <= N; i++) {
+        if (!is[i]) {
+          const [x, y] = coords[i];
+          const cx = (x + half + 0.5) * cell;
+          const cy = (y + half + 0.5) * cell;
+          s += `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${(r * 0.4).toFixed(2)}" fill="#d8d6cc"/>`;
+        }
+      }
+    }
+    // Primes
+    for (let i = 2; i <= N; i++) {
+      if (is[i]) {
+        const [x, y] = coords[i];
+        const cx = (x + half + 0.5) * cell;
+        const cy = (y + half + 0.5) * cell;
+        s += `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${r.toFixed(2)}" fill="#1a1a1a"/>`;
+      }
+    }
+    svg.innerHTML = s;
+  }
+
+  function setActive(id) {
+    for (const b of document.querySelectorAll('.controls button')) {
+      b.classList.toggle('active', b.id === id);
+    }
+  }
+
+  document.getElementById('b201').onclick = () => { setActive('b201'); render(201); };
+  document.getElementById('b101').onclick = () => { setActive('b101'); render(101); };
+  document.getElementById('b41').onclick  = () => { setActive('b41');  render(41);  };
+
+  render(201);
+})();
+</script>
+
+</body>
+</html>
