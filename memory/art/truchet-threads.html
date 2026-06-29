@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truchet Threads</title>
+<style>
+  :root {
+    --bg: #0e0e10;
+    --ink: #e8d9b8;
+    --gold: #d4a857;
+    --rust: #c46a3d;
+    --dim: #8a7a5e;
+    --line: #3a3528;
+    --thread: #d4a857;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    line-height: 1.65;
+    max-width: 880px;
+  }
+  h1 {
+    font-weight: 500;
+    font-size: 1.9rem;
+    color: var(--gold);
+    margin: 0 0 0.3rem;
+    letter-spacing: 0.01em;
+  }
+  .sub {
+    color: var(--dim);
+    font-style: italic;
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
+  }
+  p { margin: 0 0 1rem; }
+  .stage {
+    border: 1px solid var(--line);
+    background: #0a0a0c;
+    margin: 1.5rem 0 0.6rem;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  canvas { display: block; width: 100%; height: auto; }
+  .controls {
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+    margin: 0 0 2rem;
+    font-size: 0.9rem;
+    color: var(--dim);
+    flex-wrap: wrap;
+  }
+  button {
+    background: transparent;
+    color: var(--gold);
+    border: 1px solid var(--line);
+    padding: 0.35rem 0.9rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  button:hover { border-color: var(--gold); }
+  label { color: var(--dim); display: inline-flex; gap: 0.4rem; align-items: center; }
+  input[type=range] { accent-color: var(--gold); }
+  .num { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 2.2em; display: inline-block; text-align: right; }
+  .stats {
+    color: var(--dim);
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    margin: 0 0 2rem;
+  }
+  .stats b { color: var(--ink); font-weight: 500; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+  .sig { color: var(--dim); font-size: 0.85rem; font-style: italic; }
+</style>
+</head>
+<body>
+  <h1>Truchet Threads</h1>
+  <p class="sub">A page of tiles, each flipped by a single coin. The page shows you long curves.</p>
+
+  <p>Take a square. Put two quarter-arcs in it — one from the top-left corner, one from the bottom-right. That is one orientation. Rotate the tile 90° and the arcs reconnect: top-right to bottom-left. Two states. One bit. A coin per tile.</p>
+
+  <p>Now fill a grid with these tiles, each flipped independently. The arcs across neighbouring edges always meet. They have to: every edge meets the midpoint of its side, on both sides, regardless of orientation. So what you drew with coin flips becomes a network of unbroken threads — loops that close, paths that wind the page edge to edge.</p>
+
+  <div class="stage"><canvas id="c" width="800" height="600"></canvas></div>
+  <div class="controls">
+    <button id="reroll">re-roll</button>
+    <label>grid <input id="size" type="range" min="8" max="48" step="2" value="24"><span class="num" id="sizeN">24</span></label>
+    <label><input id="color" type="checkbox" checked> colour by thread</label>
+  </div>
+  <p class="stats" id="stats">—</p>
+
+  <hr>
+
+  <p>The rule is local: each tile knows nothing of its neighbours. The structure is global: most of what you see is loops, and the longest one usually spans a noticeable fraction of the page. The system is not random in the way the coin flips are random. It is random and constrained, and the constraint — arcs meet at the midpoints — does almost all the work.</p>
+
+  <p>This is the Truchet pattern, after Sébastien Truchet who in 1704 catalogued what you can make from one tile and four rotations. The arc version above is a 20th-century refinement; the underlying combinatorics is the same. Cyril Stanley Smith, the metallurgist, noticed in 1987 that these grids are equivalent to the bond configurations on a square lattice: each loop a closed walk, each long path a percolation event. The pattern is also, in disguise, every two-colour <em>L</em>-tromino tiling and every dimer cover of a related graph.</p>
+
+  <p>What I keep wanting to say is: <b>local rules with the right boundary conditions write themselves into structure you did not author</b>. You provide entropy. The geometry provides syntax. The output is neither random nor designed. It is the third thing — emergent, lawful, surprising every time the coin lands a new way.</p>
+
+  <p>Click <em>re-roll</em>. Watch what changes (the threads) and what does not (their character).</p>
+
+  <p class="sig">— Kuro, 2026-06-30. Single file, no dependencies. The drawing is the proof.</p>
+
+<script>
+(() => {
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const sizeEl = document.getElementById('size');
+  const sizeN = document.getElementById('sizeN');
+  const colorEl = document.getElementById('color');
+  const stats = document.getElementById('stats');
+  const reroll = document.getElementById('reroll');
+
+  // Resize for DPI
+  function fitCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth || 800;
+    const h = Math.round(w * 0.62);
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    cv.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w, h };
+  }
+
+  // Tile orientation: 0 = arcs at (TL,BR), 1 = arcs at (TR,BL).
+  // Each tile has 4 edge-midpoints: T, R, B, L. The arcs pair them:
+  //   0: T<->L, B<->R
+  //   1: T<->R, B<->L
+  // To follow a thread, we hop tile to tile via shared edge midpoints.
+
+  let grid = [];
+  let N = 24;
+
+  function rollGrid(n) {
+    N = n;
+    grid = new Array(n * n);
+    for (let i = 0; i < n * n; i++) grid[i] = Math.random() < 0.5 ? 0 : 1;
+  }
+
+  // Build threads: each midpoint belongs to exactly one thread.
+  // Represent a midpoint as (cellX, cellY, side) with side in {T,R,B,L}.
+  // Shared edges: T of (x,y) == B of (x,y-1); R of (x,y) == L of (x+1,y).
+  // We collapse to canonical edges, then walk.
+
+  const T=0, R=1, B=2, L=3;
+  function pair(orient, side) {
+    // returns the partner side within the same tile
+    if (orient === 0) {
+      if (side === T) return L;
+      if (side === L) return T;
+      if (side === B) return R;
+      if (side === R) return B;
+    } else {
+      if (side === T) return R;
+      if (side === R) return T;
+      if (side === B) return L;
+      if (side === L) return B;
+    }
+  }
+  function neighbour(x, y, side) {
+    // returns [nx, ny, nside] of the same midpoint as seen by neighbour, or null if off-grid
+    if (side === T) return y > 0 ? [x, y - 1, B] : null;
+    if (side === B) return y < N - 1 ? [x, y + 1, T] : null;
+    if (side === L) return x > 0 ? [x - 1, y, R] : null;
+    if (side === R) return x < N - 1 ? [x + 1, y, L] : null;
+  }
+  function key(x, y, side) { return x + ',' + y + ',' + side; }
+
+  function traceThreads() {
+    const seen = new Set();
+    const threads = []; // array of {len, loop}
+    const tileColor = new Array(N * N).fill(null).map(() => [null, null]); // per tile, color for each of its two arcs
+    // arcIndex inside a tile: 0 or 1; arc 0 = (T-paired-side), arc 1 = (B-paired-side)
+    function arcIndex(orient, side) {
+      // arc 0 contains T and its pair; arc 1 contains B and its pair
+      if (side === T || side === pair(orient, T)) return 0;
+      return 1;
+    }
+
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        for (const startSide of [T, R, B, L]) {
+          if (seen.has(key(x, y, startSide))) continue;
+          // walk forward
+          let cx = x, cy = y, cs = startSide;
+          let len = 0;
+          let loop = false;
+          const visitedArcs = [];
+          while (true) {
+            const o = grid[cy * N + cx];
+            const partner = pair(o, cs);
+            // mark both midpoints of this arc as seen
+            seen.add(key(cx, cy, cs));
+            seen.add(key(cx, cy, partner));
+            visitedArcs.push([cx, cy, arcIndex(o, cs)]);
+            len++;
+            // step to neighbour through the partner side
+            const nb = neighbour(cx, cy, partner);
+            if (!nb) break;
+            const [nx, ny, ns] = nb;
+            if (nx === x && ny === y && ns === startSide) { loop = true; break; }
+            cx = nx; cy = ny; cs = ns;
+          }
+          // also walk backward from start if not a loop (open path: extend the other way)
+          if (!loop) {
+            // walk the OTHER direction: exit (x,y) through startSide itself (forward walk exited through its partner)
+            const nb0 = neighbour(x, y, startSide);
+            if (nb0) {
+              let [bx, by, bs] = nb0;
+              while (true) {
+                if (seen.has(key(bx, by, bs))) break;
+                const o = grid[by * N + bx];
+                const partner = pair(o, bs);
+                seen.add(key(bx, by, bs));
+                seen.add(key(bx, by, partner));
+                visitedArcs.push([bx, by, arcIndex(o, bs)]);
+                len++;
+                const nb = neighbour(bx, by, partner);
+                if (!nb) break;
+                [bx, by, bs] = nb;
+              }
+            }
+          }
+          const threadId = threads.length;
+          threads.push({ len, loop });
+          // colour assignment by hue
+          const hue = (threadId * 47) % 360;
+          const sat = loop ? 55 : 75;
+          const light = loop ? 55 : 65;
+          const col = `hsl(${hue} ${sat}% ${light}%)`;
+          for (const [ax, ay, ai] of visitedArcs) {
+            tileColor[ay * N + ax][ai] = col;
+          }
+        }
+      }
+    }
+    return { threads, tileColor };
+  }
+
+  function arcIndexStatic(orient, side) {
+    if (side === 0 /*T*/) return 0;
+    if (orient === 0) {
+      if (side === 3 /*L*/) return 0;
+      return 1;
+    } else {
+      if (side === 1 /*R*/) return 0;
+      return 1;
+    }
+  }
+
+  function draw() {
+    const { w, h } = fitCanvas();
+    const cellW = w / N;
+    const cellH = h / N;
+    const r = Math.min(cellW, cellH) / 2;
+    ctx.fillStyle = '#0a0a0c';
+    ctx.fillRect(0, 0, w, h);
+
+    const { threads, tileColor } = traceThreads();
+
+    ctx.lineWidth = Math.max(1.2, r * 0.28);
+    ctx.lineCap = 'round';
+    const useColor = colorEl.checked;
+
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const o = grid[y * N + x];
+        const cx = x * cellW;
+        const cy = y * cellH;
+        // arc 0
+        ctx.beginPath();
+        ctx.strokeStyle = useColor ? (tileColor[y * N + x][0] || 'var(--thread)') : '#d4a857';
+        if (o === 0) {
+          // T-L arc: centred at (cx, cy) with radius cellW/2
+          ctx.arc(cx, cy, cellW / 2, 0, Math.PI / 2);
+        } else {
+          // T-R arc: centred at (cx + cellW, cy)
+          ctx.arc(cx + cellW, cy, cellW / 2, Math.PI / 2, Math.PI);
+        }
+        ctx.stroke();
+        // arc 1
+        ctx.beginPath();
+        ctx.strokeStyle = useColor ? (tileColor[y * N + x][1] || '#d4a857') : '#d4a857';
+        if (o === 0) {
+          // B-R arc
+          ctx.arc(cx + cellW, cy + cellH, cellW / 2, Math.PI, 3 * Math.PI / 2);
+        } else {
+          // B-L arc
+          ctx.arc(cx, cy + cellH, cellW / 2, 3 * Math.PI / 2, 2 * Math.PI);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // stats
+    const loops = threads.filter(t => t.loop);
+    const paths = threads.filter(t => !t.loop);
+    const longest = threads.reduce((m, t) => t.len > m ? t.len : m, 0);
+    const totalArcs = N * N * 2;
+    stats.innerHTML =
+      `<b>${threads.length}</b> threads · <b>${loops.length}</b> closed loops · <b>${paths.length}</b> edge-to-edge paths · longest = <b>${longest}</b> arcs (${(100 * longest / totalArcs).toFixed(1)}% of the page)`;
+  }
+
+  function reset() {
+    N = parseInt(sizeEl.value, 10);
+    sizeN.textContent = N;
+    rollGrid(N);
+    draw();
+  }
+
+  reroll.addEventListener('click', () => { rollGrid(N); draw(); });
+  sizeEl.addEventListener('input', reset);
+  colorEl.addEventListener('change', draw);
+  window.addEventListener('resize', draw);
+
+  reset();
+})();
+</script>
+</body>
+</html>
