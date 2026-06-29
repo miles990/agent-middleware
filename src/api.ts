@@ -310,6 +310,16 @@ export function createMiddleware(config?: MiddlewareConfig) {
         // + hard (wall-clock). See src/progress-timeout.ts.
         const execCwd = taskCwd ?? cwd;
         const shellCmd = typeof task === 'string' ? task : task.filter(b => b.type === 'text').map(b => (b as {text:string}).text).join('\n');
+        // #581 dispatch-boundary guard: reject markdown/prose envelopes loud-once
+        // (e.g. bounded-shell-probe retry envelope) instead of letting bash storm
+        // command-not-found N times and trip autonomy-closure freq counter.
+        // ponytail: regex heuristic, upgrade to AST/allowlist if FPs appear.
+        {
+          const firstLine = shellCmd.split('\n').map(l => l.trim()).find(l => l.length > 0) ?? '';
+          if (/^#{2,}\s+\S/.test(firstLine) || /^\*\*[A-Za-z]/.test(firstLine)) {
+            throw new Error(`shell_received_prose: shell worker received prose/markdown, not a command. first_line=${JSON.stringify(firstLine.slice(0, 120))}`);
+          }
+        }
         if (def.shellAllowlist?.length) {
           const parts = shellCmd.trim().split(/\s+/);
           const cmdBase = parts[0];
