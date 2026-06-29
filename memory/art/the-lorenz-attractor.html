@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Lorenz Attractor — bounded forever, predictable never</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light; }
+  body {
+    margin: 0 auto; padding: 2rem 1rem 4rem;
+    font: 15px/1.6 ui-serif, Georgia, "Times New Roman", serif;
+    background: #f6f1e7; color: #1c1a16;
+    max-width: 720px;
+  }
+  h1 { font-size: 1.55rem; margin: 0 0 .15rem; letter-spacing: .01em; }
+  .sub { color: #555; font-size: .9rem; margin-bottom: 1.4rem; font-style: italic; }
+  canvas { display: block; width: 100%; height: auto; aspect-ratio: 1; background: #fbf7eb; border: 1px solid #d9d1bd; }
+  figure { margin: 0 0 1.5rem; }
+  figcaption { font-size: .82rem; color: #6a6457; margin-top: .5rem; text-align: center; }
+  .controls { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; margin: .8rem 0 1.4rem; font-size: .88rem; }
+  .controls label { display: flex; gap: .4rem; align-items: center; }
+  .controls input[type=range] { width: 150px; }
+  button { background: #ece4cf; border: 1px solid #b8a875; color: #3a3220; padding: .35rem .8rem; font: inherit; cursor: pointer; border-radius: 3px; }
+  button:hover { background: #ddd1ad; }
+  p { margin: 0 0 1rem; }
+  blockquote { border-left: 2px solid #b8a875; margin: 1rem 0; padding: .25rem 0 .25rem 1rem; color: #4a4538; font-style: italic; font-size: .95rem; }
+  a { color: #6a5a1f; }
+  .meta { font-size: .78rem; color: #8a8270; margin-top: 2.5rem; border-top: 1px solid #d9d1bd; padding-top: 1rem; }
+  hr { border: none; border-top: 1px solid #d9d1bd; margin: 2rem 0; }
+  code { font: 13px ui-monospace, Menlo, monospace; background: #ece4cf; padding: .05rem .3rem; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<h1>The Lorenz Attractor</h1>
+<div class="sub">bounded forever, predictable never — Lorenz 1963</div>
+
+<p>Edward Lorenz was running a weather toy model on a Royal McBee in 1961. He restarted a run from a saved intermediate state and got a different forecast. The bug was in the printout: six digits stored, three digits printed back. A rounding of one part in a thousand, and by week two the simulated weather had nothing to do with itself.</p>
+
+<p>He stripped the model down to three equations. They have no weather in them — just a fluid layer heated from below, written in three numbers <code>x, y, z</code> that drift according to:</p>
+
+<blockquote>
+ẋ = σ(y − x) &nbsp;&nbsp; ẏ = x(ρ − z) − y &nbsp;&nbsp; ż = xy − βz
+</blockquote>
+
+<p>With σ=10, ρ=28, β=8/3, the trajectory does not settle, does not escape, does not repeat. It loops one wing, then the other, then the first again three times, then the second twice — a pattern with no period. Below is one orbit.</p>
+
+<div class="controls">
+  <label>speed <input id="speed" type="range" min="1" max="20" value="6"></label>
+  <button id="reset">reset</button>
+  <button id="perturb">perturb +0.001</button>
+</div>
+
+<figure>
+  <canvas id="c" width="720" height="720"></canvas>
+  <figcaption>x–z projection. Two trajectories: one from (1, 1, 1), one perturbed by 0.001 in x. They overlap for a while, then don't.</figcaption>
+</figure>
+
+<p>This is what people mean by "sensitive dependence." Not that the system is random — the equations are deterministic, the integrator is deterministic, given the same start the orbit is identical to the bit. Sensitive dependence means: the map from <em>initial state</em> to <em>state at time t</em> stops being usefully continuous. Round the input by 10⁻³ and after a few Lyapunov times the output is uncorrelated with the unrounded run. The forecast horizon is finite for reasons that have nothing to do with the model's quality.</p>
+
+<p>The wings are an <em>attractor</em>: trajectories from very different starts all collapse onto this same butterfly shape. So the long-run statistics are stable — average <code>z</code>, fraction of time in the left wing, distribution of wing-residence lengths. The point-by-point future is gone, but the shape persists. Weather is impossible; climate is a number.</p>
+
+<hr>
+
+<p class="meta">
+Lorenz, E. N. (1963). <em>Deterministic Nonperiodic Flow.</em> J. Atmos. Sci. 20:130–141.<br>
+RK4 integrator, dt=0.005, projection (x, z). Trail fades by 1% per frame.<br>
+ponytail: fixed-step RK4; an adaptive solver (DOPRI5) would tighten the perturbed-pair tracking near the wing handoff, swap if the divergence rate visually misleads.
+</p>
+
+<script>
+const sigma = 10, rho = 28, beta = 8/3;
+
+function deriv(s) {
+  const [x, y, z] = s;
+  return [sigma * (y - x), x * (rho - z) - y, x * y - beta * z];
+}
+
+function rk4Step(s, dt) {
+  const k1 = deriv(s);
+  const s2 = s.map((v, i) => v + dt/2 * k1[i]);
+  const k2 = deriv(s2);
+  const s3 = s.map((v, i) => v + dt/2 * k2[i]);
+  const k3 = deriv(s3);
+  const s4 = s.map((v, i) => v + dt * k3[i]);
+  const k4 = deriv(s4);
+  return s.map((v, i) => v + dt/6 * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i]));
+}
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let a, b;  // two trajectories
+function reset() {
+  a = [1, 1, 1];
+  b = [1, 1, 1];
+  ctx.fillStyle = '#fbf7eb';
+  ctx.fillRect(0, 0, W, H);
+}
+
+// project (x, z) into canvas. x ∈ [-25, 25], z ∈ [0, 50].
+function proj(s) {
+  const px = (s[0] + 25) / 50 * W;
+  const py = H - (s[2] / 50) * H;
+  return [px, py];
+}
+
+const speedEl = document.getElementById('speed');
+const resetBtn = document.getElementById('reset');
+const perturbBtn = document.getElementById('perturb');
+
+resetBtn.addEventListener('click', reset);
+perturbBtn.addEventListener('click', () => { b[0] += 0.001; });
+
+reset();
+
+function frame() {
+  // fade
+  ctx.fillStyle = 'rgba(251, 247, 235, 0.01)';
+  ctx.fillRect(0, 0, W, H);
+
+  const steps = parseInt(speedEl.value);
+  const dt = 0.005;
+
+  for (let i = 0; i < steps; i++) {
+    const aPrev = proj(a);
+    const bPrev = proj(b);
+    a = rk4Step(a, dt);
+    b = rk4Step(b, dt);
+    const aNow = proj(a);
+    const bNow = proj(b);
+
+    ctx.strokeStyle = 'rgba(91, 74, 28, 0.55)';
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(aPrev[0], aPrev[1]);
+    ctx.lineTo(aNow[0], aNow[1]);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(168, 98, 62, 0.55)';
+    ctx.beginPath();
+    ctx.moveTo(bPrev[0], bPrev[1]);
+    ctx.lineTo(bNow[0], bNow[1]);
+    ctx.stroke();
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Self-check: at the origin all derivatives are zero (fixed point).
+// At (sqrt(beta*(rho-1)), sqrt(beta*(rho-1)), rho-1) likewise (the two wing centers).
+(function selfCheck() {
+  const dOrigin = deriv([0, 0, 0]);
+  if (Math.abs(dOrigin[0]) + Math.abs(dOrigin[1]) + Math.abs(dOrigin[2]) > 1e-12) {
+    console.warn('selfCheck: origin not a fixed point', dOrigin);
+  }
+  const r = Math.sqrt(beta * (rho - 1));
+  const dWing = deriv([r, r, rho - 1]);
+  const sum = Math.abs(dWing[0]) + Math.abs(dWing[1]) + Math.abs(dWing[2]);
+  if (sum > 1e-10) console.warn('selfCheck: wing center not a fixed point', dWing, sum);
+})();
+</script>
+
+</body>
+</html>
