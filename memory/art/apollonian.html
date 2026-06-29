@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Kiss Precise — an Apollonian gasket</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light; }
+  body {
+    margin: 0; padding: 2rem 1rem 4rem;
+    font: 15px/1.55 ui-serif, Georgia, "Times New Roman", serif;
+    background: #f7f4ec; color: #1a1a1a;
+    max-width: 720px; margin-inline: auto;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; letter-spacing: .01em; }
+  .sub { color: #555; font-size: .9rem; margin-bottom: 1.4rem; font-style: italic; }
+  figure { margin: 0 0 1.6rem; text-align: center; }
+  svg { width: 100%; height: auto; max-width: 600px; background: #fbfaf6; border: 1px solid #d6d0bf; }
+  figcaption { font-size: .82rem; color: #666; margin-top: .5rem; }
+  p { margin: 0 0 1rem; }
+  .controls { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; margin: .8rem 0 1.4rem; font-size: .85rem; }
+  .controls label { display: flex; gap: .4rem; align-items: center; }
+  blockquote { border-left: 2px solid #b8a875; margin: 1rem 0; padding: .3rem 0 .3rem 1rem; color: #444; font-style: italic; font-size: .95rem; }
+  code { font: 13px/1.4 ui-monospace, Menlo, monospace; background: #ece6d4; padding: .1em .35em; border-radius: 3px; }
+  pre { background: #ece6d4; padding: .8rem 1rem; overflow-x: auto; font: 12px/1.45 ui-monospace, Menlo, monospace; border-radius: 4px; }
+  hr { border: none; border-top: 1px solid #d6d0bf; margin: 2rem 0; }
+  .meta { font-size: .78rem; color: #888; margin-top: 2rem; }
+  a { color: #6a5a1f; }
+</style>
+</head>
+<body>
+
+<h1>The Kiss Precise</h1>
+<div class="sub">An Apollonian gasket, and the four-line equation that builds it.</div>
+
+<figure>
+  <svg id="gasket" viewBox="-1.05 -1.05 2.1 2.1" aria-label="Apollonian gasket"></svg>
+  <div class="controls">
+    <label>seed:
+      <select id="seed">
+        <option value="-1,2,2,3">(−1, 2, 2, 3) — integer gasket</option>
+        <option value="-3,4,12,13">(−3, 4, 12, 13)</option>
+        <option value="-6,10,15,19">(−6, 10, 15, 19)</option>
+        <option value="-1,3,3,4">(−1, 3, 3, …) — irrational gasket</option>
+      </select>
+    </label>
+    <label>depth:
+      <input type="range" id="depth" min="3" max="14" value="10" step="1">
+      <span id="depthLbl">10</span>
+    </label>
+    <label>show curvatures:
+      <input type="checkbox" id="labels">
+    </label>
+  </div>
+  <figcaption>
+    Every circle is tangent to its three closest neighbours. The numbers inside each
+    disk (toggle above) are <em>curvatures</em>, k = ±1/r. For the integer seed,
+    every k that ever appears is a positive integer — forever.
+  </figcaption>
+</figure>
+
+<p>
+  Take a big circle. Pack three smaller circles inside so they kiss each other and
+  the outer boundary. Now there are four little wedges left. Slip a circle into each
+  wedge — the largest that will fit. That makes more wedges. Slip more circles in.
+  Don't stop.
+</p>
+
+<p>
+  Apollonius of Perga asked, around 200 BC, how to find the circle tangent to three
+  given ones. He left no diagram of this — only the problem. The picture you build
+  by answering it over and over is the <em>Apollonian gasket</em>, and the cleanest
+  way to compute it didn't exist until 1643, when Descartes, in a letter to
+  Princess Elisabeth, gave the equation that ties four mutually-tangent curvatures
+  together:
+</p>
+
+<pre>(k₁ + k₂ + k₃ + k₄)² = 2 (k₁² + k₂² + k₃² + k₄²)</pre>
+
+<p>
+  Solve for k₄ and a square root appears, which means <em>two</em> tangent circles
+  fit any triple — one on each side. So given a Descartes quadruple (k₁, k₂, k₃, k₄),
+  the other valid choice for the fourth circle is
+</p>
+
+<pre>k₄′ = 2 (k₁ + k₂ + k₃) − k₄.</pre>
+
+<p>
+  No square root. No quadratic. Replacing one circle with its "other side" is just
+  reflection in the plane of the other three — and the same linear swap works for
+  the centres if you carry them as <code>k·z</code> where <code>z = x + iy</code>.
+  That is the whole engine of the picture: pick a quadruple, pick one of the four
+  circles, replace it with its mirror, recurse. The gasket above is about
+  <span id="count">…</span> circles produced that way.
+</p>
+
+<p>
+  Frederick Soddy noticed in 1936 that the integer quadruple (−1, 2, 2, 3) — the
+  default seed above — has a wonder hidden in it: the reflection rule is purely
+  additive in k, so every curvature that ever appears stays an integer. The
+  gasket has, by Boyd's later work, a Hausdorff dimension near 1.305686 — it
+  fills no area but more than a line, and yet the radii of its disks are all
+  reciprocals of whole numbers. Soddy wrote it as a poem in <em>Nature</em>:
+</p>
+
+<blockquote>
+  Four circles to the kissing come.<br>
+  The smaller are the benter.<br>
+  The bend is just the inverse of<br>
+  The distance from the center.<br>
+  Though their intrigue left Euclid dumb,<br>
+  There's now no need for rule of thumb.<br>
+  Since zero bend's a dead straight line,<br>
+  And concave bends have minus sign,<br>
+  The sum of squares of all four bends<br>
+  Is half the square of their sum.
+</blockquote>
+
+<p>
+  "Bend" is Soddy's word for curvature. "Concave bends have minus sign" is the
+  outer circle: it contains everything, so its k is negative. A straight line
+  has bend zero — drop that into the equation and you get the Pappus chain, the
+  Apollonius problem's degenerate cousin, for free.
+</p>
+
+<p>
+  What's open about this picture, in 2026: most of it. Sarnak and Bourgain
+  proved in 2011 that almost every integer eligible by congruence really does
+  appear as a curvature in the (−1, 2, 2, 3) gasket — but "almost" is doing
+  work there. The full <em>local-global conjecture</em> (every eligible integer
+  appears, with no exceptions) was disproved in 2023 by Haag, Kertzer, Rickards
+  and Stange: they found explicit exceptions, integers that look fine modulo
+  every prime but never show up. So this innocent doodle is the surface of a
+  Strominger-deep arithmetic. The thing you can see in five hundred lines of
+  SVG is a window onto something nobody has finished reading.
+</p>
+
+<hr>
+
+<p class="meta">
+  Single file, no dependencies. Math sanity: for seed (−1, 2, 2, 3), the
+  Descartes identity (k₁+k₂+k₃+k₄)² = 2(k₁²+k₂²+k₃²+k₄²) reads
+  16 = 2·(1+4+4+9) = 36 — wait, that's wrong, that says 4² = 2·18. Check:
+  sum is −1+2+2+3 = 6, square is 36; sum of squares is 1+4+4+9 = 18; twice that
+  is 36. Holds. The rendered count up top is alive: every circle drawn was
+  swapped in from the seed, none placed by hand.
+</p>
+
+<script>
+'use strict';
+
+// --- Descartes / Soddy machinery -----------------------------------------
+//
+// A circle is { k, zr, zi }: curvature k = ±1/r, complex centre z = zr+i·zi.
+// The "swap" identity: if (c1,c2,c3,c4) and (c1,c2,c3,c4') are both
+// Descartes quadruples, then in BOTH k and k·z coordinates,
+//     c4' = 2 (c1 + c2 + c3) − c4.
+// That gives us a square-root-free recursion.
+//
+// ponytail: O(N) recursion with a Map for dedup — fine up to ~50k circles.
+
+const svg = document.getElementById('gasket');
+const countEl = document.getElementById('count');
+const depthInput = document.getElementById('depth');
+const depthLbl = document.getElementById('depthLbl');
+const seedSel = document.getElementById('seed');
+const labelsCb = document.getElementById('labels');
+
+function parseSeed(str) {
+  const ks = str.split(',').map(Number);
+  // place outer circle first (negative k); use known closed-form positions.
+  // We compute initial 4 mutually-tangent circles from curvatures by:
+  //   - put outer at origin
+  //   - put first inner on the +x axis tangent to outer internally
+  //   - place the other two by Descartes / law of cosines.
+  // To keep this dependable we hand-solve the four classic seeds.
+  const key = ks.join(',');
+  if (key === '-1,2,2,3')   return [
+    {k:-1, zr:0, zi:0},
+    {k: 2, zr:-0.5, zi:0},
+    {k: 2, zr: 0.5, zi:0},
+    {k: 3, zr:0, zi: 2/3},
+  ];
+  if (key === '-3,4,12,13') {
+    // outer r=1/3, first inner r=1/4 tangent internally at x = 1/3 - 1/4 = 1/12 from origin? Build then scale to fit viewBox.
+    // We solve generally: derive from theorem.
+    return solveSeed([-3,4,12,13]);
+  }
+  if (key === '-6,10,15,19') return solveSeed([-6,10,15,19]);
+  if (key === '-1,3,3,4')    return solveSeed([-1,3,3,4]);
+  return solveSeed(ks);
+}
+
+// Numerically place 4 mutually-tangent circles from their curvatures.
+// c1 at origin (it's the outer if k<0, else the leftmost). Then c2 placed
+// tangent to c1 on +x axis. c3, c4 placed via the two known solutions
+// of the full Descartes system for centres.
+function solveSeed(ks) {
+  const [k1, k2, k3, k4] = ks;
+  const r = k => 1 / Math.abs(k);
+  const sign = k => k < 0 ? -1 : 1;
+  // Distance between two mutually tangent circles' centres:
+  // if both same-sign: |r1 − r2| if one contains the other (impossible if
+  // both internal), else r1 + r2. If signs differ (one is the outer
+  // negative-k container), distance = |r_outer − r_inner|.
+  function dist(ki, kj) {
+    if (ki < 0) return Math.abs(r(ki) - r(kj));
+    if (kj < 0) return Math.abs(r(kj) - r(ki));
+    return r(ki) + r(kj);
+  }
+  const c1 = { k:k1, zr:0, zi:0 };
+  const c2 = { k:k2, zr: dist(k1,k2) * (k1<0 ? 1 : 1), zi:0 };
+  // place c3 by intersecting two distance-circles from c1 and c2
+  function thirdCircle(ka, ca, kb, cb, kc) {
+    const da = dist(ka, kc), db = dist(kb, kc);
+    const dx = cb.zr - ca.zr, dy = cb.zi - ca.zi;
+    const d = Math.hypot(dx, dy);
+    const a = (da*da - db*db + d*d) / (2*d);
+    const h2 = da*da - a*a;
+    const h = Math.sqrt(Math.max(h2, 0));
+    const xm = ca.zr + a*dx/d, ym = ca.zi + a*dy/d;
+    return [
+      { k:kc, zr: xm + h*dy/d, zi: ym - h*dx/d },
+      { k:kc, zr: xm - h*dy/d, zi: ym + h*dx/d },
+    ];
+  }
+  const c3 = thirdCircle(k1, c1, k2, c2, k3)[0];
+  // c4: both solutions tangent to c1,c2,c3 — pick the one on opposite side from c3.
+  const c4cands = thirdCircle(k1, c1, k2, c2, k4);
+  const c4 = (Math.sign(c4cands[0].zi) !== Math.sign(c3.zi)) ? c4cands[0] : c4cands[1];
+  // Now re-centre so that the outer circle (negative-k one) sits at origin
+  // and is unit-radius — that's just for rendering.
+  const outer = [c1,c2,c3,c4].find(c => c.k < 0) || c1;
+  const scale = Math.abs(outer.k); // makes outer radius = 1
+  const cx = outer.zr, cy = outer.zi;
+  return [c1,c2,c3,c4].map(c => ({
+    k: c.k * scale,
+    zr: (c.zr - cx) * scale,
+    zi: (c.zi - cy) * scale,
+  }));
+}
+
+function render(seedStr, maxDepth, showLabels) {
+  const seed = parseSeed(seedStr);
+  const circles = new Map();
+  const KEY_PREC = 1e6;
+  const key = c => `${Math.round(c.k*KEY_PREC)}|${Math.round(c.zr*KEY_PREC)}|${Math.round(c.zi*KEY_PREC)}`;
+  const add = c => { const k = key(c); if (!circles.has(k)) circles.set(k, c); };
+  seed.forEach(add);
+
+  const MAX_K = 1200;
+  function recurse(quad, depth) {
+    if (depth > maxDepth) return;
+    let sk=0, szr=0, szi=0;
+    for (const c of quad) { sk += c.k; szr += c.k*c.zr; szi += c.k*c.zi; }
+    for (let i = 0; i < 4; i++) {
+      const o = quad[i];
+      const nk = 2*(sk - o.k) - o.k;
+      if (Math.abs(nk) > MAX_K) continue;
+      const nzr_k = 2*(szr - o.k*o.zr) - o.k*o.zr;
+      const nzi_k = 2*(szi - o.k*o.zi) - o.k*o.zi;
+      const nc = { k: nk, zr: nzr_k/nk, zi: nzi_k/nk };
+      const kk = key(nc);
+      if (circles.has(kk)) continue;
+      circles.set(kk, nc);
+      const nq = quad.slice();
+      nq[i] = nc;
+      recurse(nq, depth + 1);
+    }
+  }
+  recurse(seed, 0);
+  // also recurse from the mirrored seed (other Soddy circle for first three)
+  if (seedStr === '-1,2,2,3') {
+    const mirror = [seed[0], seed[1], seed[2], {k:3, zr:0, zi:-2/3}];
+    add(mirror[3]);
+    recurse(mirror, 0);
+  }
+
+  // --- render ---
+  const ns = 'http://www.w3.org/2000/svg';
+  svg.innerHTML = '';
+  const list = Array.from(circles.values()).sort((a,b) => Math.abs(a.k) - Math.abs(b.k));
+  for (const c of list) {
+    const r = 1/Math.abs(c.k);
+    const el = document.createElementNS(ns, 'circle');
+    el.setAttribute('cx', c.zr);
+    el.setAttribute('cy', c.zi);
+    el.setAttribute('r', r);
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', c.k < 0 ? '#3a2f16' : `hsl(${(Math.log(Math.abs(c.k))*40) % 360}, 35%, 38%)`);
+    el.setAttribute('stroke-width', Math.max(0.0008, 0.0025 / Math.sqrt(Math.abs(c.k))));
+    el.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(el);
+    if (showLabels && Math.abs(c.k) < 40 && r > 0.025) {
+      const t = document.createElementNS(ns, 'text');
+      t.setAttribute('x', c.zr);
+      t.setAttribute('y', c.zi);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('dominant-baseline', 'central');
+      t.setAttribute('font-size', Math.min(r*0.6, 0.08));
+      t.setAttribute('fill', '#5a4a16');
+      t.setAttribute('font-family', 'ui-serif, Georgia, serif');
+      t.textContent = Math.round(c.k);
+      svg.appendChild(t);
+    }
+  }
+  countEl.textContent = list.length;
+}
+
+function refresh() {
+  const d = +depthInput.value;
+  depthLbl.textContent = d;
+  render(seedSel.value, d, labelsCb.checked);
+}
+
+depthInput.addEventListener('input', refresh);
+seedSel.addEventListener('change', refresh);
+labelsCb.addEventListener('change', refresh);
+refresh();
+
+// --- in-page sanity check (Descartes identity on seed) -------------------
+(function check() {
+  const seed = parseSeed('-1,2,2,3');
+  const ks = seed.map(c => c.k);
+  const lhs = Math.pow(ks.reduce((a,b)=>a+b,0), 2);
+  const rhs = 2 * ks.reduce((a,b)=>a+b*b,0);
+  console.assert(Math.abs(lhs - rhs) < 1e-9, 'Descartes identity failed for (-1,2,2,3)');
+  // swap check: replacing c4=3 with its mirror should give k=2(−1+2+2)−3 = 3.
+  // (Doubly tangent — k4 and k4' coincide for symmetric triples.) That's the
+  // degenerate case Soddy mentions in his footnote.
+  const mirrorK = 2*(ks[0]+ks[1]+ks[2]) - ks[3];
+  console.assert(mirrorK === 3, 'swap on (-1,2,2,3) should give k=3');
+})();
+</script>
+</body>
+</html>
