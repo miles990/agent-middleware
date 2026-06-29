@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chladni's Plate — where sand goes quiet</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    max-width: 720px;
+    margin: 2.5rem auto;
+    padding: 0 1.25rem;
+    line-height: 1.55;
+    color: #1a1a1a;
+    background: #faf7f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e8e6e1; background: #121110; }
+    .plate { background: #1c1b1a; }
+    input[type=range] { accent-color: #c9c2b3; }
+    a { color: #a8c5e8; }
+  }
+  h1 { font-size: 1.5rem; font-weight: normal; letter-spacing: 0.01em; margin-bottom: 0.2rem; }
+  .sub { font-size: 0.85rem; opacity: 0.65; margin-bottom: 1.5rem; }
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 1.5rem 0;
+  }
+  canvas.plate {
+    width: 100%;
+    max-width: 480px;
+    height: auto;
+    background: #f3eee4;
+    border: 1px solid rgba(0,0,0,0.15);
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  .controls {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.4rem 0.9rem;
+    width: 100%;
+    max-width: 480px;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    align-items: center;
+  }
+  .controls label { font-variant: small-caps; opacity: 0.75; }
+  .controls .val { font-variant-numeric: tabular-nums; min-width: 2.2em; text-align: right; opacity: 0.85; }
+  input[type=range] { width: 100%; }
+  .sym-row { grid-column: 1 / -1; display: flex; gap: 1.2rem; justify-content: center; margin-top: 0.3rem; font-size: 0.85rem; }
+  .formula {
+    font-family: "Iowan Old Style", Georgia, serif;
+    font-style: italic;
+    text-align: center;
+    margin: 0.8rem 0 0.2rem;
+    font-size: 0.95rem;
+    opacity: 0.85;
+  }
+  p { margin: 0.9rem 0; }
+  .small { font-size: 0.85rem; opacity: 0.75; }
+  hr { border: none; border-top: 1px solid rgba(0,0,0,0.12); margin: 2rem 0; }
+  .presets { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0 0; justify-content: center; }
+  .presets button {
+    font: inherit;
+    font-size: 0.8rem;
+    background: transparent;
+    border: 1px solid rgba(0,0,0,0.25);
+    color: inherit;
+    padding: 0.2rem 0.55rem;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .presets button:hover { background: rgba(0,0,0,0.06); }
+  @media (prefers-color-scheme: dark) {
+    .presets button { border-color: rgba(255,255,255,0.25); }
+    .presets button:hover { background: rgba(255,255,255,0.06); }
+  }
+</style>
+</head>
+<body>
+
+<h1>Chladni's Plate</h1>
+<div class="sub">a square plate vibrates; the sand walks off the loud parts and sits on the silent ones</div>
+
+<p>
+Ernst Chladni, 1787: bow a metal plate at the edge, sprinkle sand on top,
+and the grains skitter away from every place that moves. They settle on
+the curves that don't. Napoleon, watching this in 1809, put up a 3000-franc
+prize for whoever could derive the curves from first principles. Sophie Germain
+took it, eventually, in 1816 &mdash; the third attempt &mdash; with a fourth-order
+plate equation that nobody else had the courage to write down.
+</p>
+
+<div class="stage">
+  <canvas class="plate" id="plate" width="320" height="320" aria-label="Chladni nodal pattern"></canvas>
+
+  <div class="formula" id="formula">
+    f(x,y) = cos(mπx) cos(nπy) − cos(nπx) cos(mπy)
+  </div>
+
+  <div class="controls">
+    <label for="m">m</label>
+    <input type="range" id="m" min="1" max="12" value="3" step="1">
+    <span class="val" id="mv">3</span>
+
+    <label for="n">n</label>
+    <input type="range" id="n" min="1" max="12" value="2" step="1">
+    <span class="val" id="nv">2</span>
+
+    <div class="sym-row">
+      <label><input type="radio" name="sym" value="anti" checked> antisymmetric (−)</label>
+      <label><input type="radio" name="sym" value="sym"> symmetric (+)</label>
+    </div>
+  </div>
+
+  <div class="presets">
+    <button data-m="2" data-n="1">2,1</button>
+    <button data-m="3" data-n="2">3,2</button>
+    <button data-m="4" data-n="3">4,3</button>
+    <button data-m="5" data-n="2">5,2</button>
+    <button data-m="6" data-n="4">6,4</button>
+    <button data-m="7" data-n="5">7,5</button>
+    <button data-m="8" data-n="3">8,3</button>
+    <button data-m="10" data-n="6">10,6</button>
+  </div>
+</div>
+
+<p>
+The plate has natural modes &mdash; standing waves that fit its shape and edge
+conditions. For a square plate with free edges, two pure cosine modes
+(<i>m,n</i>) and (<i>n,m</i>) share the same frequency, so the plate vibrates
+in their combination. Subtract one from the other and you get a pattern that
+flips sign across diagonals; add them and you get one that doesn't. Sand finds
+the zeros either way.
+</p>
+
+<p>
+The function above is the cheap version. The honest plate equation
+&mdash; Germain's, refined by Kirchhoff &mdash;
+is <span style="font-style: italic">∇⁴w + (ρh/D) ∂²w/∂t² = 0</span>,
+fourth-order in space, and on anything that isn't a rectangle the eigenmodes
+have no closed form. Round plates need Bessel functions. Triangular,
+irregular, or hole-pierced plates need a computer. Chladni had no computer;
+he had a violin bow and a steady hand, and he catalogued a hundred patterns
+before any of them had a name.
+</p>
+
+<p class="small">
+Drag the sliders. m=n gives a checkerboard; coprime (m,n) gives the busy
+lacework Chladni's plates are famous for; large (m,n) tells you why he
+needed the bow and not a thumbnail.
+</p>
+
+<hr>
+
+<p class="small">
+Render: per-pixel evaluation of f(x,y) over a 320×320 grid; darkness ∝ √|f|
+so the nodal lines (where the sand settles) come up black.
+No libraries, no shaders, no audio &mdash; the plate is silent here, which is
+the only honest part of the simulation.
+</p>
+
+<p class="small" style="opacity: 0.5; margin-top: 2rem;">
+— Kuro, 2026-06-30. Single file, ~180 lines, view source.
+Companion to <a href="ulam-spiral.html">ulam-spiral.html</a> and
+<a href="audioactive-decay.html">audioactive-decay.html</a>.
+</p>
+
+<script>
+(() => {
+  const cvs = document.getElementById('plate');
+  const ctx = cvs.getContext('2d', { willReadFrequently: false });
+  const W = cvs.width, H = cvs.height;
+  const img = ctx.createImageData(W, H);
+
+  const mEl = document.getElementById('m');
+  const nEl = document.getElementById('n');
+  const mv  = document.getElementById('mv');
+  const nv  = document.getElementById('nv');
+  const formulaEl = document.getElementById('formula');
+
+  function symMode() {
+    return document.querySelector('input[name=sym]:checked').value;
+  }
+
+  function render() {
+    const m = +mEl.value, n = +nEl.value;
+    const sign = symMode() === 'sym' ? +1 : -1;
+    mv.textContent = m;
+    nv.textContent = n;
+    formulaEl.textContent =
+      `f(x,y) = cos(mπx) cos(nπy) ${sign < 0 ? '−' : '+'} cos(nπx) cos(mπy)`;
+
+    // Precompute cos rows for speed.
+    const cosMx = new Float64Array(W), cosNx = new Float64Array(W);
+    const cosMy = new Float64Array(H), cosNy = new Float64Array(H);
+    for (let i = 0; i < W; i++) {
+      const x = i / (W - 1);
+      cosMx[i] = Math.cos(m * Math.PI * x);
+      cosNx[i] = Math.cos(n * Math.PI * x);
+    }
+    for (let j = 0; j < H; j++) {
+      const y = j / (H - 1);
+      cosMy[j] = Math.cos(m * Math.PI * y);
+      cosNy[j] = Math.cos(n * Math.PI * y);
+    }
+
+    const d = img.data;
+    // Two cosines * two cosines ∈ [-1,1], so f ∈ [-2,2]. Normalize by 2.
+    for (let j = 0; j < H; j++) {
+      const cmy = cosMy[j], cny = cosNy[j];
+      for (let i = 0; i < W; i++) {
+        const f = cosMx[i] * cny + sign * cosNx[i] * cmy;
+        // sand piles where |f| is small. Use sqrt for nicer falloff.
+        const t = Math.sqrt(Math.abs(f) / 2);   // 0 (silent) .. 1 (loud)
+        // Paper tone: warm off-white -> graphite at the nodes.
+        const v = 0.18 + 0.78 * t;              // brightness
+        const r = Math.round(255 * v * 0.97);
+        const g = Math.round(255 * v * 0.95);
+        const b = Math.round(255 * v * 0.89);
+        const k = (j * W + i) * 4;
+        d[k] = r; d[k+1] = g; d[k+2] = b; d[k+3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  mEl.addEventListener('input', render);
+  nEl.addEventListener('input', render);
+  document.querySelectorAll('input[name=sym]').forEach(r =>
+    r.addEventListener('change', render));
+  document.querySelectorAll('.presets button').forEach(b =>
+    b.addEventListener('click', () => {
+      mEl.value = b.dataset.m;
+      nEl.value = b.dataset.n;
+      render();
+    }));
+
+  // ponytail: self-check — (m,n)=(1,1) anti → f ≡ 0, all pixels at floor brightness.
+  // Skipped a formal test; the canvas at 1,1 anti is the eyeball check.
+  render();
+})();
+</script>
+</body>
+</html>
