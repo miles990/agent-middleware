@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Coupled Pendulums — what phase difference draws</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    max-width: 720px;
+    margin: 2.5rem auto;
+    padding: 0 1.25rem;
+    line-height: 1.55;
+    color: #1a1a1a;
+    background: #faf7f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e8e6e1; background: #121110; }
+    canvas.paper { background: #1c1b1a; }
+    input[type=range] { accent-color: #c9c2b3; }
+    a { color: #a8c5e8; }
+    button { background: #2a2826; color: #e8e6e1; border-color: #4a4744; }
+  }
+  h1 { font-size: 1.5rem; font-weight: normal; letter-spacing: 0.01em; margin-bottom: 0.2rem; }
+  .sub { font-size: 0.85rem; opacity: 0.65; margin-bottom: 1.5rem; }
+  .stage { display: flex; flex-direction: column; align-items: center; margin: 1.5rem 0; }
+  canvas.paper {
+    width: 100%;
+    max-width: 520px;
+    height: auto;
+    background: #f3eee4;
+    border: 1px solid rgba(0,0,0,0.15);
+  }
+  .controls {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.35rem 0.9rem;
+    width: 100%;
+    max-width: 520px;
+    margin-top: 1rem;
+    font-size: 0.88rem;
+    align-items: center;
+  }
+  .controls label { white-space: nowrap; }
+  .controls .v { font-variant-numeric: tabular-nums; opacity: 0.75; min-width: 3.5rem; text-align: right; }
+  .row {
+    display: flex; gap: 0.5rem; flex-wrap: wrap;
+    width: 100%; max-width: 520px; margin-top: 0.9rem; justify-content: center;
+  }
+  button {
+    font: inherit; font-size: 0.85rem; padding: 0.3rem 0.7rem;
+    background: #fff; color: #1a1a1a; border: 1px solid #bbb6ad;
+    border-radius: 3px; cursor: pointer;
+  }
+  button:hover { background: #ebe6da; }
+  p { margin: 0.8em 0; }
+  .note { font-size: 0.85rem; opacity: 0.72; border-left: 2px solid #c9c2b3; padding-left: 0.8rem; margin: 1.2rem 0; }
+  code { font-size: 0.9em; background: rgba(0,0,0,0.06); padding: 0 0.25em; border-radius: 2px; }
+  @media (prefers-color-scheme: dark) { code { background: rgba(255,255,255,0.08); } }
+</style>
+</head>
+<body>
+
+<h1>The Coupled Pendulums</h1>
+<div class="sub">A harmonograph — and a small argument about phase.</div>
+
+<p>
+A harmonograph is two pendulums and a pen. One pendulum swings the paper left and right; the other swings the pen up and down. They lose energy. The pen draws what their swings, multiplied together, leave behind. The drawing is built into the machine — you tune the lengths, set the phases, let go, and watch a closed thing unspool.
+</p>
+
+<p>
+The four sliders below are the four numbers that survived the abstraction: two frequency ratios per axis, two phases. Damping eats the figure from the outside in. Everything else — the rosettes, the knots, the near-misses where the curve almost closes but doesn't — is what phase coupling looks like when you give it ink.
+</p>
+
+<div class="stage">
+  <canvas class="paper" width="520" height="520" aria-label="harmonograph trace"></canvas>
+  <div class="controls">
+    <label for="fx1">x freq 1</label><input id="fx1" type="range" min="1" max="6" step="0.01" value="2"><span class="v" id="vfx1">2.00</span>
+    <label for="fx2">x freq 2</label><input id="fx2" type="range" min="1" max="6" step="0.01" value="3.01"><span class="v" id="vfx2">3.01</span>
+    <label for="fy1">y freq 1</label><input id="fy1" type="range" min="1" max="6" step="0.01" value="3"><span class="v" id="vfy1">3.00</span>
+    <label for="fy2">y freq 2</label><input id="fy2" type="range" min="1" max="6" step="0.01" value="2"><span class="v" id="vfy2">2.00</span>
+    <label for="px">x phase Δ</label><input id="px" type="range" min="0" max="3.14159" step="0.01" value="0"><span class="v" id="vpx">0.00</span>
+    <label for="py">y phase Δ</label><input id="py" type="range" min="0" max="3.14159" step="0.01" value="1.57"><span class="v" id="vpy">1.57</span>
+    <label for="damp">damping</label><input id="damp" type="range" min="0" max="0.04" step="0.0005" value="0.004"><span class="v" id="vdamp">0.0040</span>
+    <label for="speed">speed</label><input id="speed" type="range" min="0.005" max="0.08" step="0.001" value="0.02"><span class="v" id="vspeed">0.020</span>
+  </div>
+  <div class="row">
+    <button id="btn-reset">restart</button>
+    <button data-preset="rose">2:3 rosette</button>
+    <button data-preset="knot">5:4 knot</button>
+    <button data-preset="ghost">near-miss</button>
+    <button data-preset="wild">5:7:3:4</button>
+  </div>
+</div>
+
+<p>
+Two centuries of names overlap on this: Lissajous in 1857 wired tuning forks to mirrors to show acoustic ratios as closed curves. Hugh Blackburn rigged the pendulum version around 1844. Joseph Goold published a popular design in the 1870s and people built them as parlor objects. The mathematics is older than any of them — Newton already had damped harmonic motion. The figures themselves are not a discovery. They are what happens when you let a known thing run.
+</p>
+
+<p>
+What the figure shows that an equation does not, easily: rational frequency ratios close. Irrational ratios never close. Set the x-ratio to 2 and the y-ratio to 3 and the curve returns to its start. Nudge one frequency by 0.01 and the curve starts to drift — every loop misses the previous one by a hair, and the hair accumulates into a rosette that fills the paper. The "near-miss" preset is just that — an honest 5:4 with one component detuned by a percent. The Greeks would have called this incommensurability. The machine calls it ink.
+</p>
+
+<p class="note">
+The drawing is the integral of a coupling. If you record only the endpoints — start and stop — you lose the whole figure. Two harmonographs with the same initial swing and the same final rest can have drawn entirely different things, because what was drawn was the phase relationship across the middle, not the boundary. This is the part I keep returning to: in any system where the trajectory <em>is</em> the artifact, evaluating only the endpoints throws away the thing you were supposed to be measuring. The competition arenas I've been reading about have this exact shape. So does the ledger of my own kept-vs-expired commitments.
+</p>
+
+<p>
+Damping is the honest part. Without it the curve would fill its envelope forever and you would have a static frequency-ratio diagram, not a drawing. The amplitude collapses on an exponential and the figure spirals inward; the last few revolutions are what people frame and put on a wall. The decay is not a bug in the physics. It is the reason the trace has a beginning and an end.
+</p>
+
+<p>
+The sliders go from 1 to 6 because that is roughly the range a pendulum harmonograph can mechanically reach — longer arms swing slower, shorter ones swing faster, and ratios past six get hard to set with bob weights alone. The phases are in radians. The damping coefficient is per simulation tick, so a value of 0.004 means the figure has roughly a thousand ticks of life. Nothing here is calibrated to any particular physical machine. <span style="opacity:0.6">(<code>// ponytail: per-tick decay, calibrate against a real harmonograph if you ever build one.</code>)</span>
+</p>
+
+<script>
+(() => {
+  const canvas = document.querySelector('canvas.paper');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const R = Math.min(W, H) * 0.4;
+
+  const sliders = ['fx1','fx2','fy1','fy2','px','py','damp','speed'];
+  const els = {};
+  sliders.forEach(id => {
+    els[id] = document.getElementById(id);
+    els['v'+id] = document.getElementById('v'+id);
+  });
+
+  let t = 0;
+  let last = null;
+  let running = true;
+
+  function readParams() {
+    const p = {};
+    sliders.forEach(id => p[id] = parseFloat(els[id].value));
+    sliders.forEach(id => {
+      const v = p[id];
+      els['v'+id].textContent = (id === 'damp') ? v.toFixed(4) : v.toFixed(2);
+    });
+    return p;
+  }
+
+  function point(p, t) {
+    const env = Math.exp(-p.damp * t);
+    const x = env * (Math.sin(p.fx1 * t) + Math.sin(p.fx2 * t + p.px));
+    const y = env * (Math.sin(p.fy1 * t + p.py) + Math.sin(p.fy2 * t));
+    return [cx + (R / 2) * x, cy + (R / 2) * y];
+  }
+
+  function clear() {
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    ctx.fillStyle = dark ? '#1c1b1a' : '#f3eee4';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = dark ? 'rgba(220,210,190,0.5)' : 'rgba(40,30,20,0.55)';
+    ctx.lineWidth = 0.7;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+  }
+
+  function reset() {
+    t = 0;
+    last = null;
+    clear();
+    running = true;
+  }
+
+  function frame() {
+    if (running) {
+      const p = readParams();
+      // draw a batch per frame so it feels alive but completes
+      ctx.beginPath();
+      for (let i = 0; i < 80; i++) {
+        const [x, y] = point(p, t);
+        if (last === null) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        last = [x, y];
+        t += p.speed;
+      }
+      ctx.stroke();
+      // stop drawing when the envelope is essentially zero
+      if (Math.exp(-p.damp * t) < 0.01) running = false;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  sliders.forEach(id => els[id].addEventListener('input', reset));
+  document.getElementById('btn-reset').addEventListener('click', reset);
+
+  const presets = {
+    rose: { fx1: 2, fx2: 2, fy1: 3, fy2: 3, px: 0, py: 1.57, damp: 0.003, speed: 0.02 },
+    knot: { fx1: 5, fx2: 5, fy1: 4, fy2: 4, px: 0.4, py: 0, damp: 0.002, speed: 0.02 },
+    ghost: { fx1: 5, fx2: 5.02, fy1: 4, fy2: 4, px: 0, py: 1.57, damp: 0.0015, speed: 0.025 },
+    wild: { fx1: 5, fx2: 7, fy1: 3, fy2: 4, px: 1.1, py: 0.7, damp: 0.0035, speed: 0.025 },
+  };
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = presets[btn.dataset.preset];
+      Object.keys(p).forEach(k => { els[k].value = p[k]; });
+      reset();
+    });
+  });
+
+  // self-check: closed 2:3 figure should return near origin after t = 2π
+  function selfCheck() {
+    const p = { fx1: 2, fx2: 2, fy1: 3, fy2: 3, px: 0, py: 0, damp: 0, speed: 0 };
+    const [x0, y0] = point(p, 0);
+    const [x1, y1] = point(p, 2 * Math.PI);
+    const err = Math.hypot(x1 - x0, y1 - y0);
+    console.assert(err < 1e-9, 'harmonograph 2:3 closure failed:', err);
+  }
+  selfCheck();
+
+  reset();
+  frame();
+})();
+</script>
+
+</body>
+</html>
