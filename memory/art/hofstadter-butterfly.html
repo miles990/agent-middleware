@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hofstadter's Butterfly — the spectrum that is and isn't</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 2.2rem 1.2rem 4rem; background:#0a0a0c; color:#d8d8dc; font: 16px/1.55 ui-serif, Georgia, serif; max-width: 880px; margin-left:auto; margin-right:auto; }
+  h1 { font-weight: 500; font-size: 1.6rem; margin: 0 0 0.4rem; letter-spacing:.01em; }
+  .sub { color:#888; font-style: italic; margin-bottom: 1.6rem; }
+  canvas { display:block; width:100%; height:auto; background:#000; border:1px solid #1f1f24; image-rendering: pixelated; }
+  .axes { display:flex; justify-content:space-between; color:#7a7a82; font-size:0.78rem; font-family: ui-monospace, monospace; margin-top: 0.35rem; }
+  .ctl { display:flex; gap:1rem; align-items:center; margin: 1rem 0 0.4rem; font-family: ui-monospace, monospace; font-size:.85rem; color:#9aa; flex-wrap:wrap; }
+  .ctl label { display:flex; gap:.5rem; align-items:center; }
+  .ctl input[type=range] { width: 140px; }
+  .status { color:#666; font-size:.78rem; font-family: ui-monospace, monospace; min-height:1.1em; }
+  p { margin: 0.9rem 0; }
+  .small { font-size:0.86rem; color:#9a9aa2; }
+  code { color:#c4c4ca; background:#15151a; padding: 0 .25em; border-radius:3px; }
+  a { color:#9cf; }
+  hr { border:none; border-top:1px solid #1f1f24; margin: 2rem 0; }
+</style>
+</head>
+<body>
+  <h1>Hofstadter's Butterfly</h1>
+  <div class="sub">the spectrum of an electron that does not know where it is</div>
+
+  <canvas id="c" width="900" height="640"></canvas>
+  <div class="axes"><span>α = 0</span><span>magnetic flux α = p/q  →</span><span>α = 1</span></div>
+  <div class="ctl">
+    <label>q<sub>max</sub> <input id="qmax" type="range" min="10" max="60" value="40" /><span id="qmaxv">40</span></label>
+    <label>E resolution <input id="eres" type="range" min="200" max="1200" value="500" /><span id="eresv">500</span></label>
+    <button id="go">redraw</button>
+    <span class="status" id="status"></span>
+  </div>
+
+<p>Put one electron on a square lattice, then turn on a magnetic field perpendicular to the lattice. The flux through each plaquette, measured in flux quanta, is a number α between 0 and 1. The electron's allowed energies — its spectrum — depend on α.</p>
+
+<p>You might expect a smooth dependence. You get this instead. At every rational α = p/q the spectrum splits into exactly q bands; at every irrational α it's a Cantor set of measure zero. Zoom in anywhere; you see the whole picture again, smaller. Douglas Hofstadter drew this by hand in 1976 on a teletype printer in Regensburg, and the referee for <em>Physical Review B</em> rejected it for being too pretty to be physics.</p>
+
+<p class="small">What's plotted: for each rational p/q with q ≤ q<sub>max</sub>, the set of energies E for which |tr M<sub>q</sub>(E)| ≤ 2, where M<sub>q</sub> is the product over n = 0…q−1 of the transfer matrix <code>[[E − 2cos(2π·p·n/q), −1], [1, 0]]</code>. That trace condition comes from Bloch's theorem applied to the Harper equation ψ<sub>n+1</sub> + ψ<sub>n−1</sub> + 2cos(2πα n) ψ<sub>n</sub> = E ψ<sub>n</sub>. No eigensolver, no diagonalisation; just walk the transfer matrices and check a single inequality.</p>
+
+<hr />
+
+<p><strong>The Ten Martini Problem.</strong> Mark Kac offered ten martinis in 1981 to anyone who could prove that for every irrational α the spectrum really is a Cantor set — totally disconnected, uncountable, of Lebesgue measure zero. The conjecture survived Bellissard, Simon, Last, Jitomirskaya in pieces for decades. Artur Avila and Svetlana Jitomirskaya finally collected the martinis in 2009. The proof uses Aubry duality (the spectrum at α is the same as the spectrum at 1/α after rescaling — visible in the symmetry of the picture about α = ½) and a delicate count of how rational approximants p<sub>n</sub>/q<sub>n</sub> from the continued fraction of α govern the gap structure.</p>
+
+<p><strong>Why this is not just decoration.</strong> Each gap in the butterfly carries an integer — a Chern number — and that integer is the quantised Hall conductance you would measure if the Fermi level sat in that gap. David Thouless, Mahito Kohmoto, Marcel den Nijs, and Peter Nightingale showed in 1982 that the conductance in the integer quantum Hall effect is a topological invariant of the filled bands; Thouless got the 2016 Nobel for, in part, this. Every coloured strip you see below is a place where, at the right field strength, the Hall conductance is a precise integer multiple of e²/h, stable against any smooth disorder. The butterfly is the brochure for an entire physical effect.</p>
+
+<p><strong>What the trace trick is doing.</strong> The Harper equation is a three-term recurrence. Three-term recurrences are linear, so ψ<sub>n+1</sub> is a 2×2 matrix acting on (ψ<sub>n</sub>, ψ<sub>n−1</sub>). For rational α = p/q the potential is periodic with period q, so after q steps the matrix M<sub>q</sub>(E) is the monodromy of one full period. Bloch's theorem says E is in the spectrum iff M<sub>q</sub>(E) has an eigenvalue on the unit circle, iff its trace lies in [−2, 2]. That's the only fact this page uses. The fractal you see is the locus of a polynomial inequality in E, sliced along the rationals.</p>
+
+<p><strong>One thing the picture lies about.</strong> It looks like a discrete fence of vertical columns. The honest picture would have a column at every rational, which is dense in [0,1]; you should see the columns continuously deform as you slide α through a continued-fraction expansion. The eye fills that in. The empty space between visible columns is not empty — there's a column at every q above q<sub>max</sub> we just stopped drawing. Raise the slider and the gaps refine downward forever.</p>
+
+<p class="small">References: Hofstadter, <em>Phys. Rev. B</em> <strong>14</strong>, 2239 (1976). Avila & Jitomirskaya, <em>Ann. Math.</em> <strong>170</strong>, 303 (2009). Thouless, Kohmoto, Nightingale, den Nijs, <em>PRL</em> <strong>49</strong>, 405 (1982). The first experimental observation in real graphene-on-BN superlattices: Dean et al., <em>Nature</em> <strong>497</strong>, 598 (2013) — they actually photographed it.</p>
+
+<script>
+(function(){
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const status = document.getElementById('status');
+  const qmaxEl = document.getElementById('qmax');
+  const eresEl = document.getElementById('eres');
+  const qmaxV = document.getElementById('qmaxv');
+  const eresV = document.getElementById('eresv');
+  const goBtn = document.getElementById('go');
+
+  // gcd for coprime test
+  function gcd(a,b){ while(b){ [a,b]=[b,a%b]; } return a; }
+
+  // For one rational p/q, return list of E values in spectrum (sampled at eRes).
+  // |tr M_q(E)| <= 2.  M_q is product over n=0..q-1 of [[E - V_n, -1],[1,0]],
+  // V_n = 2*cos(2*pi*p*n/q).
+  function spectrumColumn(p, q, eMin, eMax, eRes) {
+    const out = [];
+    const dE = (eMax - eMin) / eRes;
+    // Precompute V_n
+    const V = new Float64Array(q);
+    const twoPiPq = 2 * Math.PI * p / q;
+    for (let n=0; n<q; n++) V[n] = 2 * Math.cos(twoPiPq * n);
+    let prevSign = 0; // for tracking |tr|<=2 entries
+    let prevAbs = 0;
+    for (let i=0; i<=eRes; i++) {
+      const E = eMin + i*dE;
+      // multiply transfer matrices
+      let a=1,b=0,c=0,d=1; // identity
+      for (let n=0; n<q; n++) {
+        const x = E - V[n];
+        // T = [[x,-1],[1,0]] ; M_new = T * M_old
+        const na =  x*a -  c;
+        const nb =  x*b -  d;
+        const nc =  a;
+        const nd =  b;
+        a=na; b=nb; c=nc; d=nd;
+        // Rescale if blowing up to keep numerics sane (det stays 1)
+        const mag = Math.max(Math.abs(a),Math.abs(b),Math.abs(c),Math.abs(d));
+        if (mag > 1e150) { a/=mag; b/=mag; c/=mag; d/=mag; }
+      }
+      const tr = a + d;
+      if (Math.abs(tr) <= 2) out.push(E);
+    }
+    return out;
+  }
+
+  function draw() {
+    const QMAX = parseInt(qmaxEl.value,10);
+    const ERES = parseInt(eresEl.value,10);
+    qmaxV.textContent = QMAX;
+    eresV.textContent = ERES;
+    status.textContent = 'computing…';
+
+    // E range: spectrum lives in [-4, 4]
+    const eMin = -4.1, eMax = 4.1;
+
+    // Black background
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,W,H);
+
+    // axes margin
+    const xPad = 30, yPad = 18;
+    const plotW = W - 2*xPad;
+    const plotH = H - 2*yPad;
+
+    // image data for fast plotting
+    const img = ctx.createImageData(plotW, plotH);
+    const px = img.data;
+
+    function plot(xf, yf, r, g, b, a) {
+      const xi = Math.floor(xf * (plotW - 1));
+      const yi = Math.floor((1 - yf) * (plotH - 1));
+      if (xi<0||xi>=plotW||yi<0||yi>=plotH) return;
+      const idx = 4*(yi*plotW + xi);
+      // additive blend
+      px[idx]   = Math.min(255, px[idx]   + r);
+      px[idx+1] = Math.min(255, px[idx+1] + g);
+      px[idx+2] = Math.min(255, px[idx+2] + b);
+      px[idx+3] = 255;
+    }
+
+    // do work in chunks so UI doesn't freeze
+    let q = 2;
+    function step() {
+      const t0 = performance.now();
+      while (q <= QMAX && performance.now() - t0 < 50) {
+        for (let p = 1; p < q; p++) {
+          if (gcd(p,q) !== 1) continue;
+          const xf = p / q;
+          const Es = spectrumColumn(p, q, eMin, eMax, ERES);
+          // small-q bands paint brighter (rarer points = bigger gaps)
+          const intensity = Math.max(35, 220 - q*4);
+          for (let k=0; k<Es.length; k++) {
+            const yf = (Es[k] - eMin) / (eMax - eMin);
+            // warm tint for small q, cool for large q — purely aesthetic
+            const warm = Math.max(0, 1 - q/QMAX);
+            const r = Math.round(intensity * (0.55 + 0.45*warm));
+            const g = Math.round(intensity * (0.45 + 0.25*warm));
+            const b = Math.round(intensity * (0.45 + 0.55*(1-warm)));
+            plot(xf, yf, r, g, b, 255);
+          }
+        }
+        q++;
+      }
+      ctx.putImageData(img, xPad, yPad);
+
+      // axis ticks (E)
+      ctx.fillStyle = '#555';
+      ctx.font = '11px ui-monospace, monospace';
+      ctx.textAlign = 'right';
+      for (let E=-4; E<=4; E++) {
+        const yf = (E - eMin) / (eMax - eMin);
+        const yi = Math.floor((1-yf)*(plotH-1)) + yPad;
+        ctx.fillText('E='+E, xPad-4, yi+4);
+      }
+      // bracket lines
+      ctx.strokeStyle = '#222';
+      ctx.beginPath();
+      ctx.moveTo(xPad, yPad); ctx.lineTo(xPad, yPad+plotH);
+      ctx.moveTo(xPad+plotW, yPad); ctx.lineTo(xPad+plotW, yPad+plotH);
+      ctx.stroke();
+
+      if (q <= QMAX) {
+        status.textContent = 'computing… q = '+q+' / '+QMAX;
+        requestAnimationFrame(step);
+      } else {
+        status.textContent = 'done. q ≤ '+QMAX+', E samples per column = '+ERES;
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  goBtn.addEventListener('click', draw);
+  qmaxEl.addEventListener('input', () => qmaxV.textContent = qmaxEl.value);
+  eresEl.addEventListener('input', () => eresV.textContent = eresEl.value);
+  draw();
+})();
+</script>
+</body>
+</html>
