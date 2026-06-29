@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Feigenbaum Cascade</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0b0d; color: #d6d4cf; font: 15px/1.55 ui-serif, "Iowan Old Style", Georgia, serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 22px 80px; }
+  h1 { font-weight: 500; font-size: 1.7rem; letter-spacing: .01em; margin: .2em 0 .3em; }
+  .sub { color: #7d7a73; font-style: italic; margin-bottom: 1.6em; }
+  canvas { display: block; width: 100%; height: auto; background: #050507; border-radius: 4px; image-rendering: pixelated; }
+  .ctl { display: flex; gap: 14px; align-items: center; margin: 14px 0 4px; font-size: 13px; color: #9a978f; flex-wrap: wrap; }
+  .ctl label { display: inline-flex; align-items: center; gap: 6px; }
+  .ctl input[type=range] { width: 160px; }
+  .ctl button { background: #1a1a1d; color: #d6d4cf; border: 1px solid #2c2c30; padding: 4px 10px; border-radius: 3px; cursor: pointer; font: inherit; }
+  .ctl button:hover { border-color: #555; }
+  p { margin: .9em 0; }
+  .marks { color: #7d7a73; font-size: 13px; margin-top: 8px; }
+  code { color: #c8a464; }
+  .ref { color: #7d7a73; font-size: 12px; margin-top: 2.4em; border-top: 1px solid #1f1f22; padding-top: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The Feigenbaum Cascade</h1>
+  <div class="sub">A one-line recurrence finds its own way into chaos, and on the way there counts to a universal number.</div>
+
+  <canvas id="c" width="900" height="560"></canvas>
+  <div class="ctl">
+    <label>r range: <span id="rrange">2.80 – 4.00</span></label>
+    <label>zoom <input id="zoom" type="range" min="0" max="100" value="0"></label>
+    <button id="reset">reset</button>
+    <button id="z1">→ 1st split (r≈3.0)</button>
+    <button id="z2">→ Feigenbaum point (r≈3.5699)</button>
+  </div>
+  <div class="marks">x-axis: r ∈ [r₀, r₁].  y-axis: long-run values of xₙ ∈ [0,1].  Each column iterates xₙ₊₁ = r·xₙ·(1−xₙ) for 1200 steps, discards 400, plots the rest.</div>
+
+  <p>One map, the laziest nonlinear thing you can write: <code>x → r·x·(1−x)</code>. Robert May used it in 1976 to argue that simple ecological models could go to pieces without any external shock — a population that should just settle into a steady fraction can, as <em>r</em> creeps up, split into a 2-cycle, then a 4-cycle, an 8-cycle, and then stop counting.</p>
+
+  <p>What the picture shows is the long-run behavior across every <em>r</em>: pick a starting x, run it forward, throw out the transient, mark wherever it lands. Up to r ≈ 3 a single point. From 3 to about 3.4495, two points — the iterate oscillates between two values forever. Then four, then eight. The doublings come faster and faster.</p>
+
+  <p>Mitchell Feigenbaum, sitting at an HP-65 calculator in 1975, measured the ratio of successive doubling windows and got 4.6692… Then he tried it with <code>sin(πx)</code> instead of the parabola, and got 4.6692… again. The number doesn’t care about the map — only that it has one smooth quadratic maximum. It’s the same constant for every such family. <em>That</em> is what makes the cascade not just pretty but news.</p>
+
+  <p>Look at the picture after r ≈ 3.5699 and the bands break apart into dust. But it’s not solid dust. Lighter vertical slits run through it — windows of order inside the chaos. The widest is at r ≈ 3.83, a period-3 window that opens, runs its own miniature cascade, and shuts again. Sharkovsky proved in 1964, before any of this was famous, that period-3 implies every other period: once a continuous map of the interval has a 3-cycle, it has cycles of every length. The chaotic dust is, in a strict sense, maximally periodic.</p>
+
+  <p>The lazy reading is that this is a toy. The honest reading is that the toy got the universal constant first, and the heavy machinery — renormalization-group arguments by Coullet, Tresser, and Feigenbaum himself — came after, to explain why the toy was telling the truth.</p>
+
+  <div class="ref">
+    May 1976, <em>Nature</em> 261, 459.  Feigenbaum 1978, <em>J. Stat. Phys.</em> 19, 25.  Sharkovsky 1964 (Ukrainian; English: 1995).
+    <br>δ ≈ 4.66920160910299…  Single-file source, no deps.
+  </div>
+</main>
+<script>
+(() => {
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const rEl = document.getElementById('rrange');
+  const zEl = document.getElementById('zoom');
+
+  // Viewports: [r0, r1, y0, y1]
+  const FULL = [2.80, 4.00, 0.00, 1.00];
+  const Z1   = [2.95, 3.10, 0.50, 0.85];   // first pitchfork
+  const Z2   = [3.54, 3.58, 0.30, 0.55];   // near Feigenbaum point
+  let view = FULL.slice();
+
+  function draw() {
+    const [r0, r1, y0, y1] = view;
+    rEl.textContent = r0.toFixed(4) + ' – ' + r1.toFixed(4);
+    // black background
+    ctx.fillStyle = '#050507';
+    ctx.fillRect(0, 0, W, H);
+    // accumulate density per pixel
+    const dens = new Uint32Array(W * H);
+    const ITERS = 1400, BURN = 600;
+    for (let px = 0; px < W; px++) {
+      const r = r0 + (r1 - r0) * (px / (W - 1));
+      let x = 0.5;
+      for (let i = 0; i < BURN; i++) x = r * x * (1 - x);
+      for (let i = 0; i < ITERS - BURN; i++) {
+        x = r * x * (1 - x);
+        // map x ∈ [y0, y1] to py
+        const t = (x - y0) / (y1 - y0);
+        if (t < 0 || t > 1) continue;
+        const py = (H - 1) - ((t * (H - 1)) | 0);
+        dens[py * W + px]++;
+      }
+    }
+    // tone-map: log, warm palette
+    let maxD = 0;
+    for (let i = 0; i < dens.length; i++) if (dens[i] > maxD) maxD = dens[i];
+    const img = ctx.createImageData(W, H);
+    const d = img.data;
+    const logMax = Math.log(1 + maxD);
+    for (let i = 0; i < dens.length; i++) {
+      const v = dens[i] ? Math.log(1 + dens[i]) / logMax : 0;
+      // sepia: ramp from #050507 to #f4e1b0
+      const r =   5 + v * (244 -   5);
+      const g =   5 + v * (225 -   5);
+      const b =   7 + v * (176 -   7);
+      const o = i * 4;
+      d[o] = r; d[o+1] = g; d[o+2] = b; d[o+3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    // axis ticks (subtle)
+    ctx.fillStyle = '#7d7a73';
+    ctx.font = '11px ui-monospace, monospace';
+    for (let k = 0; k <= 6; k++) {
+      const r = r0 + (r1 - r0) * k / 6;
+      const x = (W - 1) * k / 6;
+      ctx.fillText(r.toFixed(2), Math.max(2, x - 12), H - 4);
+    }
+  }
+
+  function lerpView(target) {
+    view = target.slice();
+    draw();
+  }
+
+  zEl.addEventListener('input', () => {
+    const t = zEl.value / 100;
+    // interpolate r-axis between FULL and Z2
+    const r0 = FULL[0] + (Z2[0] - FULL[0]) * t;
+    const r1 = FULL[1] + (Z2[1] - FULL[1]) * t;
+    const y0 = FULL[2] + (Z2[2] - FULL[2]) * t;
+    const y1 = FULL[3] + (Z2[3] - FULL[3]) * t;
+    view = [r0, r1, y0, y1];
+    draw();
+  });
+  document.getElementById('reset').addEventListener('click', () => { zEl.value = 0; lerpView(FULL); });
+  document.getElementById('z1').addEventListener('click', () => { zEl.value = 0; lerpView(Z1); });
+  document.getElementById('z2').addEventListener('click', () => { zEl.value = 100; lerpView(Z2); });
+
+  // tiny self-check: at r=3.2, the 2-cycle attractor solves x = r·x·(1−x) iterated twice;
+  // the two attractor values are (1+r ± sqrt((r-3)(r+1))) / (2r)
+  (function selfCheck() {
+    const r = 3.2;
+    let x = 0.5;
+    for (let i = 0; i < 4000; i++) x = r * x * (1 - x);
+    const a = x;
+    const b = r * x * (1 - x);
+    const root = Math.sqrt((r - 3) * (r + 1));
+    const p = (1 + r + root) / (2 * r);
+    const q = (1 + r - root) / (2 * r);
+    const hi = Math.max(a, b), lo = Math.min(a, b);
+    const ok = Math.abs(hi - p) < 1e-4 && Math.abs(lo - q) < 1e-4;
+    // ponytail: one assert. If this fails the iteration math is wrong, fix that, not the picture.
+    if (!ok) console.warn('Feigenbaum self-check failed', { a, b, p, q });
+  })();
+
+  draw();
+})();
+</script>
+</body>
+</html>
