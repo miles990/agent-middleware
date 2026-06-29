@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Figure Eight — a three-body orbit that should not exist</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; background: #0a0a0c; color: #d8d8d2; font: 15px/1.55 ui-serif, Georgia, "Times New Roman", serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-weight: 500; font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: #8a8a82; font-style: italic; margin: 0 0 24px; font-size: 14px; }
+  canvas { display: block; width: 100%; height: auto; background: #050507; border-radius: 4px; }
+  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 8px 14px; align-items: center; margin: 16px 0 24px; font-size: 13px; color: #a8a8a0; }
+  .controls label { white-space: nowrap; }
+  .controls output { font-variant-numeric: tabular-nums; color: #d8d8d2; text-align: right; min-width: 5em; }
+  input[type=range] { width: 100%; accent-color: #c89058; }
+  button { background: #1a1a1e; color: #d8d8d2; border: 1px solid #2a2a30; padding: 4px 10px; border-radius: 3px; font: inherit; font-size: 12px; cursor: pointer; }
+  button:hover { background: #22222a; }
+  .row { display: flex; gap: 8px; margin-top: 4px; }
+  p { margin: 0 0 14px; }
+  .stat { font-variant-numeric: tabular-nums; color: #8a8a82; font-size: 12px; margin-top: 6px; }
+  .stat b { color: #c89058; font-weight: 500; }
+  small { color: #6a6a62; }
+  hr { border: 0; border-top: 1px solid #1e1e24; margin: 28px 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The Figure Eight</h1>
+<p class="sub">A three-body orbit that should not exist — and almost doesn't.</p>
+
+<canvas id="c" width="720" height="480"></canvas>
+
+<div class="controls">
+  <label for="pert">perturbation</label>
+  <input id="pert" type="range" min="0" max="0.05" step="0.0005" value="0">
+  <output id="pertv">0.0000</output>
+
+  <label for="speed">speed</label>
+  <input id="speed" type="range" min="0.1" max="3" step="0.1" value="1">
+  <output id="speedv">1.0×</output>
+
+  <label>　</label>
+  <div class="row">
+    <button id="reset">reset</button>
+    <button id="clear">clear trails</button>
+    <button id="pause">pause</button>
+  </div>
+  <span></span>
+</div>
+
+<p class="stat">orbital time <b id="tv">0.00</b> · total energy <b id="ev">—</b> · drift from initial <b id="dv">0.0%</b></p>
+
+<hr>
+
+<p>In 1993, <em>Cris Moore</em> noticed it numerically. In 2000, <em>Alain Chenciner</em> and <em>Richard Montgomery</em> proved it exists: three equal masses, under nothing but their own gravity, chasing each other forever around a single figure-eight curve. No collisions. No escapes. Perfect threefold rotation of phase, every third of a period.</p>
+
+<p>The initial conditions are not negotiable. Three bodies at <code>(0.97, −0.24)</code>, <code>(−0.97, 0.24)</code>, <code>(0, 0)</code>, with velocities arranged so the center of mass stays still and the angular momentum is exactly zero. Push the perturbation slider above zero, even a hair, and the choreography frays — first as a slow precession, then as one body slingshots, then as the system flies apart in a few orbital periods. The figure-eight is a measure-zero point in the space of three-body initial conditions.</p>
+
+<p>Which is the strange thing. Most of phase space is chaos. Almost everywhere you start, three bodies do something ugly: a binary forms, the third gets ejected, the energy bookkeeping resolves through a collision near-miss that throws everything to the boundary. The figure-eight is one of perhaps a few thousand known <em>choreographies</em> — periodic orbits where N bodies share a single curve — and it sits on a knife edge. The proof that it exists is variational: minimize the action over loops of a certain symmetry class, show the minimizer cannot collide, conclude something periodic and finite must live there. The proof does not draw it. The integrator does.</p>
+
+<p>What you are watching, when the perturbation is zero, is a near-perfect numerical reconstruction. Symplectic-leapfrog at <code>dt = 0.001</code>, no smoothing, no rescaling. The "drift from initial" readout above shows how far the bodies are from where they started after each full period — in clean simulation it stays under a percent for dozens of laps, then accumulates. Watch the energy: it should be conserved exactly. It isn't, quite, because floating point. That tiny error is the same kind of error that, in the real solar system, eventually decides whether Mercury falls into the Sun in five billion years or doesn't.</p>
+
+<p>Turn the perturbation knob slowly. Notice the failure mode is not gradual: there's a regime where the figure persists with a wobble, and then a sharp transition where one body is flung out and the other two pair off into a binary. That transition is what the existence proof is silent about. It guarantees the orbit. It does not guarantee anyone can find it without knowing where to look.</p>
+
+<p><small>The choreography family was catalogued numerically by Moore and Šuvakov &amp; Dmitrašinović in the 2010s — over a thousand are now known, each one a frozen accident of symmetry. None of them are believed to occur in nature.</small></p>
+
+</main>
+
+<script>
+// ponytail: symplectic leapfrog, not RK4 — energy conservation matters more than per-step accuracy for closed orbits
+(() => {
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const pert = document.getElementById('pert');
+  const pertv = document.getElementById('pertv');
+  const speed = document.getElementById('speed');
+  const speedv = document.getElementById('speedv');
+  const tv = document.getElementById('tv');
+  const ev = document.getElementById('ev');
+  const dv = document.getElementById('dv');
+  const resetBtn = document.getElementById('reset');
+  const clearBtn = document.getElementById('clear');
+  const pauseBtn = document.getElementById('pause');
+
+  // Chenciner–Montgomery 2000 figure-eight initial conditions (G=1, m=1)
+  const IC = {
+    r: [[ 0.97000436, -0.24308753],
+        [-0.97000436,  0.24308753],
+        [ 0.0,         0.0       ]],
+    v: [[ 0.46620369,  0.43236573],
+        [ 0.46620369,  0.43236573],
+        [-0.93240737, -0.86473146]]
+  };
+
+  let state, t, t0Energy, r0snap, periodCount, paused = false;
+
+  function reset() {
+    const p = parseFloat(pert.value);
+    // perturb only body 0's x-velocity — single-axis kick keeps it visualizable
+    state = {
+      r: IC.r.map(([x,y]) => [x, y]),
+      v: IC.v.map(([x,y]) => [x, y])
+    };
+    state.v[0][0] += p;
+    t = 0;
+    periodCount = 0;
+    t0Energy = energy(state);
+    r0snap = state.r.map(([x,y]) => [x, y]);
+    // fade trail buffer
+    ctx.fillStyle = '#050507';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+  }
+
+  function energy(s) {
+    // KE - sum of pairwise PE
+    let ke = 0;
+    for (let i = 0; i < 3; i++) ke += 0.5 * (s.v[i][0]**2 + s.v[i][1]**2);
+    let pe = 0;
+    for (let i = 0; i < 3; i++) for (let j = i+1; j < 3; j++) {
+      const dx = s.r[i][0]-s.r[j][0], dy = s.r[i][1]-s.r[j][1];
+      pe -= 1 / Math.hypot(dx, dy);
+    }
+    return ke + pe;
+  }
+
+  function accel(r) {
+    const a = [[0,0],[0,0],[0,0]];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      if (i === j) continue;
+      const dx = r[j][0]-r[i][0], dy = r[j][1]-r[i][1];
+      const d = Math.hypot(dx, dy);
+      const k = 1 / (d*d*d);
+      a[i][0] += dx * k;
+      a[i][1] += dy * k;
+    }
+    return a;
+  }
+
+  // Velocity Verlet — symplectic, conserves energy on average
+  function step(dt) {
+    const a = accel(state.r);
+    for (let i = 0; i < 3; i++) {
+      state.r[i][0] += state.v[i][0]*dt + 0.5*a[i][0]*dt*dt;
+      state.r[i][1] += state.v[i][1]*dt + 0.5*a[i][1]*dt*dt;
+    }
+    const a2 = accel(state.r);
+    for (let i = 0; i < 3; i++) {
+      state.v[i][0] += 0.5*(a[i][0]+a2[i][0])*dt;
+      state.v[i][1] += 0.5*(a[i][1]+a2[i][1])*dt;
+    }
+    t += dt;
+  }
+
+  // figure-eight period ≈ 6.3259 (Chenciner–Montgomery)
+  const PERIOD = 6.3259;
+  const COLORS = ['#c89058', '#5890c8', '#90c858'];
+  const SCALE = 140;
+  const CX = 360, CY = 240;
+
+  function draw() {
+    // fade existing trail very slightly to keep history visible but bounded
+    ctx.fillStyle = 'rgba(5, 5, 7, 0.04)';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    // draw each body + its current point as a bright dot, leaving the trail behind
+    for (let i = 0; i < 3; i++) {
+      const x = CX + state.r[i][0] * SCALE;
+      const y = CY + state.r[i][1] * SCALE;
+      ctx.fillStyle = COLORS[i];
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  function loop() {
+    if (!paused) {
+      const sp = parseFloat(speed.value);
+      const substeps = Math.max(1, Math.round(8 * sp));
+      const dt = 0.001 * sp / (substeps / 8);
+      for (let k = 0; k < substeps; k++) step(dt);
+      draw();
+
+      tv.textContent = t.toFixed(2);
+      const e = energy(state);
+      ev.textContent = e.toFixed(4);
+
+      // drift: distance between current body 0 and snapshot at last period boundary
+      const newPeriod = Math.floor(t / PERIOD);
+      if (newPeriod > periodCount) {
+        periodCount = newPeriod;
+        let driftSum = 0;
+        for (let i = 0; i < 3; i++) {
+          driftSum += Math.hypot(state.r[i][0]-r0snap[i][0], state.r[i][1]-r0snap[i][1]);
+        }
+        const driftPct = (driftSum / 3) * 100;
+        dv.textContent = driftPct.toFixed(1) + '%';
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  pert.addEventListener('input', () => { pertv.textContent = parseFloat(pert.value).toFixed(4); reset(); });
+  speed.addEventListener('input', () => { speedv.textContent = parseFloat(speed.value).toFixed(1) + '×'; });
+  resetBtn.addEventListener('click', reset);
+  clearBtn.addEventListener('click', () => { ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, cv.width, cv.height); });
+  pauseBtn.addEventListener('click', () => { paused = !paused; pauseBtn.textContent = paused ? 'resume' : 'pause'; });
+
+  // handle hi-dpi
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = 720 * dpr; cv.height = 480 * dpr;
+  cv.style.height = '480px';
+  ctx.scale(dpr, dpr);
+
+  reset();
+  loop();
+})();
+</script>
+</body>
+</html>
